@@ -1,13 +1,292 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite App</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
-  </body>
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0" name="viewport"/>
+<title>Just Sketcher</title>
+<style>
+    /* Minimal styles from your provided HTML for basic layout. */
+    /* Ensure these or their equivalents are in your main CSS file (src/style.css for Vite) */
+    .hidden { display: none !important; }
+    .app-container { display: flex; flex-direction: column; height: 100vh; width: 100vw; overflow: hidden; }
+    .canvas-container { flex-grow: 1; position: relative; }
+    .top-controls { position: absolute; top: 5px; right: 5px; display: flex; flex-direction: column; gap: 5px; z-index: 20; }
+    .control-btn { background: rgba(220, 220, 220, 0.98); border: 1px solid #ccc; border-radius: 6px; padding: 6px 8px; font-size: 11px; font-weight: 500; cursor: pointer; min-width: 80px; }
+    .bottom-panel { position: absolute; bottom: 0; left: 0; right: 0; z-index: 20; }
+    /* Styles for .bottom-palette will be applied by your main CSS */
+    .bottom-panel > .bottom-palette { background-color: rgba(240, 240, 240, 0.98); padding: 10px; }
+    .room-palette, .icon-palette { display: flex; flex-wrap: wrap; gap: 8px; }
+    .type-context-menu { position: fixed; background: white; border: 1px solid #ccc; z-index: 1000; }
+    .modal { display: none; position: fixed; }
+    .export-menu { /* Basic style if not in main CSS yet */ position: absolute; background: white; border: 1px solid #ccc; }
+</style>
+</head>
+<body>
+<div class="app-container">
+    <div class="mode-indicator" id="modeIndicator">READY</div>
+
+    <div class="canvas-container" id="canvasContainer">
+        <canvas id="drawingCanvas"></canvas>
+        <div id="summaryLegend" style="display: none;">
+            <div><strong>Summary</strong></div>
+            <div>Total GLA: <span id="legendGLA">0.0</span> sq ft</div>
+            <div>Bedrooms: <span id="legendBedrooms">0</span></div>
+            <div>Bathrooms: <span id="legendBathrooms">0</span></div>
+            <div class="legend-list" id="legendGLABreakdown"></div>
+            <div class="legend-section">Non-GLA Area: <span id="legendNonLiving">0.0</span> sq ft</div>
+            <div class="legend-list" id="legendNonGLABreakdown"></div>
+        </div>
+
+        <div class="top-controls">
+            <button class="control-btn" id="numbersBtn" onclick="ShowPallet('NumbersP')">Numbers</button>
+            <button class="control-btn" id="roomsBtn" onclick="ShowPallet('RoomsP')">Rooms</button>
+            <button class="control-btn" id="iconsBtn" onclick="ShowPallet('IconsP')">Icons</button>
+            <button class="control-btn" id="startBtn" onclick="startNewDrawing()">Start</button>
+            <button class="control-btn" id="editBtn" onclick="toggleEditMode()">Edit</button>
+            <button class="control-btn hidden" id="relabelBtn">Relabel Area</button>
+            <button class="control-btn hidden" id="labelEditBtn">Edit Label</button>
+            <button class="control-btn hidden" id="labelDeleteBtn">Del Label</button>
+            <button class="control-btn" onclick="undoLast()">Undo</button>
+            <button class="control-btn" id="clearBtn" onclick="clearCanvas()">Clear</button>
+            <button class="control-btn" id="legendToggleBtn" onclick="toggleLegend()">Legend</button>
+
+            <button class="control-btn" onclick="document.getElementById('importFile').click()">Import</button> 
+            <button class="control-btn" onclick="showExportPreview()">Preview</button>
+            <div class="export-dropdown">
+                <button class="control-btn" onclick="toggleExportMenu()">Export</button>
+                <div class="export-menu hidden" id="exportMenu">
+                    <div class="export-option" onclick="exportJSON()">JSON Data</div>
+                    <div class="export-option" onclick="exportPNG()">PNG Image</div>
+                    <div class="export-option" onclick="exportSVG()">SVG Vector</div>
+                    <div class="export-option" onclick="exportPDF()">PDF Document</div>
+                    <div class="export-option" onclick="exportLaTeX()">LaTeX/TikZ</div>
+                    <div class="export-option" onclick="exportHighQualityPNG()">High-Quality PNG</div>
+                    <div class="export-option" onclick="exportHighQualityPDF()">High-Quality PDF</div>
+                </div>
+            </div>
+
+            <button class="control-btn" id="saveBtn">Save</button>
+
+            <div class="file-input-wrapper hidden">
+                <input accept=".json" id="importFile" onchange="importSketch(event)" type="file"/>
+            </div>
+        </div>
+
+        <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+        </div>
+
+    <div class="bottom-panel">
+        <div class="bottom-palette " id="drawPalette">
+            <div class="mobile-controls">
+              <div class="directional-pad" id="directionalPad">
+                <button class="dir-btn up" onclick="drawLine('up')">↑</button>
+                <button class="dir-btn down" onclick="drawLine('down')">↓</button>
+                <button class="dir-btn left" onclick="drawLine('left')">←</button>
+                <button class="dir-btn right" onclick="drawLine('right')">→</button>
+                <button class="dir-btn center" onclick="closePolygon()">⬤</button>
+                <button class="dir-btn up-left" onclick="drawLine('up-left')">↖</button>
+                <button class="dir-btn up-right" onclick="drawLine('up-right')">↗</button>
+                <button class="dir-btn down-left" onclick="drawLine('down-left')">↙</button>
+                <button class="dir-btn down-right" onclick="drawLine('down-right')">↘</button>
+              </div>
+              <input class="angle-display hidden" id="angleDisplay" type="text" value="0"/>
+              <div class="distance-display" id="distanceDisplay">0 ft</div>
+              <div class="numeric-keypad">
+                <button class="key-btn" onclick="appendNumber('1')">1</button>
+                <button class="key-btn" onclick="appendNumber('2')">2</button>
+                <button class="key-btn" onclick="appendNumber('3')">3</button>
+                <button class="key-btn" onclick="appendNumber('4')">4</button>
+                <button class="key-btn" onclick="appendNumber('5')">5</button>
+                <button class="key-btn" onclick="appendNumber('6')">6</button>
+                <button class="key-btn" onclick="appendNumber('7')">7</button>
+                <button class="key-btn" onclick="appendNumber('8')">8</button>
+                <button class="key-btn" onclick="appendNumber('9')">9</button>
+                <button class="key-btn" onclick="appendNumber('0')">0</button>
+                <button class="key-btn" onclick="appendNumber('.')">.</button>
+                <button class="key-btn secondary" onclick="deleteNumber()">del</button>
+                <button class="key-btn enter" onclick="handleEnter()">enter</button>
+                <button class="key-btn secondary" onclick="toggleAngle()">ang</button>
+                <button class="key-btn secondary" onclick="undoLast()">undo</button>
+                <button class="key-btn secondary" onclick="clearDistance()">clear</button>
+                <button class="key-btn secondary" onclick="redoLast()">redo</button>
+                <button class="key-btn close-btn" onclick="closePolygon()" style="background: #87CEEB;">cls</button>
+              </div>
+            </div>
+        </div>
+        <div class="bottom-palette room-palette" id="roomsPalette">
+          
+              <div class="room-palette-label bedroom-palette" onclick="selectLabelToPlace('Bedroom')">Bedroom</div>
+              <div class="room-palette-label bedroom-palette" onclick="selectLabelToPlace('Bedroom.M')">Bedroom.M</div>
+              <div class="room-palette-label bath-palette" onclick="selectLabelToPlace('Bath')">Bath</div>
+              <div class="room-palette-label bath-palette" onclick="selectLabelToPlace('Bath.M')">Bath.M</div>
+              <div class="room-palette-label halfbath-palette" onclick="selectLabelToPlace('1/2 Bath')">1/2 Bath</div>
+              <div class="room-palette-label green-palette" onclick="selectLabelToPlace('Kitchen')">Kitchen</div>
+              <div class="room-palette-label green-palette" onclick="selectLabelToPlace('Living Room')">Living Room</div>
+              <div class="room-palette-label green-palette" onclick="selectLabelToPlace('Dining Room')">Dining Room</div>
+              <div class="room-palette-label green-palette" onclick="selectLabelToPlace('FamilyRoom')">FamilyRoom</div>
+              <div class="room-palette-label" onclick="selectLabelToPlace('Laundry')">Laundry</div>
+              <div class="room-palette-label entry-palette" onclick="selectLabelToPlace('Entry')">Entry</div>
+              <div class="room-palette-label" onclick="selectLabelToPlace('Closet')">Closet</div>
+              <div class="room-palette-label" onclick="selectLabelToPlace('Office')">Office</div>
+              <div class="room-palette-label" onclick="selectLabelToPlace('Garage')">Garage</div>
+              <div class="room-palette-label" onclick="selectLabelToPlace('Pantry')">Pantry</div>
+              <div class="room-palette-label" onclick="selectLabelToPlace('Hallway')">Hallway</div>
+              <div class="room-palette-label" onclick="selectLabelToPlace('Addition')">Addition</div>
+              <div class="room-palette-label" onclick="selectLabelToPlace('Covered Patio')">Covered Patio</div>
+              <div class="room-palette-label" onclick="selectLabelToPlace('Covered Porch')">Covered Porch</div>
+              <div class="room-palette-label" onclick="selectLabelToPlace('Uncovered Patio')">Uncovered Patio</div>
+              <div class="room-palette-label" onclick="selectLabelToPlace('Uncovered Porch')">Uncovered Porch</div>
+              <div class="room-palette-label perm-palette" onclick="selectLabelToPlace('BR (permits unkwn)')">BR (permits unkwn)</div>
+              <div class="room-palette-label perm-palette" onclick="selectLabelToPlace('BA (permits unkwn)')">BA (permits unkwn)</div>
+              <div class="room-palette-label perm-palette" onclick="selectLabelToPlace('Kitchen (permits unkwn)')">Kitchen (permits unkwn)</div>
+              <div class="room-palette-label perm-palette" onclick="selectLabelToPlace('Living (permits unkwn)')">Living (permits unkwn)</div>
+            </div>
+       
+   <div class="bottom-palette icon-palette" id="iconsPalette">
+
+    <div class="icon-palette-item" onclick="selectIconToPlace('door_icon_js')">
+        <img
+            id="paletteIconDoor"
+            alt="Door"
+            width="45"
+            height="45"
+            src="/door.svg" 
+        />
+        <span></span>
+    </div>
+
+
+     <div class="icon-palette-item" onclick="selectIconToPlace('doorr_icon_js')">
+        <img
+            id="paletteIconDoorr"
+            alt="Door "
+            width="45"
+            height="45"
+            src="/doorr.svg" 
+        />
+        <span></span>
+    </div>
+
+    <div class="icon-palette-item" onclick="selectIconToPlace('sdoor_icon_js')">
+        <img
+            id="paletteIconSDoor"
+            alt="Door "
+            width="45"
+            height="45"
+            src="/sdoor.svg" 
+        />
+        <span></span>
+    </div>
+
+
+    <div class="icon-palette-item" onclick="selectIconToPlace('Fireplace_icon_js')">
+        <img
+            id="paletteIconFireplace"
+            alt="fireplace"
+            width="45"
+            height="45"
+            src="/fireplace.svg"
+        />
+        <span></span>
+    </div>
+
+    <div class="icon-palette-item" onclick="selectIconToPlace('Stare_icon_js')">
+        <img
+            id="paletteIconStare"
+            alt="Stairs"
+            width="45"
+            height="45"
+            src="/Stare.svg"
+        />
+        <span></span>
+    </div>
+
+    <div class="icon-palette-item" onclick="selectIconToPlace('Pool_icon_js')">
+        <img
+            id="paletteIconPool"
+            alt="Stairs"
+            width="45"
+            height="45"
+            src="/pool.svg"
+        />
+        <span></span>
+    </div>
+
+
+
+</div>      
+    
+        </div>
+    </div>
+    </div>   
+ </div>
+
+
+
+<div class="modal hidden" id="polygonModal">
+    <div class="modal-content">
+        <h3>Label Polygon</h3>
+        <input id="polygonName" placeholder="e.g., Floor 1, Garage" type="text"/>
+        <select id="polygonType">
+            <option value="living">Living Area (Include in GLA)</option>
+            <option value="garage">Garage (Exclude from GLA)</option>
+            <option value="carport">Carport (Exclude from GLA)</option>
+            <option value="patio">Patio/Deck (Exclude from GLA)</option>
+            <option value="utility">Utility Room (Exclude from GLA)</option>
+            <option value="storage">Storage (Exclude from GLA)</option>
+            <option value="basement">Basement (Exclude from GLA)</option>
+            <option value="attic">Attic (Exclude from GLA)</option>
+            <option value="ADU">ADU (Exclude from GLA)</option>
+            <option value="ADU-1">ADU-1 (Exclude from GLA)</option>
+            <option value="ADU-2">ADU-2 (Exclude from GLA)</option>
+            <option value="ADU-3">ADU-3 (Exclude from GLA)</option>
+            <option value="ADU-4">ADU-4 (Exclude from GLA)</option>
+            <option value="UNIT-1">UNIT-1 (Include in GLA)</option>
+            <option value="UNIT-2">UNIT-2 (Include in GLA)</option>
+            <option value="UNIT-3">UNIT-3 (Include in GLA)</option>
+            <option value="UNIT-4">UNIT-4 (Include in GLA)</option>
+            <option value="other">Other</option>
+            <option value="uncovered_patio">Uncovered Patio (Exclude from GLA)</option>
+            <option value="uncovered_porch">Uncovered Porch (Exclude from GLA)</option>
+            <option value="storage_shed">Storage Shed (Exclude from GLA)</option>
+            <option value="covered_patio">Covered Patio (Exclude from GLA)</option>
+            <option value="covered_porch">Covered Porch (Exclude from GLA)</option>
+            <option value="car_port_1">1 Car Port (Exclude from GLA)</option>
+            <option value="car_port_2">2 Car Port (Exclude from GLA)</option>
+        </select>
+        <label>
+            <input id="includeInGLA" type="checkbox"/> Include in Gross Living Area
+        </label>
+        <div class="modal-buttons">
+            <button class="modal-btn btn-secondary" onclick="closePolygonModal()">Cancel</button>
+            <button class="modal-btn btn-primary" onclick="confirmPolygonLabel()">Save</button>
+        </div>
+    </div>
+ 
+<div class="modal" id="lineEditModal">
+    <div class="modal-content">
+        <h3>Edit Line</h3>
+        <p>Current length: <span id="currentLength"></span> feet</p>
+        <input id="newLength" min="0.1" placeholder="New length" step="0.1" type="number"/>
+        <label>
+            <input id="makeCurved" type="checkbox"/> Make curved wall
+        </label>
+        <div class="modal-buttons">
+            <button class="modal-btn btn-secondary" onclick="deleteLine()">Delete Line</button>
+            <button class="modal-btn btn-secondary" onclick="closeLineEditModal()">Cancel</button>
+            <button class="modal-btn btn-primary" onclick="confirmLineEdit()">Save Changes</button>
+        </div>
+    </div>
+
+<div id="customCursor"></div>
+
+<div class="type-context-menu hidden" id="typeContextMenu">
+    <div class="context-menu-header">Change Polygon Type:</div>
+    <div id="contextMenuOptions">
+        </div>
+    <div class="context-menu-cancel" onclick="hideTypeContextMenu()">Cancel</div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
 </html>

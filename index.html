@@ -97,6 +97,41 @@
             <div class="legend-list" id="legendNonGLABreakdown"></div>
         </div>
 
+        <!-- Icon Edit Controls - Compact bottom version -->
+<div class="icon-edit-controls hidden" id="iconEditControls">
+    <div class="icon-edit-header">Edit Icon</div>
+    
+    <div class="edit-control-row">
+        <div class="edit-control-label">Scale</div>
+        <input type="range" class="edit-slider" id="scaleSlider" min="0.5" max="3" step="0.1" value="1">
+        <div class="edit-value-display" id="scaleDisplay">1.0</div>
+    </div>
+    
+    <div class="edit-control-row">
+        <div class="edit-control-label">Width</div>
+        <input type="range" class="edit-slider" id="widthSlider" min="0.5" max="3" step="0.1" value="1">
+        <div class="edit-value-display" id="widthDisplay">1.0</div>
+    </div>
+    
+    <div class="edit-control-row">
+        <div class="edit-control-label">Height</div>
+        <input type="range" class="edit-slider" id="heightSlider" min="0.5" max="3" step="0.1" value="1">
+        <div class="edit-value-display" id="heightDisplay">1.0</div>
+    </div>
+    
+    <div class="edit-control-row rotation-row">
+        <div class="edit-control-label">Rotate</div>
+        <input type="range" class="edit-slider" id="rotationSlider" min="0" max="7" step="1" value="0">
+        <div class="edit-value-display" id="rotationDisplay">0°</div>
+    </div>
+    
+    <div class="edit-control-buttons">
+        <button class="edit-btn reset" id="resetIconBtn">Reset</button>
+        <button class="edit-btn delete" id="deleteIconBtn">Delete</button>
+        <button class="edit-btn done" id="doneEditingBtn">Done</button>
+    </div>
+</div>
+
         <div class="top-controls">
             <button class="control-btn active" id="numbersBtn" data-palette="drawPalette">Numbers</button>
             <button class="control-btn" id="roomsBtn" data-palette="roomsPalette">Rooms</button>

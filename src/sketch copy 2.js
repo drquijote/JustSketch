@@ -1,4 +1,4 @@
-// src/sketch.js - FIXED VERSION WITH WORKING ROTATION + SLIDER CONTROLS
+// src/sketch.js - FIXED VERSION WITH WORKING ROTATION
 let canvas, ctx;
 let actionHistory = [];
 let historyIndex = -1;
@@ -12,14 +12,13 @@ let isEditMode = false;
 let editingElement = null;
 let editInput = null;
 
-// Icon editing variables - UPDATED for slider controls
+// Icon editing variables
 let editingIcon = null;
 let isResizing = false;
 let isRotating = false;
 let resizeHandle = null;
 let rotationStartAngle = 0;
 let elementStartRotation = 0;
-let originalIconProperties = null; // NEW: Store original properties for reset
 
 // Pan variables
 let viewportTransform = {
@@ -76,7 +75,6 @@ function initCanvas() {
     console.log('DEBUG: initCanvas() completed');
 }
 
-// UPDATED: setupPaletteListeners function to include slider controls
 function setupPaletteListeners() {
     console.log('Setting up palette listeners...');
     const roomLabels = document.querySelectorAll('.room-palette-label');
@@ -110,230 +108,36 @@ function setupPaletteListeners() {
             selectElement('icon', img.src, null, img.alt);
         });
     });
-
-    // NEW: Setup icon edit controls
-    setupIconEditControls();
 }
 
-// NEW: Setup icon edit controls
-function setupIconEditControls() {
-    const scaleSlider = document.getElementById('scaleSlider');
-    const widthSlider = document.getElementById('widthSlider');
-    const heightSlider = document.getElementById('heightSlider');
-    const rotationSlider = document.getElementById('rotationSlider');
-    
-    const scaleDisplay = document.getElementById('scaleDisplay');
-    const widthDisplay = document.getElementById('widthDisplay');
-    const heightDisplay = document.getElementById('heightDisplay');
-    const rotationDisplay = document.getElementById('rotationDisplay');
-    
-    const resetBtn = document.getElementById('resetIconBtn');
-    const deleteBtn = document.getElementById('deleteIconBtn');
-    const doneBtn = document.getElementById('doneEditingBtn');
-    
-    if (!scaleSlider || !widthSlider || !heightSlider || !rotationSlider) {
-        console.warn('Icon edit controls not found in DOM - they will be added when needed');
-        return;
-    }
-    
-    // Scale slider
-    scaleSlider.addEventListener('input', (e) => {
-        if (!editingIcon || !originalIconProperties) return;
-        const scale = parseFloat(e.target.value);
-        editingIcon.width = originalIconProperties.width * scale;
-        editingIcon.height = originalIconProperties.height * scale;
-        scaleDisplay.textContent = scale.toFixed(1);
-        redrawCanvas();
-    });
-    
-    // Width slider
-    widthSlider.addEventListener('input', (e) => {
-        if (!editingIcon || !originalIconProperties) return;
-        const widthScale = parseFloat(e.target.value);
-        editingIcon.width = originalIconProperties.width * widthScale;
-        widthDisplay.textContent = widthScale.toFixed(1);
-        redrawCanvas();
-    });
-    
-    // Height slider
-    heightSlider.addEventListener('input', (e) => {
-        if (!editingIcon || !originalIconProperties) return;
-        const heightScale = parseFloat(e.target.value);
-        editingIcon.height = originalIconProperties.height * heightScale;
-        heightDisplay.textContent = heightScale.toFixed(1);
-        redrawCanvas();
-    });
-    
-    // Rotation slider (0-7 representing 8 positions: 0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
-    rotationSlider.addEventListener('input', (e) => {
-        if (!editingIcon) return;
-        const step = parseInt(e.target.value);
-        const rotation = step * 45; // 45 degree increments
-        editingIcon.rotation = (rotation * Math.PI) / 180; // Convert to radians
-        rotationDisplay.textContent = rotation + '°';
-        redrawCanvas();
-    });
-    
-    // Reset button
-    if (resetBtn) {
-        resetBtn.addEventListener('click', () => {
-            if (!editingIcon || !originalIconProperties) return;
-            resetIconToOriginal();
-        });
-    }
-    
-    // Delete button
-    if (deleteBtn) {
-        deleteBtn.addEventListener('click', () => {
-            if (!editingIcon) return;
-            deleteElement(editingIcon);
-            hideIconEditControls();
-        });
-    }
-    
-    // Done button
-    if (doneBtn) {
-        doneBtn.addEventListener('click', () => {
-            finishIconEditing();
-        });
-    }
-}
-
-// NEW: Show icon edit controls
-// Correct showIconEditControls function
-function showIconEditControls(icon) {
-    editingIcon = icon;
-    
-    // Store original properties for reset functionality
-    originalIconProperties = {
-        width: icon.width,
-        height: icon.height,
-        rotation: icon.rotation || 0
-    };
-    
-    // Calculate current scale factors
-    const currentScaleX = icon.width / originalIconProperties.width;
-    const currentScaleY = icon.height / originalIconProperties.height;
-    const currentRotationDegrees = ((icon.rotation || 0) * 180) / Math.PI;
-    const currentRotationStep = Math.round(currentRotationDegrees / 45);
-    
-    // Set slider values - check if they exist first
-    const scaleSlider = document.getElementById('scaleSlider');
-    const widthSlider = document.getElementById('widthSlider');
-    const heightSlider = document.getElementById('heightSlider');
-    const rotationSlider = document.getElementById('rotationSlider');
-    
-    const scaleDisplay = document.getElementById('scaleDisplay');
-    const widthDisplay = document.getElementById('widthDisplay');
-    const heightDisplay = document.getElementById('heightDisplay');
-    const rotationDisplay = document.getElementById('rotationDisplay');
-    
-    if (!scaleSlider || !widthSlider || !heightSlider || !rotationSlider) {
-        console.warn('Slider controls not found - make sure the HTML is added');
-        return;
-    }
-    
-    // For scale, use the average of width and height scales
-    const averageScale = (currentScaleX + currentScaleY) / 2;
-    
-    scaleSlider.value = averageScale;
-    widthSlider.value = currentScaleX;
-    heightSlider.value = currentScaleY;
-    rotationSlider.value = currentRotationStep;
-    
-    // Update displays if they exist
-    if (scaleDisplay && widthDisplay && heightDisplay && rotationDisplay) {
-        scaleDisplay.textContent = averageScale.toFixed(1);
-        widthDisplay.textContent = currentScaleX.toFixed(1);
-        heightDisplay.textContent = currentScaleY.toFixed(1);
-        rotationDisplay.textContent = (currentRotationStep * 45) + '°';
-    }
-    
-    // Hide all regular bottom palettes
-    document.querySelectorAll('.one-of-bottom-pallets').forEach(p => p.classList.add('hidden'));
-    
-    // Show icon edit controls
-    const controls = document.getElementById('iconEditControls');
-    if (controls) {
-        controls.classList.remove('hidden');
-    }
-    
-    redrawCanvas();
-}
-
-// NEW: Hide icon edit controls
-function hideIconEditControls() {
-    const controls = document.getElementById('iconEditControls');
-    if (controls) {
-        controls.classList.add('hidden');
-    }
-    editingIcon = null;
-    originalIconProperties = null;
-}
-
-// NEW: Reset icon to original properties
-// REPLACE the existing resetIconToOriginal function with this:
-function resetIconToOriginal() {
-    if (!editingIcon || !originalIconProperties) return;
-    
-    editingIcon.width = originalIconProperties.width;
-    editingIcon.height = originalIconProperties.height;
-    editingIcon.rotation = originalIconProperties.rotation;
-    
-    // Reset sliders - check if they exist first
-    const scaleSlider = document.getElementById('scaleSlider');
-    const widthSlider = document.getElementById('widthSlider');
-    const heightSlider = document.getElementById('heightSlider');
-    const rotationSlider = document.getElementById('rotationSlider');
-    
-    const scaleDisplay = document.getElementById('scaleDisplay');
-    const widthDisplay = document.getElementById('widthDisplay');
-    const heightDisplay = document.getElementById('heightDisplay');
-    const rotationDisplay = document.getElementById('rotationDisplay');
-    
-    if (scaleSlider && widthSlider && heightSlider && rotationSlider) {
-        scaleSlider.value = 1;
-        widthSlider.value = 1;
-        heightSlider.value = 1;
-        rotationSlider.value = 0;
-        
-        if (scaleDisplay && widthDisplay && heightDisplay && rotationDisplay) {
-            scaleDisplay.textContent = '1.0';
-            widthDisplay.textContent = '1.0';
-            heightDisplay.textContent = '1.0';
-            rotationDisplay.textContent = '0°';
-        }
-    }
-    
-    redrawCanvas();
-    saveAction();
-}
-
-// KEPT: Original THREE RESIZE MODES function (for backward compatibility)
+// THREE RESIZE MODES: proportional, horizontal-only, vertical-only
 function getIconEditHandle(icon, x, y) {
-    // For slider-based editing, we don't need handles, but keeping for compatibility
+    console.log('DEBUG: getIconEditHandle() called with coords:', x, y);
+    console.log('DEBUG: isEditMode:', isEditMode, 'editingIcon === icon:', editingIcon === icon);
+    
     if (!isEditMode || editingIcon !== icon) {
+        console.log('DEBUG: Not in edit mode or wrong icon, returning null');
         return null;
     }
     
-    // On mobile or when slider controls are active, don't use handles
-    if (isMobileDevice() || document.getElementById('iconEditControls')?.classList.contains('hidden') === false) {
-        return null;
-    }
-    
-    // Keep original handle logic for desktop fallback
     const handleSize = 20;
     const deleteSize = 20;
     const rotateSize = 20;
     
+    console.log('DEBUG: Handle sizes - handleSize:', handleSize, 'deleteSize:', deleteSize, 'rotateSize:', rotateSize);
+    
     const centerX = icon.x + icon.width / 2;
     const centerY = icon.y + icon.height / 2;
+    
+    console.log('DEBUG: Icon bounds - x:', icon.x, 'y:', icon.y, 'width:', icon.width, 'height:', icon.height, 'rotation:', icon.rotation);
     
     // Delete button (upper-right, outside icon boundary)
     const deleteX = icon.x + icon.width + 10;
     const deleteY = icon.y - 10;
     const deleteDist = Math.sqrt((x - deleteX) * (x - deleteX) + (y - deleteY) * (y - deleteY));
+    console.log('DEBUG: Delete button - position:', deleteX, deleteY, 'distance:', deleteDist.toFixed(2), 'threshold:', deleteSize/2);
     if (deleteDist <= deleteSize/2) {
+        console.log('DEBUG: DELETE HANDLE DETECTED!');
         return 'delete';
     }
     
@@ -343,7 +147,9 @@ function getIconEditHandle(icon, x, y) {
     const rotateX = icon.x + rotateOffsetX;
     const rotateY = icon.y + rotateOffsetY;
     const rotateDist = Math.sqrt((x - rotateX) * (x - rotateX) + (y - rotateY) * (y - rotateY));
+    console.log('DEBUG: ROTATE button - fixed position:', rotateX, rotateY, 'distance:', rotateDist.toFixed(2), 'threshold:', rotateSize/2);
     if (rotateDist <= rotateSize/2) {
+        console.log('DEBUG: *** ROTATE HANDLE DETECTED! ***');
         return 'rotate';
     }
     
@@ -351,7 +157,9 @@ function getIconEditHandle(icon, x, y) {
     const swCornerX = icon.x;
     const swCornerY = icon.y + icon.height;
     const swDistance = Math.sqrt((x - swCornerX) * (x - swCornerX) + (y - swCornerY) * (y - swCornerY));
+    console.log('DEBUG: Proportional resize - position:', swCornerX, swCornerY, 'distance:', swDistance.toFixed(2), 'threshold:', handleSize/2);
     if (swDistance <= handleSize/2) {
+        console.log('DEBUG: PROPORTIONAL RESIZE HANDLE DETECTED!');
         return 'proportional';
     }
     
@@ -359,7 +167,9 @@ function getIconEditHandle(icon, x, y) {
     const rightEdgeX = icon.x + icon.width;
     const rightEdgeY = icon.y + icon.height / 2;
     const rightDistance = Math.sqrt((x - rightEdgeX) * (x - rightEdgeX) + (y - rightEdgeY) * (y - rightEdgeY));
+    console.log('DEBUG: Horizontal resize - position:', rightEdgeX, rightEdgeY, 'distance:', rightDistance.toFixed(2), 'threshold:', handleSize/2);
     if (rightDistance <= handleSize/2) {
+        console.log('DEBUG: HORIZONTAL RESIZE HANDLE DETECTED!');
         return 'horizontal';
     }
     
@@ -367,24 +177,29 @@ function getIconEditHandle(icon, x, y) {
     const bottomEdgeX = icon.x + icon.width / 2;
     const bottomEdgeY = icon.y + icon.height;
     const bottomDistance = Math.sqrt((x - bottomEdgeX) * (x - bottomEdgeX) + (y - bottomEdgeY) * (y - bottomEdgeY));
+    console.log('DEBUG: Vertical resize - position:', bottomEdgeX, bottomEdgeY, 'distance:', bottomDistance.toFixed(2), 'threshold:', handleSize/2);
     if (bottomDistance <= handleSize/2) {
+        console.log('DEBUG: VERTICAL RESIZE HANDLE DETECTED!');
         return 'vertical';
     }
     
+    console.log('DEBUG: No handle detected at this position');
     return null;
 }
 
-// KEPT: Calculate distance between two points
+// Calculate distance between two points
 function distance(x1, y1, x2, y2) {
     return Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
 }
 
-// KEPT: Calculate angle between two points
+// Calculate angle between two points
 function angle(x1, y1, x2, y2) {
     return Math.atan2(y2 - y1, x2 - x1);
 }
 
-// KEPT: Rotate icon function
+// New function to rotate icon 90 degrees clockwise
+// Fixed rotateIcon90Degrees function
+// Modified function to rotate 45 degrees instead of 90
 function rotateIcon90Degrees(icon) {
     console.log('DEBUG: *** rotateIcon90Degrees() called! ***');
     console.log('DEBUG: Icon before rotation:', icon);
@@ -423,7 +238,7 @@ function rotateIcon90Degrees(icon) {
     console.log('DEBUG: *** rotateIcon90Degrees() completed! ***');
 }
 
-// KEPT: Viewport pan handlers
+// Viewport pan handlers
 function handleViewportMouseDown(e) {
     console.log('DEBUG: handleViewportMouseDown() called');
     if (e.button !== 0) return; // Only left mouse button
@@ -434,8 +249,8 @@ function handleViewportMouseDown(e) {
     const canvasY = (e.clientY - rect.top) - viewportTransform.y;
     console.log('DEBUG: Mouse down at canvas coords:', canvasX, canvasY);
 
-    // PRIORITY 1: Check for icon edit handles on the CURRENTLY editing icon (only if sliders not shown)
-    if (isEditMode && editingIcon && !isMobileDevice()) {
+    // PRIORITY 1: Check for icon edit handles on the CURRENTLY editing icon.
+    if (isEditMode && editingIcon) {
         const handle = getIconEditHandle(editingIcon, canvasX, canvasY);
         console.log('DEBUG: In edit mode, checking for handles on editingIcon. Handle detected:', handle);
 
@@ -570,7 +385,7 @@ function handleWheel(e) {
     }, 500); // Wait 500ms after last wheel event
 }
 
-// KEPT: handleViewportTouchStart with slider integration
+// FIXED handleViewportTouchStart - Three resize modes
 function handleViewportTouchStart(e) {
     console.log('DEBUG: handleViewportTouchStart() called with', e.touches.length, 'touches');
     
@@ -584,8 +399,8 @@ function handleViewportTouchStart(e) {
         
         console.log('DEBUG: Touch at canvas coords:', canvasX, canvasY);
 
-        // PRIORITY 1: Check for icon edit handles only on desktop (mobile uses sliders)
-        if (isEditMode && editingIcon && !isMobileDevice()) {
+        // PRIORITY 1: Check for icon edit handles on the CURRENTLY editing icon.
+        if (isEditMode && editingIcon) {
             const handle = getIconEditHandle(editingIcon, canvasX, canvasY);
             console.log('DEBUG: Touch - checking for handles on editingIcon. Handle detected:', handle);
             
@@ -625,13 +440,8 @@ function handleViewportTouchStart(e) {
         
         if (isEditMode && elementAtPoint && elementAtPoint.type === 'icon') {
             e.preventDefault();
-            // Use slider controls for mobile, handles for desktop
-            if (isMobileDevice()) {
-                showIconEditControls(elementAtPoint);
-            } else {
-                editingIcon = elementAtPoint;
-                redrawCanvas();
-            }
+            editingIcon = elementAtPoint;
+            redrawCanvas();
             return;
         }
 
@@ -728,7 +538,7 @@ function handleViewportTouchMove(e) {
     }
 }
 
-// UPDATED: handleViewportTouchEnd with slider integration
+// FIXED handleViewportTouchEnd with better edit mode handling
 function handleViewportTouchEnd(e) {
     console.log('DEBUG: handleViewportTouchEnd() called');
     
@@ -743,8 +553,8 @@ function handleViewportTouchEnd(e) {
         const canvasX = (touch.clientX - rect.left) - viewportTransform.x;
         const canvasY = (touch.clientY - rect.top) - viewportTransform.y;
         
-        // Skip handle checking on mobile when using sliders
-        if (!isMobileDevice() && editingIcon) {
+        // CRITICAL: Check if we're ending a touch on a handle - if so, DON'T finish editing
+        if (editingIcon) {
             const handle = getIconEditHandle(editingIcon, canvasX, canvasY);
             console.log('DEBUG: Touch end - checking for handles, found:', handle);
             
@@ -752,6 +562,7 @@ function handleViewportTouchEnd(e) {
                 console.log('DEBUG: Touch ended on a handle - KEEPING edit mode active');
                 e.preventDefault();
                 e.stopPropagation();
+                // DON'T call finishIconEditing() - keep the icon in edit mode
                 return;
             }
         }
@@ -774,27 +585,30 @@ function handleViewportTouchEnd(e) {
                 // Tapped on room label for editing
                 e.preventDefault();
                 e.stopPropagation();
-                hideIconEditControls(); // Hide icon controls
                 startEditingElement(clickedElement);
                 return;
             }
         } else if (clickedElement && clickedElement.type === 'icon') {
-            // Tapped on icon - show appropriate controls (sliders for mobile, handles for desktop)
-            console.log('DEBUG: Tapped on icon, showing controls');
-            e.preventDefault();
-            e.stopPropagation();
-            finishEditing(); // Finish any text editing
-            if (isMobileDevice()) {
-                showIconEditControls(clickedElement);
-            } else {
+            // Check for icon edit handles
+            const handle = getIconEditHandle(clickedElement, canvasX, canvasY);
+            console.log('DEBUG: Handle check on touch end:', handle);
+            if (handle === 'rotate') {
+                // Already handled in touchstart
+                console.log('DEBUG: Rotate handle was already handled in touchstart');
+                return;
+            } else if (!handle) {
+                // Tapped on icon body - enter icon edit mode
+                console.log('DEBUG: Tapped on icon body, entering edit mode');
+                e.preventDefault();
+                e.stopPropagation();
                 editingIcon = clickedElement;
                 redrawCanvas();
+                return;
             }
-            return;
         } else {
             // Only finish editing if we tapped somewhere completely away from any elements
             console.log('DEBUG: Tapped elsewhere, finishing editing');
-            hideIconEditControls();
+            finishIconEditing();
             finishEditing();
         }
     }
@@ -828,7 +642,7 @@ function handleViewportTouchEnd(e) {
     }
 }
 
-// KEPT: THREE RESIZE MODES function
+// THREE RESIZE MODES: proportional, horizontal-only, vertical-only
 function handleIconResize(x, y) {
     if (!editingIcon || !resizeHandle) return;
     
@@ -900,36 +714,12 @@ function handleIconResize(x, y) {
     dragOffset.y = y;
 }
 
-// UPDATED: finishIconEditing function
-// REPLACE the existing finishIconEditing function with this:
 function finishIconEditing() {
     console.log('DEBUG: finishIconEditing() called');
-    hideIconEditControls(); // Hide slider controls
-    
-    // Automatically show the icons palette
-    const iconsPalette = document.getElementById('iconsPalette');
-    if (iconsPalette) {
-        // Hide all other palettes first
-        document.querySelectorAll('.one-of-bottom-pallets').forEach(p => p.classList.add('hidden'));
-        // Show icons palette
-        iconsPalette.classList.remove('hidden');
-        lastVisiblePalette = 'iconsPalette'; // Remember it's visible
-        
-        // Also update the button states
-        const paletteButtons = document.querySelectorAll('[data-palette]');
-        paletteButtons.forEach(btn => btn.classList.remove('active'));
-        const iconsBtn = document.getElementById('iconsBtn');
-        if (iconsBtn) {
-            iconsBtn.classList.add('active');
-        }
-    }
-    
     editingIcon = null;
     isResizing = false;
     isRotating = false;
     resizeHandle = null;
-    saveAction(); // Save the changes
-    redrawCanvas();
 }
 
 function updateViewportTransform() {
@@ -1005,15 +795,14 @@ function getEventPos(e) {
     return { x: canvasX, y: canvasY };
 }
 
-// UPDATED: handleCanvasClick function
 function handleCanvasClick(e) {
     console.log('DEBUG: handleCanvasClick() called');
     
     // Get the click position
     const pos = getEventPos(e);
     
-    // PRIORITY 1: Check for icon edit handles FIRST in edit mode (only on desktop)
-    if (isEditMode && editingIcon && !isMobileDevice()) {
+    // PRIORITY 1: Check for icon edit handles FIRST in edit mode
+    if (isEditMode && editingIcon) {
         const handle = getIconEditHandle(editingIcon, pos.x, pos.y);
         console.log('DEBUG: handleCanvasClick - checking for handles, found:', handle);
         
@@ -1050,23 +839,16 @@ function handleCanvasClick(e) {
         if (clickedElement && clickedElement.type === 'room') {
             e.preventDefault();
             e.stopPropagation();
-            hideIconEditControls(); // Hide icon controls
             startEditingElement(clickedElement);
         } else if (clickedElement && clickedElement.type === 'icon') {
             e.preventDefault();
             e.stopPropagation();
-            console.log('DEBUG: Icon clicked in edit mode');
-            finishEditing(); // Finish any text editing
-            // Use appropriate editing method based on device
-            if (isMobileDevice()) {
-                showIconEditControls(clickedElement);
-            } else {
-                editingIcon = clickedElement;
-                redrawCanvas();
-            }
+            console.log('DEBUG: Icon clicked in edit mode, setting as editingIcon');
+            editingIcon = clickedElement;
+            redrawCanvas();
         } else {
             // If clicking elsewhere, finish any current editing
-            hideIconEditControls();
+            finishIconEditing();
             finishEditing();
         }
     }
@@ -1104,8 +886,8 @@ function getElementAt(x, y) {
         
         console.log('DEBUG: Checking element', i, ':', element);
         
-        // In edit mode, check for icon edit handles first (only on desktop)
-        if (isEditMode && element.type === 'icon' && editingIcon === element && !isMobileDevice()) {
+        // In edit mode, check for icon edit handles first
+        if (isEditMode && element.type === 'icon' && editingIcon === element) {
             console.log('DEBUG: Checking icon edit handles for element', i);
             const handle = getIconEditHandle(element, x, y);
             if (handle === 'delete') {
@@ -1266,7 +1048,6 @@ function handleEditKeydown(e) {
     }
 }
 
-// UPDATED: finishEditing function
 function finishEditing() {
   if (!editingElement || !editInput) return;
   const newContent = editInput.value.trim();
@@ -1280,7 +1061,12 @@ function finishEditing() {
   if (contentChanged) {
     saveAction();
   }
-  // Don't automatically exit edit mode - let user control this
+  isEditMode = false;
+  const modeIndicator = document.getElementById('modeIndicator');
+  const editBtn = document.getElementById('editBtn');
+  modeIndicator.textContent = 'READY';
+  modeIndicator.classList.remove('edit-mode');
+  editBtn.classList.remove('active');
   redrawCanvas();
 }
 
@@ -1303,7 +1089,7 @@ function deleteElement(element) {
         placedElements.splice(index, 1);
         // If we were editing this element, clear the editing state
         if (editingIcon === element) {
-            hideIconEditControls(); // NEW: Hide slider controls
+            finishIconEditing();
         }
         redrawCanvas();
         saveAction();
@@ -1311,7 +1097,7 @@ function deleteElement(element) {
     }
 }
 
-// UPDATED: drawIconEditHandles function - simplified for slider integration
+// THREE RESIZE HANDLES with identical rendering for mobile and desktop
 function drawIconEditHandles(element) {
     console.log('DEBUG: drawIconEditHandles() called for element:', element);
     if (!isEditMode || editingIcon !== element) {
@@ -1319,25 +1105,11 @@ function drawIconEditHandles(element) {
         return;
     }
     
-    // If slider controls are visible (mobile), just show a simple border
-    const sliderControlsVisible = !document.getElementById('iconEditControls')?.classList.contains('hidden');
-    if (sliderControlsVisible) {
-        // Just draw a simple border around the editing icon
-        ctx.strokeStyle = '#3498db';
-        ctx.lineWidth = 3;
-        ctx.setLineDash([8, 4]);
-        ctx.strokeRect(element.x - 3, element.y - 3, element.width + 6, element.height + 6);
-        ctx.setLineDash([]);
-        console.log('DEBUG: Drew simple border for slider mode');
-        return;
-    }
-    
-    // Desktop mode - draw full handles
     const handleSize = 22;
     const deleteSize = 22;
     const rotateSize = 25;
     
-    console.log('DEBUG: Drawing full edit handles for desktop');
+    console.log('DEBUG: Drawing edit handles with sizes - handle:', handleSize, 'delete:', deleteSize, 'rotate:', rotateSize);
     
     // Draw red boundary around icon
     ctx.strokeStyle = '#e74c3c';
@@ -1588,7 +1360,7 @@ function undo() {
     if (historyIndex > 0) {
         historyIndex--;
         placedElements = JSON.parse(JSON.stringify(actionHistory[historyIndex]));
-        hideIconEditControls(); // NEW: Clear any icon editing state
+        finishIconEditing(); // Clear any icon editing state
         redrawCanvas();
         console.log('DEBUG: Undo performed');
     }
@@ -1598,7 +1370,7 @@ function redo() {
     if (historyIndex < actionHistory.length - 1) {
         historyIndex++;
         placedElements = JSON.parse(JSON.stringify(actionHistory[historyIndex]));
-        hideIconEditControls(); // NEW: Clear any icon editing state
+        finishIconEditing(); // Clear any icon editing state
         redrawCanvas();
         console.log('DEBUG: Redo performed');
     }
@@ -1645,7 +1417,6 @@ function hideCustomCursor() {
     }
 }
 
-// REPLACE the existing updateLegend function with this:
 function updateLegend() {
     let bedrooms = 0;
     let bathrooms = 0;
@@ -1654,12 +1425,10 @@ function updateLegend() {
             const label = element.content.toLowerCase();
             if (label.includes('bedroom')) {
                 bedrooms++;
-            } else if (label.includes('1/2 bath')) {
-                // Handle 1/2 bath first to avoid double counting
-                bathrooms += 0.5;
             } else if (label.includes('bath.m') || label.includes('bath')) {
-                // Only count as full bath if it's not already counted as 1/2 bath
                 bathrooms++;
+            } else if (label.includes('1/2 bath')) {
+                bathrooms += 0.5;
             }
         }
     });
@@ -1667,13 +1436,11 @@ function updateLegend() {
     document.getElementById('legendBathrooms').textContent = bathrooms;
 }
 
-
 function toggleLegend() {
     const legend = document.getElementById('summaryLegend');
     legend.classList.toggle('hidden');
 }
 
-// UPDATED: toggleEditMode function
 function toggleEditMode() {
     console.log('DEBUG: toggleEditMode() called, current isEditMode:', isEditMode);
     isEditMode = !isEditMode;
@@ -1682,7 +1449,7 @@ function toggleEditMode() {
     
     // Finish any current editing when toggling modes
     finishEditing();
-    hideIconEditControls(); // NEW: Hide icon edit controls
+    finishIconEditing();
     
     if (isEditMode) {
         modeIndicator.textContent = 'EDITING';

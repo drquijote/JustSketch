@@ -600,3 +600,154 @@ body {
     pointer-events: none;
     transform: translate(-50%, -50%);
 }
+/* Icon Edit Controls - Compact bottom position */
+.icon-edit-controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(240, 240, 240, 0.98);
+    border-top: 2px solid #3498db;
+    padding: 4px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.icon-edit-controls.hidden {
+    display: none !important;
+}
+
+.icon-edit-header {
+    text-align: center;
+    font-weight: bold;
+    color: #2c3e50;
+    font-size: 10px;
+    margin: 0;
+    padding: 2px;
+    background: rgba(52, 152, 219, 0.1);
+    border-radius: 2px;
+}
+
+.edit-control-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px;
+    margin: 0;
+}
+
+.edit-control-label {
+    font-size: 9px;
+    font-weight: 600;
+    color: #34495e;
+    min-width: 32px;
+    text-align: left;
+    margin: 0;
+    padding: 0;
+}
+
+.edit-slider {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: #bdc3c7;
+    outline: none;
+    -webkit-appearance: none;
+    margin: 0 3px;
+}
+
+.edit-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #3498db;
+    cursor: pointer;
+    border: 1px solid white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.edit-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #3498db;
+    cursor: pointer;
+    border: 1px solid white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.edit-value-display {
+    min-width: 24px;
+    text-align: center;
+    font-size: 8px;
+    font-weight: 600;
+    color: #7f8c8d;
+    background: white;
+    padding: 1px 2px;
+    border-radius: 2px;
+    border: 1px solid #bdc3c7;
+    margin: 0;
+}
+
+.edit-control-buttons {
+    display: flex;
+    gap: 3px;
+    margin: 2px 0 0 0;
+    justify-content: center;
+    padding: 0;
+}
+
+.edit-btn {
+    padding: 3px 8px;
+    border: none;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin: 0;
+}
+
+.edit-btn.done {
+    background: #27ae60;
+    color: white;
+}
+
+.edit-btn.done:hover {
+    background: #229954;
+}
+
+.edit-btn.delete {
+    background: #e74c3c;
+    color: white;
+}
+
+.edit-btn.delete:hover {
+    background: #c0392b;
+}
+
+.edit-btn.reset {
+    background: #95a5a6;
+    color: white;
+}
+
+.edit-btn.reset:hover {
+    background: #7f8c8d;
+}
+
+/* Rotation slider special styling */
+.rotation-row .edit-slider {
+    background: linear-gradient(90deg, #9b59b6, #8e44ad, #9b59b6);
+}
+
+.rotation-row .edit-slider::-webkit-slider-thumb {
+    background: #9b59b6;
+}
+
+.rotation-row .edit-slider::-moz-range-thumb {
+    background: #9b59b6;
+}

@@ -1,4 +1,4 @@
-// src/sketch.js - FIXED VERSION WITH WORKING ROTATION
+// src/sketch.js
 let canvas, ctx;
 let actionHistory = [];
 let historyIndex = -1;
@@ -31,9 +31,6 @@ let lastPanPoint = { x: 0, y: 0 };
 let isGesturing = false;
 let lastTouchCenter = { x: 0, y: 0 };
 
-// Image cache to prevent reloading
-const imageCache = {};
-
 // Mobile detection
 function isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
@@ -42,7 +39,6 @@ function isMobileDevice() {
 }
 
 function initCanvas() {
-    console.log('DEBUG: initCanvas() called');
     canvas = document.getElementById('drawingCanvas');
     ctx = canvas.getContext('2d');
     
@@ -72,7 +68,6 @@ function initCanvas() {
     updateViewportTransform();
     redrawCanvas();
     saveAction();
-    console.log('DEBUG: initCanvas() completed');
 }
 
 function setupPaletteListeners() {
@@ -110,90 +105,47 @@ function setupPaletteListeners() {
     });
 }
 
-// THREE RESIZE MODES: proportional, horizontal-only, vertical-only
+// Get icon edit handle at position
 function getIconEditHandle(icon, x, y) {
-    console.log('DEBUG: getIconEditHandle() called with coords:', x, y);
-    console.log('DEBUG: isEditMode:', isEditMode, 'editingIcon === icon:', editingIcon === icon);
+    if (!isEditMode || editingIcon !== icon) return null;
     
-    if (!isEditMode || editingIcon !== icon) {
-        console.log('DEBUG: Not in edit mode or wrong icon, returning null');
-        return null;
-    }
-    
-    // Use same sizing for both mobile and desktop - all handles now same size as delete button
-    const handleSize = 20; // Increased from 16 to match delete button
-    const deleteSize = 20; // Same for both mobile and desktop
-    const rotateSize = 20; // Same for both mobile and desktop
-    
-    console.log('DEBUG: Handle sizes - handleSize:', handleSize, 'deleteSize:', deleteSize, 'rotateSize:', rotateSize);
-    
+    const handleSize = 12;
+    const deleteSize = 20; // Bigger delete button
     const centerX = icon.x + icon.width / 2;
     const centerY = icon.y + icon.height / 2;
     
-    console.log('DEBUG: Icon bounds - x:', icon.x, 'y:', icon.y, 'width:', icon.width, 'height:', icon.height);
-    
-    // Delete button (upper-right, outside icon boundary) - Check this FIRST
-    const deleteX = icon.x + icon.width + 10;
-    const deleteY = icon.y - 10;
-    const deleteDist = Math.sqrt((x - deleteX) * (x - deleteX) + (y - deleteY) * (y - deleteY));
-    console.log('DEBUG: Delete button - position:', deleteX, deleteY, 'distance:', deleteDist, 'threshold:', deleteSize/2);
-    if (deleteDist <= deleteSize/2) {
-        console.log('DEBUG: DELETE HANDLE DETECTED!');
+    // Delete button (upper-right, outside icon boundary) - bigger hit area
+    const deleteX = icon.x + icon.width + 5; // Position outside icon boundary
+    const deleteY = icon.y - 5; // Position outside icon boundary
+    if (x >= deleteX - deleteSize/2 && x <= deleteX + deleteSize/2 && 
+        y >= deleteY - deleteSize/2 && y <= deleteY + deleteSize/2) {
         return 'delete';
     }
     
-    // Rotation button (upper-left corner) - THIS IS THE KEY ONE!
-    const rotateX = icon.x - 10;
-    const rotateY = icon.y - 10;
-    const rotateDist = Math.sqrt((x - rotateX) * (x - rotateX) + (y - rotateY) * (y - rotateY));
-    console.log('DEBUG: ROTATE button - position:', rotateX, rotateY, 'distance:', rotateDist, 'threshold:', rotateSize/2);
-    if (rotateDist <= rotateSize/2) {
-        console.log('DEBUG: *** ROTATE HANDLE DETECTED! ***');
+    // Rotation handle (top-center, extended) - bigger size
+    const rotateX = centerX;
+    const rotateY = icon.y - 30;
+    const rotateSize = 20; // Same size as delete button
+    if (x >= rotateX - rotateSize/2 && x <= rotateX + rotateSize/2 && 
+        y >= rotateY - rotateSize/2 && y <= rotateY + rotateSize/2) {
         return 'rotate';
     }
     
-    // THREE RESIZE HANDLES:
+    // Corner resize handles
+    const corners = [
+        { x: icon.x - handleSize/2, y: icon.y - handleSize/2, handle: 'nw' },
+        { x: icon.x + icon.width - handleSize/2, y: icon.y - handleSize/2, handle: 'ne' },
+        { x: icon.x - handleSize/2, y: icon.y + icon.height - handleSize/2, handle: 'sw' },
+        { x: icon.x + icon.width - handleSize/2, y: icon.y + icon.height - handleSize/2, handle: 'se' }
+    ];
     
-    // 1. Proportional resize (bottom-left corner)
-    const swCornerX = icon.x;
-    const swCornerY = icon.y + icon.height;
-    const swDistance = Math.sqrt(
-        (x - swCornerX) * (x - swCornerX) + 
-        (y - swCornerY) * (y - swCornerY)
-    );
-    console.log('DEBUG: Proportional resize - position:', swCornerX, swCornerY, 'distance:', swDistance, 'threshold:', handleSize/2);
-    if (swDistance <= handleSize/2) {
-        console.log('DEBUG: PROPORTIONAL RESIZE HANDLE DETECTED!');
-        return 'proportional';
+    for (const corner of corners) {
+        if (x >= corner.x && x <= corner.x + handleSize && 
+            y >= corner.y && y <= corner.y + handleSize) {
+            return corner.handle;
+        }
     }
     
-    // 2. Horizontal-only resize (middle-right edge)
-    const rightEdgeX = icon.x + icon.width;
-    const rightEdgeY = icon.y + icon.height / 2;
-    const rightDistance = Math.sqrt(
-        (x - rightEdgeX) * (x - rightEdgeX) + 
-        (y - rightEdgeY) * (y - rightEdgeY)
-    );
-    console.log('DEBUG: Horizontal resize - position:', rightEdgeX, rightEdgeY, 'distance:', rightDistance, 'threshold:', handleSize/2);
-    if (rightDistance <= handleSize/2) {
-        console.log('DEBUG: HORIZONTAL RESIZE HANDLE DETECTED!');
-        return 'horizontal';
-    }
-    
-    // 3. Vertical-only resize (bottom-center edge)
-    const bottomEdgeX = icon.x + icon.width / 2;
-    const bottomEdgeY = icon.y + icon.height;
-    const bottomDistance = Math.sqrt(
-        (x - bottomEdgeX) * (x - bottomEdgeX) + 
-        (y - bottomEdgeY) * (y - bottomEdgeY)
-    );
-    console.log('DEBUG: Vertical resize - position:', bottomEdgeX, bottomEdgeY, 'distance:', bottomDistance, 'threshold:', handleSize/2);
-    if (bottomDistance <= handleSize/2) {
-        console.log('DEBUG: VERTICAL RESIZE HANDLE DETECTED!');
-        return 'vertical';
-    }
-    
-    console.log('DEBUG: No handle detected at this position');
     return null;
 }
 
@@ -207,82 +159,43 @@ function angle(x1, y1, x2, y2) {
     return Math.atan2(y2 - y1, x2 - x1);
 }
 
-// New function to rotate icon 90 degrees clockwise
-// Fixed rotateIcon90Degrees function
-// Modified function to rotate 45 degrees instead of 90
-function rotateIcon90Degrees(icon) {
-    console.log('DEBUG: *** rotateIcon45Degrees() called! ***');
-    console.log('DEBUG: Icon before rotation:', icon);
-    
-    if (!icon) {
-        console.log('DEBUG: ERROR - No icon provided to rotateIcon45Degrees!');
-        return;
-    }
-    
-    // Initialize rotation if not set
-    if (typeof icon.rotation !== 'number') {
-        console.log('DEBUG: Icon rotation not set, initializing to 0');
-        icon.rotation = 0;
-    }
-    
-    const oldRotation = icon.rotation;
-    
-    // Add 45 degrees (π/4 radians) clockwise
-    icon.rotation += Math.PI / 4;
-    
-    // Normalize rotation to keep it between 0 and 2π
-    while (icon.rotation >= 2 * Math.PI) {
-        icon.rotation -= 2 * Math.PI;
-    }
-    while (icon.rotation < 0) {
-        icon.rotation += 2 * Math.PI;
-    }
-    
-    console.log('DEBUG: Rotation changed from', (oldRotation * 180 / Math.PI), 'degrees to', (icon.rotation * 180 / Math.PI), 'degrees');
-    console.log('DEBUG: Icon after rotation:', icon);
-    
-    // Force immediate redraw and save
-    console.log('DEBUG: About to redraw canvas and save action');
-    redrawCanvas();
-    saveAction();
-    console.log('DEBUG: *** rotateIcon45Degrees() completed! ***');
-}
-
 // Viewport pan handlers
 function handleViewportMouseDown(e) {
-    console.log('DEBUG: handleViewportMouseDown() called');
     if (e.button !== 0) return; // Only left mouse button
-
+    
     const viewport = document.getElementById('canvasViewport');
     const rect = viewport.getBoundingClientRect();
+    
+    // Calculate canvas coordinates
     const canvasX = (e.clientX - rect.left) - viewportTransform.x;
     const canvasY = (e.clientY - rect.top) - viewportTransform.y;
-    console.log('DEBUG: Mouse down at canvas coords:', canvasX, canvasY);
-
-    // PRIORITY 1: Check for icon edit handles on the CURRENTLY editing icon.
-    if (isEditMode && editingIcon) {
-        const handle = getIconEditHandle(editingIcon, canvasX, canvasY);
-        console.log('DEBUG: In edit mode, checking for handles on editingIcon. Handle detected:', handle);
-
+    
+    // Check for element at mouse position
+    const elementAtPoint = getElementAt(canvasX, canvasY);
+    
+    // PRIORITY 1: Check for icon edit handles in edit mode
+    if (isEditMode && elementAtPoint && elementAtPoint.type === 'icon') {
+        const handle = getIconEditHandle(elementAtPoint, canvasX, canvasY);
         if (handle) {
-            // CRITICAL: Prevent all further event processing for handle clicks
             e.preventDefault();
             e.stopPropagation();
-            e.stopImmediatePropagation();
-
             if (handle === 'delete') {
-                console.log('DEBUG: Delete handle clicked');
-                deleteElement(editingIcon);
+                deleteElement(elementAtPoint);
                 return;
             } else if (handle === 'rotate') {
-                console.log('DEBUG: *** ROTATE HANDLE CLICKED! ***');
-                rotateIcon90Degrees(editingIcon);
-                // CRITICAL: Don't set any flags that might interfere
+                isRotating = true;
+                isDragging = true;
+                editingIcon = elementAtPoint;
+                const centerX = elementAtPoint.x + elementAtPoint.width / 2;
+                const centerY = elementAtPoint.y + elementAtPoint.height / 2;
+                rotationStartAngle = angle(centerX, centerY, canvasX, canvasY);
+                elementStartRotation = elementAtPoint.rotation || 0;
+                canvas.style.cursor = 'grabbing';
                 return;
-            } else if (['proportional', 'horizontal', 'vertical'].includes(handle)) {
-                console.log('DEBUG: Resize handle clicked:', handle);
+            } else if (['nw', 'ne', 'sw', 'se'].includes(handle)) {
                 isResizing = true;
                 isDragging = true;
+                editingIcon = elementAtPoint;
                 resizeHandle = handle;
                 dragOffset.x = canvasX;
                 dragOffset.y = canvasY;
@@ -291,20 +204,16 @@ function handleViewportMouseDown(e) {
             }
         }
     }
-
-    // Original logic for other actions (dragging, panning)
-    const elementAtPoint = getElementAt(canvasX, canvasY);
-    console.log('DEBUG: Element at point:', elementAtPoint);
-
-    if (elementAtPoint && !editingIcon) {
-        console.log('DEBUG: Starting element dragging');
+    
+    // PRIORITY 2: Regular element dragging
+    if (elementAtPoint) {
         isDragging = true;
         draggedElement = elementAtPoint;
         dragOffset.x = canvasX - draggedElement.x;
         dragOffset.y = canvasY - draggedElement.y;
         canvas.style.cursor = 'grabbing';
-    } else if (!selectedElement && !editingIcon) {
-        console.log('DEBUG: Starting panning');
+    } else if (!selectedElement) {
+        // PRIORITY 3: Start panning only if no element interaction
         isPanning = true;
         lastPanPoint = { x: e.clientX, y: e.clientY };
         canvas.style.cursor = 'grabbing';
@@ -321,8 +230,17 @@ function handleViewportMouseMove(e) {
         const canvasY = (e.clientY - rect.top) - viewportTransform.y;
         handleIconResize(canvasX, canvasY);
         redrawCanvas();
-    } else if (isDragging && draggedElement && !isResizing && !isRotating && !editingIcon) {
-        // PRIORITY 2: Handle element dragging (DISABLED when editing an icon)
+    } else if (isRotating && editingIcon) {
+        // PRIORITY 2: Handle icon rotation
+        e.preventDefault();
+        const viewport = document.getElementById('canvasViewport');
+        const rect = viewport.getBoundingClientRect();
+        const canvasX = (e.clientX - rect.left) - viewportTransform.x;
+        const canvasY = (e.clientY - rect.top) - viewportTransform.y;
+        handleIconRotation(canvasX, canvasY);
+        redrawCanvas();
+    } else if (isDragging && draggedElement && !isResizing && !isRotating) {
+        // PRIORITY 3: Handle element dragging
         const viewport = document.getElementById('canvasViewport');
         const rect = viewport.getBoundingClientRect();
         const canvasX = (e.clientX - rect.left) - viewportTransform.x;
@@ -330,8 +248,8 @@ function handleViewportMouseMove(e) {
         draggedElement.x = canvasX - dragOffset.x;
         draggedElement.y = canvasY - dragOffset.y;
         redrawCanvas();
-    } else if (isPanning && !isDragging && !isResizing && !isRotating && !editingIcon) {
-        // PRIORITY 3: Handle panning (DISABLED when editing an icon)
+    } else if (isPanning && !isDragging && !isResizing && !isRotating) {
+        // PRIORITY 4: Handle panning
         const dx = e.clientX - lastPanPoint.x;
         const dy = e.clientY - lastPanPoint.y;
         viewportTransform.x += dx;
@@ -343,7 +261,6 @@ function handleViewportMouseMove(e) {
 }
 
 function handleViewportMouseUp(e) {
-    console.log('DEBUG: handleViewportMouseUp() called');
     // Save action if we were doing any modification
     if ((isDragging && draggedElement) || isResizing || isRotating) {
         saveAction();
@@ -395,93 +312,93 @@ function handleWheel(e) {
     }, 500); // Wait 500ms after last wheel event
 }
 
-// FIXED handleViewportTouchStart - Three resize modes
 function handleViewportTouchStart(e) {
-    console.log('DEBUG: handleViewportTouchStart() called with', e.touches.length, 'touches');
-    
     if (e.touches.length === 1) {
+        // Single touch
         const touch = e.touches[0];
         const viewport = document.getElementById('canvasViewport');
         const rect = viewport.getBoundingClientRect();
         
+        // Calculate canvas coordinates
         const canvasX = (touch.clientX - rect.left) - viewportTransform.x;
         const canvasY = (touch.clientY - rect.top) - viewportTransform.y;
         
-        console.log('DEBUG: Touch at canvas coords:', canvasX, canvasY);
-
-        // PRIORITY 1: Check for icon edit handles on the CURRENTLY editing icon.
-        if (isEditMode && editingIcon) {
-            const handle = getIconEditHandle(editingIcon, canvasX, canvasY);
-            console.log('DEBUG: Touch - checking for handles on editingIcon. Handle detected:', handle);
-            
-            if (handle) {
-                // CRITICAL: Prevent all further event processing for handle touches
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-
-                if (handle === 'delete') {
-                    console.log('DEBUG: Delete handle touched');
-                    deleteElement(editingIcon);
-                } else if (handle === 'rotate') {
-                    console.log('DEBUG: *** ROTATE HANDLE TOUCHED! ***');
-                    rotateIcon90Degrees(editingIcon);
-                    // CRITICAL: Don't set any flags that might interfere
-                } else if (['proportional', 'horizontal', 'vertical'].includes(handle)) {
-                    console.log('DEBUG: Resize handle touched:', handle);
-                    isResizing = true;
-                    isDragging = true;
-                    resizeHandle = handle;
-                    dragOffset.x = canvasX;
-                    dragOffset.y = canvasY;
-                }
-                return; // Action handled, so we exit the function.
-            }
-        }
-        
+        // Check for element at touch point
         const elementAtPoint = getElementAt(canvasX, canvasY);
-        console.log('DEBUG: Element at touch point:', elementAtPoint);
         
-        if (isEditMode && elementAtPoint && elementAtPoint.type === 'icon') {
-            e.preventDefault();
-            editingIcon = elementAtPoint;
-            redrawCanvas();
-            return;
-        }
-
+        // In edit mode, prevent dragging of room elements (except delete button)
         if (isEditMode && elementAtPoint && elementAtPoint.type === 'room') {
-            e.preventDefault();
-            const deleteSize = 20;
-            const deleteX = elementAtPoint.x + elementAtPoint.width + 5;
-            const deleteY = elementAtPoint.y - 2;
+            const deleteSize = 20; // Updated size
+            const deleteX = elementAtPoint.x + elementAtPoint.width + 5; // Updated position
+            const deleteY = elementAtPoint.y - 2; // Updated position
+            
+            // Check if touching delete button area (circular hit detection)
             const centerX = deleteX + deleteSize/2;
             const centerY = deleteY + deleteSize/2;
             const distance = Math.sqrt((canvasX - centerX) * (canvasX - centerX) + (canvasY - centerY) * (canvasY - centerY));
+            
             if (distance <= deleteSize/2) {
+                e.preventDefault();
                 return;
             } else {
+                // Touching room label for editing - DON'T start dragging
+                e.preventDefault();
                 return;
             }
         }
         
-        if (!isEditMode && elementAtPoint && !editingIcon) {
+        // Check for icon edit handles in edit mode
+        if (isEditMode && elementAtPoint && elementAtPoint.type === 'icon') {
+            const handle = getIconEditHandle(elementAtPoint, canvasX, canvasY);
+            if (handle) {
+                e.preventDefault();
+                if (handle === 'delete') {
+                    deleteElement(elementAtPoint);
+                    return;
+                } else if (handle === 'rotate') {
+                    isRotating = true;
+                    isDragging = true; // Set dragging to true to enable move events
+                    editingIcon = elementAtPoint;
+                    const centerX = elementAtPoint.x + elementAtPoint.width / 2;
+                    const centerY = elementAtPoint.y + elementAtPoint.height / 2;
+                    rotationStartAngle = angle(centerX, centerY, canvasX, canvasY);
+                    elementStartRotation = elementAtPoint.rotation || 0;
+                    return;
+                } else if (['nw', 'ne', 'sw', 'se'].includes(handle)) {
+                    isResizing = true;
+                    isDragging = true; // Set dragging to true to enable move events
+                    editingIcon = elementAtPoint;
+                    resizeHandle = handle;
+                    dragOffset.x = canvasX;
+                    dragOffset.y = canvasY;
+                    return;
+                }
+            }
+        }
+        
+        // Normal behavior - allow dragging when NOT in edit mode or when touching icons
+        if (elementAtPoint) {
             e.preventDefault();
             draggedElement = elementAtPoint;
             isDragging = true;
             dragOffset.x = canvasX - draggedElement.x;
             dragOffset.y = canvasY - draggedElement.y;
-        } else if (selectedElement && !isEditMode && !editingIcon) {
+        } else if (selectedElement) {
+            // Allow placing elements with single touch
             e.preventDefault();
         }
-    } else if (e.touches.length === 2 && !editingIcon) {
+        // Do NOT start panning with single touch
+    } else if (e.touches.length === 2) {
+        // Two touches - start panning only
         e.preventDefault();
         isGesturing = true;
         isPanning = false;
         isDragging = false;
         isResizing = false;
         isRotating = false;
-        draggedElement = null;
+        draggedElement = null; // Cancel any dragging
         
+        // Calculate center point for panning
         lastTouchCenter = {
             x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
             y: (e.touches[0].clientY + e.touches[1].clientY) / 2
@@ -502,18 +419,22 @@ function handleViewportTouchMove(e) {
         if (isResizing && editingIcon && resizeHandle) {
             // Handle icon resizing
             e.preventDefault();
-            console.log('DEBUG: Resizing icon with handle:', resizeHandle);
             handleIconResize(canvasX, canvasY);
             redrawCanvas();
-        } else if (isDragging && draggedElement && !editingIcon) {
-            // Single touch dragging an element (DISABLED when editing an icon)
+        } else if (isRotating && editingIcon) {
+            // Handle icon rotation
+            e.preventDefault();
+            handleIconRotation(canvasX, canvasY);
+            redrawCanvas();
+        } else if (isDragging && draggedElement) {
+            // Single touch dragging an element
             e.preventDefault();
             draggedElement.x = canvasX - dragOffset.x;
             draggedElement.y = canvasY - dragOffset.y;
             redrawCanvas();
         }
-    } else if (e.touches.length === 2 && isGesturing && !editingIcon) {
-        // Two touches - pan only (DISABLED when editing an icon)
+    } else if (e.touches.length === 2 && isGesturing) {
+        // Two touches - pan only
         e.preventDefault();
         
         // If we were doing something else, stop it
@@ -542,13 +463,9 @@ function handleViewportTouchMove(e) {
     }
 }
 
-// FIXED handleViewportTouchEnd with better edit mode handling
 function handleViewportTouchEnd(e) {
-    console.log('DEBUG: handleViewportTouchEnd() called');
-    
     // Handle edit mode touch interactions
     if (isEditMode && e.changedTouches.length > 0 && !isDragging && !isResizing && !isRotating) {
-        console.log('DEBUG: Handling edit mode touch end');
         const touch = e.changedTouches[0];
         const viewport = document.getElementById('canvasViewport');
         const rect = viewport.getBoundingClientRect();
@@ -558,19 +475,18 @@ function handleViewportTouchEnd(e) {
         const canvasY = (touch.clientY - rect.top) - viewportTransform.y;
         
         const clickedElement = getElementAt(canvasX, canvasY);
-        console.log('DEBUG: Clicked element on touch end:', clickedElement);
         
         if (clickedElement && clickedElement.type === 'room') {
-            // Check if tapping on delete button area
-            const deleteSize = 20;
-            const deleteX = clickedElement.x + clickedElement.width + 5;
-            const deleteY = clickedElement.y - 2;
+            // Check if tapping on delete button area (circular hit detection)
+            const deleteSize = 20; // Updated size
+            const deleteX = clickedElement.x + clickedElement.width + 5; // Updated position
+            const deleteY = clickedElement.y - 2; // Updated position
             const centerX = deleteX + deleteSize/2;
             const centerY = deleteY + deleteSize/2;
             const distance = Math.sqrt((canvasX - centerX) * (canvasX - centerX) + (canvasY - centerY) * (canvasY - centerY));
             
             if (distance <= deleteSize/2) {
-                // Delete button was handled
+                // Delete button was handled in getElementAt, do nothing
             } else {
                 // Tapped on room label for editing
                 e.preventDefault();
@@ -579,33 +495,21 @@ function handleViewportTouchEnd(e) {
                 return;
             }
         } else if (clickedElement && clickedElement.type === 'icon') {
-            // Check for icon edit handles
-            const handle = getIconEditHandle(clickedElement, canvasX, canvasY);
-            console.log('DEBUG: Handle check on touch end:', handle);
-            if (handle === 'rotate') {
-                // Already handled in touchstart
-                console.log('DEBUG: Rotate handle was already handled in touchstart');
-                return;
-            } else if (!handle) {
-                // Tapped on icon body - enter icon edit mode
-                console.log('DEBUG: Tapped on icon body, entering edit mode');
-                e.preventDefault();
-                e.stopPropagation();
-                editingIcon = clickedElement;
-                redrawCanvas();
-                return;
-            }
+            // Tapped on icon - enter icon edit mode
+            e.preventDefault();
+            e.stopPropagation();
+            editingIcon = clickedElement;
+            redrawCanvas();
+            return;
         } else {
             // Tapped elsewhere, finish any current editing
-            console.log('DEBUG: Tapped elsewhere, finishing editing');
             finishIconEditing();
             finishEditing();
         }
     }
     
-    // Handle placing elements (only when NOT in edit mode)
-    if (!isEditMode && selectedElement && e.touches.length === 0 && !isDragging && !isResizing && !isRotating) {
-        console.log('DEBUG: Placing element from touch end');
+    if (selectedElement && e.touches.length === 0 && !isDragging && !isEditMode && !isResizing && !isRotating) {
+        // Place element with single tap (only when not in edit mode)
         e.preventDefault();
         const pos = getEventPos(e);
         placeElement(pos.x, pos.y);
@@ -614,7 +518,6 @@ function handleViewportTouchEnd(e) {
     if (e.touches.length === 0) {
         // All touches ended - save action if we were modifying
         if ((isDragging && draggedElement) || isResizing || isRotating) {
-            console.log('DEBUG: Saving action after touch interaction');
             saveAction();
         }
         
@@ -632,71 +535,48 @@ function handleViewportTouchEnd(e) {
     }
 }
 
-// THREE RESIZE MODES: proportional, horizontal-only, vertical-only
 function handleIconResize(x, y) {
     if (!editingIcon || !resizeHandle) return;
     
     const dx = x - dragOffset.x;
     const dy = y - dragOffset.y;
     
-    // Store original values
+    // Store original values for constraint checking
     const originalWidth = editingIcon.width;
     const originalHeight = editingIcon.height;
     const originalX = editingIcon.x;
     const originalY = editingIcon.y;
     
-    console.log('Resizing icon:', resizeHandle, 'dx:', dx, 'dy:', dy);
-    
     switch (resizeHandle) {
-        case 'proportional':
-            // Proportional scaling - maintains aspect ratio
-            // FIXED: Invert the logic so dragging outward makes it bigger
-            const aspectRatio = originalWidth / originalHeight;
-            
-            // Calculate distance from starting point
-            const totalMovement = Math.sqrt(dx * dx + dy * dy);
-            
-            // Determine if scaling up or down based on movement away from center
-            const centerX = originalX + originalWidth / 2;
-            const centerY = originalY + originalHeight / 2;
-            
-            // Calculate if moving away from or toward center
-            const startDistanceFromCenter = Math.sqrt(
-                (dragOffset.x - centerX) * (dragOffset.x - centerX) + 
-                (dragOffset.y - centerY) * (dragOffset.y - centerY)
-            );
-            const currentDistanceFromCenter = Math.sqrt(
-                (x - centerX) * (x - centerX) + 
-                (y - centerY) * (y - centerY)
-            );
-            
-            const isScalingUp = currentDistanceFromCenter > startDistanceFromCenter;
-            const scaleFactor = totalMovement / Math.max(originalWidth, originalHeight);
-            const scale = isScalingUp ? 1 + scaleFactor : 1 - scaleFactor;
-            
-            const newWidth = Math.max(20, originalWidth * scale);
-            const newHeight = Math.max(20, originalHeight * scale);
-            
-            editingIcon.width = newWidth;
-            editingIcon.height = newHeight;
-            
-            // Adjust position to keep bottom-left corner fixed
-            editingIcon.x = originalX + (originalWidth - newWidth);
-            // Y position stays the same for SW corner
+        case 'nw':
+            // Northwest corner - resize from top-left
+            const newWidth_nw = Math.max(20, originalWidth - dx);
+            const newHeight_nw = Math.max(20, originalHeight - dy);
+            editingIcon.width = newWidth_nw;
+            editingIcon.height = newHeight_nw;
+            editingIcon.x = originalX + (originalWidth - newWidth_nw);
+            editingIcon.y = originalY + (originalHeight - newHeight_nw);
             break;
-            
-        case 'horizontal':
-            // Horizontal-only scaling - only width changes
-            const newWidthH = Math.max(20, originalWidth + dx);
-            editingIcon.width = newWidthH;
-            // Height and position stay the same
+        case 'ne':
+            // Northeast corner - resize from top-right
+            const newWidth_ne = Math.max(20, originalWidth + dx);
+            const newHeight_ne = Math.max(20, originalHeight - dy);
+            editingIcon.width = newWidth_ne;
+            editingIcon.height = newHeight_ne;
+            editingIcon.y = originalY + (originalHeight - newHeight_ne);
             break;
-            
-        case 'vertical':
-            // Vertical-only scaling - only height changes
-            const newHeightV = Math.max(20, originalHeight + dy);
-            editingIcon.height = newHeightV;
-            // Width and position stay the same
+        case 'sw':
+            // Southwest corner - resize from bottom-left
+            const newWidth_sw = Math.max(20, originalWidth - dx);
+            const newHeight_sw = Math.max(20, originalHeight + dy);
+            editingIcon.width = newWidth_sw;
+            editingIcon.height = newHeight_sw;
+            editingIcon.x = originalX + (originalWidth - newWidth_sw);
+            break;
+        case 'se':
+            // Southeast corner - resize from bottom-right
+            editingIcon.width = Math.max(20, originalWidth + dx);
+            editingIcon.height = Math.max(20, originalHeight + dy);
             break;
     }
     
@@ -704,8 +584,23 @@ function handleIconResize(x, y) {
     dragOffset.y = y;
 }
 
+function handleIconRotation(x, y) {
+    if (!editingIcon) return;
+    
+    const centerX = editingIcon.x + editingIcon.width / 2;
+    const centerY = editingIcon.y + editingIcon.height / 2;
+    const currentAngle = angle(centerX, centerY, x, y);
+    const deltaAngle = currentAngle - rotationStartAngle;
+    
+    // Apply rotation with some smoothing
+    editingIcon.rotation = elementStartRotation + deltaAngle;
+    
+    // Normalize rotation to keep it between 0 and 2π for consistency
+    while (editingIcon.rotation < 0) editingIcon.rotation += 2 * Math.PI;
+    while (editingIcon.rotation >= 2 * Math.PI) editingIcon.rotation -= 2 * Math.PI;
+}
+
 function finishIconEditing() {
-    console.log('DEBUG: finishIconEditing() called');
     editingIcon = null;
     isResizing = false;
     isRotating = false;
@@ -786,45 +681,13 @@ function getEventPos(e) {
 }
 
 function handleCanvasClick(e) {
-    console.log('DEBUG: handleCanvasClick() called');
-    
-    // Get the click position
-    const pos = getEventPos(e);
-    
-    // PRIORITY 1: Check for icon edit handles FIRST in edit mode
-    if (isEditMode && editingIcon) {
-        const handle = getIconEditHandle(editingIcon, pos.x, pos.y);
-        console.log('DEBUG: handleCanvasClick - checking for handles, found:', handle);
-        
-        if (handle) {
-            console.log('DEBUG: Handle detected in canvas click, preventing default behavior');
-            e.preventDefault();
-            e.stopPropagation();
-            
-            if (handle === 'delete') {
-                console.log('DEBUG: Delete handle in canvas click');
-                deleteElement(editingIcon);
-                return;
-            } else if (handle === 'rotate') {
-                console.log('DEBUG: ROTATE HANDLE in canvas click - IGNORING (already handled in mousedown)');
-                // DON'T call rotateIcon90Degrees here - it was already called in mousedown
-                return;
-            } else if (['proportional', 'horizontal', 'vertical'].includes(handle)) {
-                console.log('DEBUG: Resize handle in canvas click:', handle);
-                // Don't do anything here - resize is handled in mouse down/move
-                return;
-            }
-        }
-    }
-    
-    // Only proceed with normal click behavior if no handles were clicked
     if (selectedElement && !isPanning && !isDragging && !isResizing && !isRotating) {
+        const pos = getEventPos(e);
         placeElement(pos.x, pos.y);
     } else if (isEditMode && !isPanning && !isDragging && !isResizing && !isRotating) {
         // In edit mode, check if clicking on a room label or icon
+        const pos = getEventPos(e);
         const clickedElement = getElementAt(pos.x, pos.y);
-        
-        console.log('DEBUG: Canvas click in edit mode, element:', clickedElement);
         
         if (clickedElement && clickedElement.type === 'room') {
             e.preventDefault();
@@ -833,7 +696,6 @@ function handleCanvasClick(e) {
         } else if (clickedElement && clickedElement.type === 'icon') {
             e.preventDefault();
             e.stopPropagation();
-            console.log('DEBUG: Icon clicked in edit mode, setting as editingIcon');
             editingIcon = clickedElement;
             redrawCanvas();
         } else {
@@ -864,24 +726,16 @@ function placeElement(x, y) {
     hideCustomCursor();
     redrawCanvas();
     saveAction();
-    console.log('DEBUG: Element placed:', newElement);
 }
 
 function getElementAt(x, y) {
-    console.log('DEBUG: getElementAt() called with coords:', x, y);
-    console.log('DEBUG: Total placed elements:', placedElements.length);
-    
     for (let i = placedElements.length - 1; i >= 0; i--) {
         const element = placedElements[i];
         
-        console.log('DEBUG: Checking element', i, ':', element);
-        
         // In edit mode, check for icon edit handles first
         if (isEditMode && element.type === 'icon' && editingIcon === element) {
-            console.log('DEBUG: Checking icon edit handles for element', i);
             const handle = getIconEditHandle(element, x, y);
             if (handle === 'delete') {
-                console.log('DEBUG: Delete handle detected, deleting element');
                 deleteElement(element);
                 return null;
             }
@@ -900,7 +754,6 @@ function getElementAt(x, y) {
             
             if (distance <= deleteSize/2) {
                 // Handle delete action
-                console.log('DEBUG: Room delete button clicked');
                 deleteElement(element);
                 return null; // Return null to prevent further processing
             }
@@ -909,11 +762,9 @@ function getElementAt(x, y) {
         // Check if clicking on the element itself
         if (x >= element.x && x <= element.x + element.width && 
             y >= element.y && y <= element.y + element.height) {
-            console.log('DEBUG: Element hit detected:', element);
             return element;
         }
     }
-    console.log('DEBUG: No element found at coordinates');
     return null;
 }
 
@@ -1073,7 +924,6 @@ function cleanupEditing() {
 }
 
 function deleteElement(element) {
-    console.log('DEBUG: deleteElement() called for:', element);
     const index = placedElements.indexOf(element);
     if (index > -1) {
         placedElements.splice(index, 1);
@@ -1083,24 +933,14 @@ function deleteElement(element) {
         }
         redrawCanvas();
         saveAction();
-        console.log('DEBUG: Element deleted successfully');
     }
 }
 
-// THREE RESIZE HANDLES with identical rendering for mobile and desktop
 function drawIconEditHandles(element) {
-    console.log('DEBUG: drawIconEditHandles() called for element:', element);
-    if (!isEditMode || editingIcon !== element) {
-        console.log('DEBUG: Not drawing handles - isEditMode:', isEditMode, 'editingIcon === element:', editingIcon === element);
-        return;
-    }
+    if (!isEditMode || editingIcon !== element) return;
     
-    // Use same sizing for both mobile and desktop - all handles now same size as delete button
-    const handleSize = 20; // Increased from 16 to match delete button
-    const deleteSize = 20; // Same for both mobile and desktop
-    const rotateSize = 20; // Same for both mobile and desktop
-    
-    console.log('DEBUG: Drawing edit handles with sizes - handle:', handleSize, 'delete:', deleteSize, 'rotate:', rotateSize);
+    const handleSize = 12;
+    const deleteSize = 20; // Bigger delete button
     
     // Draw red boundary around icon
     ctx.strokeStyle = '#e74c3c';
@@ -1109,126 +949,98 @@ function drawIconEditHandles(element) {
     ctx.strokeRect(element.x - 2, element.y - 2, element.width + 4, element.height + 4);
     ctx.setLineDash([]);
     
-    // 1. PROPORTIONAL RESIZE HANDLE (bottom-left corner) - BLUE
-    const swCorner = { x: element.x, y: element.y + element.height };
+    // Draw corner resize handles with hover effect styling
+    const corners = [
+        { x: element.x - handleSize/2, y: element.y - handleSize/2, label: 'NW' },
+        { x: element.x + element.width - handleSize/2, y: element.y - handleSize/2, label: 'NE' },
+        { x: element.x - handleSize/2, y: element.y + element.height - handleSize/2, label: 'SW' },
+        { x: element.x + element.width - handleSize/2, y: element.y + element.height - handleSize/2, label: 'SE' }
+    ];
     
-    ctx.fillStyle = '#3498db'; // Blue for proportional
-    ctx.beginPath();
-    ctx.arc(swCorner.x, swCorner.y, handleSize/2, 0, Math.PI * 2);
-    ctx.fill();
+    corners.forEach(corner => {
+        // Draw handle background
+        ctx.fillStyle = '#3498db';
+        ctx.fillRect(corner.x, corner.y, handleSize, handleSize);
+        
+        // Draw handle border
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(corner.x, corner.y, handleSize, handleSize);
+        
+        // Draw resize arrows in corner
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+        const centerX = corner.x + handleSize/2;
+        const centerY = corner.y + handleSize/2;
+        const arrowSize = 3;
+        
+        // Draw diagonal resize arrows based on corner
+        if (corner.label === 'NW' || corner.label === 'SE') {
+            // NW-SE diagonal arrows
+            ctx.beginPath();
+            ctx.moveTo(centerX - arrowSize, centerY - arrowSize);
+            ctx.lineTo(centerX + arrowSize, centerY + arrowSize);
+            ctx.moveTo(centerX + arrowSize, centerY + arrowSize);
+            ctx.lineTo(centerX + arrowSize - 2, centerY + arrowSize - 2);
+            ctx.moveTo(centerX - arrowSize, centerY - arrowSize);
+            ctx.lineTo(centerX - arrowSize + 2, centerY - arrowSize + 2);
+            ctx.stroke();
+        } else {
+            // NE-SW diagonal arrows
+            ctx.beginPath();
+            ctx.moveTo(centerX + arrowSize, centerY - arrowSize);
+            ctx.lineTo(centerX - arrowSize, centerY + arrowSize);
+            ctx.moveTo(centerX - arrowSize, centerY + arrowSize);
+            ctx.lineTo(centerX - arrowSize + 2, centerY + arrowSize - 2);
+            ctx.moveTo(centerX + arrowSize, centerY - arrowSize);
+            ctx.lineTo(centerX + arrowSize - 2, centerY - arrowSize + 2);
+            ctx.stroke();
+        }
+    });
     
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(swCorner.x, swCorner.y, handleSize/2, 0, Math.PI * 2);
-    ctx.stroke();
+    // Draw rotation handle (top-center, extended) - bigger size
+    const centerX = element.x + element.width / 2;
+    const rotateY = element.y - 30;
+    const rotateSize = 20; // Same size as delete button
     
-    // Draw diagonal arrows for proportional scaling
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    const arrowSize = 4;
-    
-    ctx.beginPath();
-    ctx.moveTo(swCorner.x + arrowSize, swCorner.y - arrowSize);
-    ctx.lineTo(swCorner.x - arrowSize, swCorner.y + arrowSize);
-    ctx.moveTo(swCorner.x - arrowSize, swCorner.y + arrowSize);
-    ctx.lineTo(swCorner.x - arrowSize + 2, swCorner.y + arrowSize - 2);
-    ctx.moveTo(swCorner.x + arrowSize, swCorner.y - arrowSize);
-    ctx.lineTo(swCorner.x + arrowSize - 2, swCorner.y - arrowSize + 2);
-    ctx.stroke();
-    
-    // 2. HORIZONTAL RESIZE HANDLE (middle-right edge) - GREEN
-    const rightEdge = { x: element.x + element.width, y: element.y + element.height / 2 };
-    
-    ctx.fillStyle = '#27ae60'; // Green for horizontal
-    ctx.beginPath();
-    ctx.arc(rightEdge.x, rightEdge.y, handleSize/2, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(rightEdge.x, rightEdge.y, handleSize/2, 0, Math.PI * 2);
-    ctx.stroke();
-    
-    // Draw horizontal arrows
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(rightEdge.x - arrowSize, rightEdge.y);
-    ctx.lineTo(rightEdge.x + arrowSize, rightEdge.y);
-    ctx.moveTo(rightEdge.x + arrowSize, rightEdge.y);
-    ctx.lineTo(rightEdge.x + arrowSize - 2, rightEdge.y - 2);
-    ctx.moveTo(rightEdge.x + arrowSize, rightEdge.y);
-    ctx.lineTo(rightEdge.x + arrowSize - 2, rightEdge.y + 2);
-    ctx.stroke();
-    
-    // 3. VERTICAL RESIZE HANDLE (bottom-center edge) - ORANGE
-    const bottomEdge = { x: element.x + element.width / 2, y: element.y + element.height };
-    
-    ctx.fillStyle = '#f39c12'; // Orange for vertical
-    ctx.beginPath();
-    ctx.arc(bottomEdge.x, bottomEdge.y, handleSize/2, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(bottomEdge.x, bottomEdge.y, handleSize/2, 0, Math.PI * 2);
-    ctx.stroke();
-    
-    // Draw vertical arrows
-    ctx.strokeStyle = 'white';
+    // Draw line from icon to rotation handle
+    ctx.strokeStyle = '#95a5a6';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(bottomEdge.x, bottomEdge.y - arrowSize);
-    ctx.lineTo(bottomEdge.x, bottomEdge.y + arrowSize);
-    ctx.moveTo(bottomEdge.x, bottomEdge.y + arrowSize);
-    ctx.lineTo(bottomEdge.x - 2, bottomEdge.y + arrowSize - 2);
-    ctx.moveTo(bottomEdge.x, bottomEdge.y + arrowSize);
-    ctx.lineTo(bottomEdge.x + 2, bottomEdge.y + arrowSize - 2);
+    ctx.moveTo(centerX, element.y);
+    ctx.lineTo(centerX, rotateY + rotateSize/2);
     ctx.stroke();
     
-    // Draw rotation button (upper-left corner) - PURPLE
-    const rotateX = element.x - 10;
-    const rotateY = element.y - 10;
-    
-    console.log('DEBUG: Drawing rotate button at position:', rotateX, rotateY);
-    
-    // Draw rotation button circle
+    // Draw rotation handle circle - bigger
     ctx.fillStyle = '#9b59b6';
     ctx.beginPath();
-    ctx.arc(rotateX, rotateY, rotateSize/2, 0, Math.PI * 2);
+    ctx.arc(centerX, rotateY, rotateSize/2, 0, Math.PI * 2);
     ctx.fill();
     
-    // Draw white border around rotation button
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(rotateX, rotateY, rotateSize/2, 0, Math.PI * 2);
-    ctx.stroke();
-    
-    // Draw rotation symbol (90-degree arrow)
+    // Draw white border around rotation handle
     ctx.strokeStyle = 'white';
     ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    
-    // Draw curved arrow showing 90-degree rotation
     ctx.beginPath();
-    ctx.arc(rotateX, rotateY, 6, -Math.PI/2, 0);
+    ctx.arc(centerX, rotateY, rotateSize/2, 0, Math.PI * 2);
     ctx.stroke();
     
-    // Draw arrow tip
+    // Draw rotation symbol - bigger
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(rotateX + 4, rotateY + 2);
-    ctx.lineTo(rotateX + 6, rotateY);
-    ctx.lineTo(rotateX + 6, rotateY + 4);
+    ctx.arc(centerX, rotateY, 6, 0, Math.PI * 1.5);
+    ctx.stroke();
+    // Arrow tip - bigger
+    ctx.beginPath();
+    ctx.moveTo(centerX - 4, rotateY - 6);
+    ctx.lineTo(centerX, rotateY - 8);
+    ctx.lineTo(centerX + 2, rotateY - 4);
     ctx.stroke();
     
-    // Draw delete button (upper-right, outside icon boundary) - RED
-    const deleteX = element.x + element.width + 10;
-    const deleteY = element.y - 10;
+    // Draw delete button (upper-right, outside icon boundary) - bigger size
+    const deleteX = element.x + element.width + 5; // Position outside icon boundary
+    const deleteY = element.y - 5; // Position outside icon boundary
     
     // Draw red circle background
     ctx.fillStyle = '#e74c3c';
@@ -1238,12 +1050,12 @@ function drawIconEditHandles(element) {
     
     // Draw white border around delete button
     ctx.strokeStyle = 'white';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(deleteX, deleteY, deleteSize/2, 0, Math.PI * 2);
     ctx.stroke();
     
-    // Draw white X
+    // Draw white X - bigger and thicker
     ctx.strokeStyle = 'white';
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
@@ -1254,20 +1066,18 @@ function drawIconEditHandles(element) {
     ctx.moveTo(deleteX + offset, deleteY - offset);
     ctx.lineTo(deleteX - offset, deleteY + offset);
     ctx.stroke();
-    
-    console.log('DEBUG: Finished drawing all edit handles');
 }
 
 function redrawCanvas() {
-    console.log('DEBUG: redrawCanvas() called');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Save the current context state
     ctx.save();
     
-    placedElements.forEach((element, index) => {
-        console.log('DEBUG: Drawing element', index, ':', element);
-        
+    // Store loaded images to prevent reloading
+    const imageCache = {};
+    
+    placedElements.forEach(element => {
         if (element.type === 'room') {
             const styling = element.styling;
             ctx.fillStyle = styling.backgroundColor || styling;
@@ -1323,39 +1133,32 @@ function redrawCanvas() {
                 ctx.stroke();
             }
         } else if (element.type === 'icon') {
-            // Draw icon with rotation
-            const drawRotatedIcon = (img) => {
-                ctx.save();
-                
-                // Apply rotation if present
-                if (element.rotation) {
-                    console.log('DEBUG: Applying rotation', element.rotation, 'radians (', (element.rotation * 180 / Math.PI), 'degrees)');
-                    const centerX = element.x + element.width / 2;
-                    const centerY = element.y + element.height / 2;
-                    ctx.translate(centerX, centerY);
-                    ctx.rotate(element.rotation);
-                    ctx.translate(-centerX, -centerY);
-                }
-                
-                ctx.drawImage(img, element.x, element.y, element.width, element.height);
-                ctx.restore();
-                
-                // Draw edit handles for icons in edit mode (outside of save/restore)
-                drawIconEditHandles(element);
-            };
+            ctx.save();
+            
+            // Apply rotation if present
+            if (element.rotation) {
+                const centerX = element.x + element.width / 2;
+                const centerY = element.y + element.height / 2;
+                ctx.translate(centerX, centerY);
+                ctx.rotate(element.rotation);
+                ctx.translate(-centerX, -centerY);
+            }
             
             if (!imageCache[element.content]) {
                 const img = new Image();
                 img.onload = () => {
+                    ctx.drawImage(img, element.x, element.y, element.width, element.height);
                     imageCache[element.content] = img;
-                    // Need to redraw the entire canvas when image loads
-                    redrawCanvas();
                 };
                 img.src = element.content;
-                // Don't draw anything yet - wait for onload
             } else {
-                drawRotatedIcon(imageCache[element.content]);
+                ctx.drawImage(imageCache[element.content], element.x, element.y, element.width, element.height);
             }
+            
+            ctx.restore();
+            
+            // Draw edit handles for icons in edit mode
+            drawIconEditHandles(element);
         }
     });
     
@@ -1363,14 +1166,12 @@ function redrawCanvas() {
     ctx.restore();
     
     updateLegend();
-    console.log('DEBUG: redrawCanvas() completed');
 }
 
 function saveAction() {
     historyIndex++;
     actionHistory = actionHistory.slice(0, historyIndex);
     actionHistory.push(JSON.parse(JSON.stringify(placedElements)));
-    console.log('DEBUG: Action saved, history length:', actionHistory.length);
 }
 
 function undo() {
@@ -1379,7 +1180,6 @@ function undo() {
         placedElements = JSON.parse(JSON.stringify(actionHistory[historyIndex]));
         finishIconEditing(); // Clear any icon editing state
         redrawCanvas();
-        console.log('DEBUG: Undo performed');
     }
 }
 
@@ -1389,7 +1189,6 @@ function redo() {
         placedElements = JSON.parse(JSON.stringify(actionHistory[historyIndex]));
         finishIconEditing(); // Clear any icon editing state
         redrawCanvas();
-        console.log('DEBUG: Redo performed');
     }
 }
 
@@ -1459,7 +1258,6 @@ function toggleLegend() {
 }
 
 function toggleEditMode() {
-    console.log('DEBUG: toggleEditMode() called, current isEditMode:', isEditMode);
     isEditMode = !isEditMode;
     const modeIndicator = document.getElementById('modeIndicator');
     const editBtn = document.getElementById('editBtn');
@@ -1472,12 +1270,10 @@ function toggleEditMode() {
         modeIndicator.textContent = 'EDITING';
         modeIndicator.classList.add('edit-mode');
         editBtn.classList.add('active');
-        console.log('DEBUG: Edit mode ENABLED');
     } else {
         modeIndicator.textContent = 'READY';
         modeIndicator.classList.remove('edit-mode');
         editBtn.classList.remove('active');
-        console.log('DEBUG: Edit mode DISABLED');
     }
     
     // Redraw to show/hide delete buttons and edit handles

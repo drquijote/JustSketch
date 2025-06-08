@@ -1165,7 +1165,11 @@ function startEditingElement(element) {
     
     editInput.style.left = screenX + 'px';
     editInput.style.top = screenY + 'px';
-    editInput.style.width = element.width + 'px';
+    
+    // CHANGE: Set a wider width during editing (enough for 4-5 words)
+    const editingWidth = Math.max(160, element.content.length * 8 + 40); // Wider for editing
+    editInput.style.width = editingWidth + 'px';
+    
     editInput.style.height = (element.height + 8) + 'px'; // Slightly taller for mobile
     editInput.style.fontSize = '16px'; // Always 16px to prevent zoom
     editInput.style.fontWeight = '600';

@@ -751,3 +751,33 @@ body {
 .rotation-row .edit-slider::-moz-range-thumb {
     background: #9b59b6;
 }
+
+/* ADD this to your existing style.css file */
+
+/* Drawing mode indicator styling */
+.mode-indicator.drawing-mode {
+  background: #27ae60;
+  color: white;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+/* Start button active state for drawing mode */
+#startBtn.active {
+  background-color: #27ae60;
+  color: white;
+  border-color: #229954;
+  font-weight: bold;
+}
+ 
+
+/* Add this to style.css for mobile visual feedback */
+.mobile-input-active {
+  border: 2px solid #3498db !important;
+  box-shadow: 0 0 8px rgba(52, 152, 219, 0.5);
+}

@@ -1,4 +1,7 @@
-// src/sketch.js - FIXED VERSION WITH WORKING ROTATION + SLIDER CONTROLS
+// src/sketch.js - FIXED VERSION WITH WORKING ROTATION + SLIDER CONTROLS + MODULAR INTEGRATION - NO CONSOLE SPAM
+import { AppState } from './state.js';
+import { CanvasManager } from './canvas.js';
+
 let canvas, ctx;
 let actionHistory = [];
 let historyIndex = -1;
@@ -42,14 +45,22 @@ function isMobileDevice() {
            (navigator.maxTouchPoints > 0);
 }
 
-function initCanvas() {
-    console.log('DEBUG: initCanvas() called');
-    canvas = document.getElementById('drawingCanvas');
-    ctx = canvas.getContext('2d');
+function initSketchModule() {
+    console.log('DEBUG: initSketchModule() called');
     
-    // Set canvas size
-    canvas.width = window.innerWidth * 2;
-    canvas.height = window.innerHeight * 2;
+    // Copy existing canvas and ctx references from AppState
+    canvas = AppState.canvas;
+    ctx = AppState.ctx;
+    
+    // Copy existing placedElements to AppState
+    AppState.placedElements = placedElements;
+    
+    // Copy existing history to AppState
+    AppState.actionHistory = actionHistory;
+    AppState.historyIndex = historyIndex;
+    
+    // Copy existing viewportTransform to AppState
+    AppState.viewportTransform = viewportTransform;
     
     // Set up viewport event listeners
     const viewport = document.getElementById('canvasViewport');
@@ -70,10 +81,121 @@ function initCanvas() {
     // Delay palette setup to ensure DOM is ready
     setTimeout(setupPaletteListeners, 100);
     
-    updateViewportTransform();
-    redrawCanvas();
-    saveAction();
-    console.log('DEBUG: initCanvas() completed');
+    CanvasManager.updateViewportTransform();
+    
+    // Listen for canvas redraw events
+    AppState.on('canvas:redraw:elements', () => {
+        redrawPlacedElements();
+    });
+    
+    console.log('DEBUG: initSketchModule() completed');
+}
+
+function redrawPlacedElements() {
+    // REMOVED: Debug logging that was spamming console during every redraw
+    
+    // Save the current context state
+    ctx.save();
+    
+    AppState.placedElements.forEach((element, index) => {
+        // REMOVED: Logging for each element during redraw - was causing spam
+        
+        if (element.type === 'room') {
+            const styling = element.styling;
+            ctx.fillStyle = styling.backgroundColor || styling;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.lineWidth = 1;
+            
+            // Draw rounded rectangle
+            const radius = 4;
+            ctx.beginPath();
+            ctx.roundRect(element.x, element.y, element.width, element.height, radius);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Draw text if not currently being edited
+            if (element !== editingElement) {
+                ctx.fillStyle = styling.color || 'white';
+                ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(element.content, element.x + element.width/2, element.y + element.height/2 + 4);
+            }
+            
+            // Draw delete button (red X) in edit mode - BIGGER and OUTSIDE to the right
+            if (isEditMode && element !== editingElement) {
+                const deleteSize = 20; // Increased from 16 to 20
+                const deleteX = element.x + element.width + 5; // Position outside to the right
+                const deleteY = element.y - 2; // Slightly adjusted vertical position
+                
+                // Draw red circle background
+                ctx.fillStyle = '#e74c3c';
+                ctx.beginPath();
+                ctx.arc(deleteX + deleteSize/2, deleteY + deleteSize/2, deleteSize/2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw white border around delete button
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(deleteX + deleteSize/2, deleteY + deleteSize/2, deleteSize/2, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                // Draw white X - bigger and thicker
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 3; // Increased line width
+                ctx.lineCap = 'round';
+                const offset = 6; // Increased offset for bigger X
+                const centerX = deleteX + deleteSize/2;
+                const centerY = deleteY + deleteSize/2;
+                ctx.beginPath();
+                ctx.moveTo(centerX - offset, centerY - offset);
+                ctx.lineTo(centerX + offset, centerY + offset);
+                ctx.moveTo(centerX + offset, centerY - offset);
+                ctx.lineTo(centerX - offset, centerY + offset);
+                ctx.stroke();
+            }
+        } else if (element.type === 'icon') {
+            // Draw icon with rotation
+            const drawRotatedIcon = (img) => {
+                ctx.save();
+                
+                // Apply rotation if present
+                if (element.rotation) {
+                    // REMOVED: Debug logging for rotation - was spamming console
+                    const centerX = element.x + element.width / 2;
+                    const centerY = element.y + element.height / 2;
+                    ctx.translate(centerX, centerY);
+                    ctx.rotate(element.rotation);
+                    ctx.translate(-centerX, -centerY);
+                }
+                
+                ctx.drawImage(img, element.x, element.y, element.width, element.height);
+                ctx.restore();
+                
+                // Draw edit handles for icons in edit mode (outside of save/restore)
+                drawIconEditHandles(element);
+            };
+            
+            if (!imageCache[element.content]) {
+                const img = new Image();
+                img.onload = () => {
+                    imageCache[element.content] = img;
+                    // Need to redraw the entire canvas when image loads
+                    CanvasManager.redraw();
+                };
+                img.src = element.content;
+                // Don't draw anything yet - wait for onload
+            } else {
+                drawRotatedIcon(imageCache[element.content]);
+            }
+        }
+    });
+    
+    // Restore the context state
+    ctx.restore();
+    
+    updateLegend();
+    // REMOVED: Completion logging that was spamming console
 }
 
 // UPDATED: setupPaletteListeners function to include slider controls
@@ -143,7 +265,7 @@ function setupIconEditControls() {
         editingIcon.width = originalIconProperties.width * scale;
         editingIcon.height = originalIconProperties.height * scale;
         scaleDisplay.textContent = scale.toFixed(1);
-        redrawCanvas();
+        CanvasManager.redraw();
     });
     
     // Width slider
@@ -152,7 +274,7 @@ function setupIconEditControls() {
         const widthScale = parseFloat(e.target.value);
         editingIcon.width = originalIconProperties.width * widthScale;
         widthDisplay.textContent = widthScale.toFixed(1);
-        redrawCanvas();
+        CanvasManager.redraw();
     });
     
     // Height slider
@@ -161,7 +283,7 @@ function setupIconEditControls() {
         const heightScale = parseFloat(e.target.value);
         editingIcon.height = originalIconProperties.height * heightScale;
         heightDisplay.textContent = heightScale.toFixed(1);
-        redrawCanvas();
+        CanvasManager.redraw();
     });
     
     // Rotation slider (0-7 representing 8 positions: 0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
@@ -171,7 +293,7 @@ function setupIconEditControls() {
         const rotation = step * 45; // 45 degree increments
         editingIcon.rotation = (rotation * Math.PI) / 180; // Convert to radians
         rotationDisplay.textContent = rotation + '°';
-        redrawCanvas();
+        CanvasManager.redraw();
     });
     
     // Reset button
@@ -200,7 +322,6 @@ function setupIconEditControls() {
 }
 
 // NEW: Show icon edit controls
-// Correct showIconEditControls function
 function showIconEditControls(icon) {
     editingIcon = icon;
     
@@ -258,7 +379,7 @@ function showIconEditControls(icon) {
         controls.classList.remove('hidden');
     }
     
-    redrawCanvas();
+    CanvasManager.redraw();
 }
 
 // NEW: Hide icon edit controls
@@ -272,7 +393,6 @@ function hideIconEditControls() {
 }
 
 // NEW: Reset icon to original properties
-// REPLACE the existing resetIconToOriginal function with this:
 function resetIconToOriginal() {
     if (!editingIcon || !originalIconProperties) return;
     
@@ -305,8 +425,8 @@ function resetIconToOriginal() {
         }
     }
     
-    redrawCanvas();
-    saveAction();
+    CanvasManager.redraw();
+    CanvasManager.saveAction();
 }
 
 // KEPT: Original THREE RESIZE MODES function (for backward compatibility)
@@ -418,8 +538,8 @@ function rotateIcon90Degrees(icon) {
     
     // Force immediate redraw and save
     console.log('DEBUG: About to redraw canvas and save action');
-    redrawCanvas();
-    saveAction();
+    CanvasManager.redraw();
+    CanvasManager.saveAction();
     console.log('DEBUG: *** rotateIcon90Degrees() completed! ***');
 }
 
@@ -430,8 +550,8 @@ function handleViewportMouseDown(e) {
 
     const viewport = document.getElementById('canvasViewport');
     const rect = viewport.getBoundingClientRect();
-    const canvasX = (e.clientX - rect.left) - viewportTransform.x;
-    const canvasY = (e.clientY - rect.top) - viewportTransform.y;
+    const canvasX = (e.clientX - rect.left) - AppState.viewportTransform.x;
+    const canvasY = (e.clientY - rect.top) - AppState.viewportTransform.y;
     console.log('DEBUG: Mouse down at canvas coords:', canvasX, canvasY);
 
     // PRIORITY 1: Check for icon edit handles on the CURRENTLY editing icon (only if sliders not shown)
@@ -492,28 +612,28 @@ function handleViewportMouseMove(e) {
         e.preventDefault();
         const viewport = document.getElementById('canvasViewport');
         const rect = viewport.getBoundingClientRect();
-        const canvasX = (e.clientX - rect.left) - viewportTransform.x;
-        const canvasY = (e.clientY - rect.top) - viewportTransform.y;
+        const canvasX = (e.clientX - rect.left) - AppState.viewportTransform.x;
+        const canvasY = (e.clientY - rect.top) - AppState.viewportTransform.y;
         handleIconResize(canvasX, canvasY);
-        redrawCanvas();
+        CanvasManager.redraw();
     } else if (isDragging && draggedElement && !isResizing && !isRotating && !editingIcon) {
         // PRIORITY 2: Handle element dragging (DISABLED when editing an icon)
         const viewport = document.getElementById('canvasViewport');
         const rect = viewport.getBoundingClientRect();
-        const canvasX = (e.clientX - rect.left) - viewportTransform.x;
-        const canvasY = (e.clientY - rect.top) - viewportTransform.y;
+        const canvasX = (e.clientX - rect.left) - AppState.viewportTransform.x;
+        const canvasY = (e.clientY - rect.top) - AppState.viewportTransform.y;
         draggedElement.x = canvasX - dragOffset.x;
         draggedElement.y = canvasY - dragOffset.y;
-        redrawCanvas();
+        CanvasManager.redraw();
     } else if (isPanning && !isDragging && !isResizing && !isRotating && !editingIcon) {
         // PRIORITY 3: Handle panning (DISABLED when editing an icon)
         const dx = e.clientX - lastPanPoint.x;
         const dy = e.clientY - lastPanPoint.y;
-        viewportTransform.x += dx;
-        viewportTransform.y += dy;
+        AppState.viewportTransform.x += dx;
+        AppState.viewportTransform.y += dy;
         lastPanPoint = { x: e.clientX, y: e.clientY };
-        updateViewportTransform();
-        redrawCanvas();
+        CanvasManager.updateViewportTransform();
+        CanvasManager.redraw();
     }
 }
 
@@ -521,7 +641,7 @@ function handleViewportMouseUp(e) {
     console.log('DEBUG: handleViewportMouseUp() called');
     // Save action if we were doing any modification
     if ((isDragging && draggedElement) || isResizing || isRotating) {
-        saveAction();
+        CanvasManager.saveAction();
     }
     
     // Reset all interaction states
@@ -548,16 +668,16 @@ function handleWheel(e) {
     
     // Much less aggressive zoom (was 0.9/1.1, now 0.97/1.03)
     const scaleFactor = e.deltaY > 0 ? 0.97 : 1.03;
-    const newScale = Math.max(0.1, Math.min(5, viewportTransform.scale * scaleFactor));
+    const newScale = Math.max(0.1, Math.min(5, AppState.viewportTransform.scale * scaleFactor));
     
     // Adjust position to zoom towards mouse cursor
-    const scaleChange = newScale - viewportTransform.scale;
-    viewportTransform.x -= mouseX * scaleChange;
-    viewportTransform.y -= mouseY * scaleChange;
-    viewportTransform.scale = newScale;
+    const scaleChange = newScale - AppState.viewportTransform.scale;
+    AppState.viewportTransform.x -= mouseX * scaleChange;
+    AppState.viewportTransform.y -= mouseY * scaleChange;
+    AppState.viewportTransform.scale = newScale;
     
-    updateViewportTransform();
-    redrawCanvas();
+    CanvasManager.updateViewportTransform();
+    CanvasManager.redraw();
     
     // Clear existing timeout
     if (wheelTimeout) {
@@ -579,8 +699,8 @@ function handleViewportTouchStart(e) {
         const viewport = document.getElementById('canvasViewport');
         const rect = viewport.getBoundingClientRect();
         
-        const canvasX = (touch.clientX - rect.left) - viewportTransform.x;
-        const canvasY = (touch.clientY - rect.top) - viewportTransform.y;
+        const canvasX = (touch.clientX - rect.left) - AppState.viewportTransform.x;
+        const canvasY = (touch.clientY - rect.top) - AppState.viewportTransform.y;
         
         console.log('DEBUG: Touch at canvas coords:', canvasX, canvasY);
 
@@ -605,8 +725,8 @@ function handleViewportTouchStart(e) {
                     isRotating = false;
                     // Revalidate editingIcon and reset touch context
                     setTimeout(() => {
-                        editingIcon = placedElements.find(el => el === editingIcon);
-                        redrawCanvas();
+                        editingIcon = AppState.placedElements.find(el => el === editingIcon);
+                        CanvasManager.redraw();
                     }, 10);
                 } else if (['proportional', 'horizontal', 'vertical'].includes(handle)) {
                     console.log('DEBUG: Resize handle touched:', handle);
@@ -630,7 +750,7 @@ function handleViewportTouchStart(e) {
                 showIconEditControls(elementAtPoint);
             } else {
                 editingIcon = elementAtPoint;
-                redrawCanvas();
+                CanvasManager.redraw();
             }
             return;
         }
@@ -682,21 +802,21 @@ function handleViewportTouchMove(e) {
         const rect = viewport.getBoundingClientRect();
         
         // Calculate canvas coordinates
-        const canvasX = (touch.clientX - rect.left) - viewportTransform.x;
-        const canvasY = (touch.clientY - rect.top) - viewportTransform.y;
+        const canvasX = (touch.clientX - rect.left) - AppState.viewportTransform.x;
+        const canvasY = (touch.clientY - rect.top) - AppState.viewportTransform.y;
         
         if (isResizing && editingIcon && resizeHandle) {
             // Handle icon resizing
             e.preventDefault();
             console.log('DEBUG: Resizing icon with handle:', resizeHandle);
             handleIconResize(canvasX, canvasY);
-            redrawCanvas();
+            CanvasManager.redraw();
         } else if (isDragging && draggedElement && !editingIcon) {
             // Single touch dragging an element (DISABLED when editing an icon)
             e.preventDefault();
             draggedElement.x = canvasX - dragOffset.x;
             draggedElement.y = canvasY - dragOffset.y;
-            redrawCanvas();
+            CanvasManager.redraw();
         }
     } else if (e.touches.length === 2 && isGesturing && !editingIcon) {
         // Two touches - pan only (DISABLED when editing an icon)
@@ -719,12 +839,12 @@ function handleViewportTouchMove(e) {
         // Pan based on center point movement
         const panDx = newCenter.x - lastTouchCenter.x;
         const panDy = newCenter.y - lastTouchCenter.y;
-        viewportTransform.x += panDx;
-        viewportTransform.y += panDy;
+        AppState.viewportTransform.x += panDx;
+        AppState.viewportTransform.y += panDy;
         
         lastTouchCenter = newCenter;
-        updateViewportTransform();
-        redrawCanvas();
+        CanvasManager.updateViewportTransform();
+        CanvasManager.redraw();
     }
 }
 
@@ -740,8 +860,8 @@ function handleViewportTouchEnd(e) {
         const rect = viewport.getBoundingClientRect();
         
         // Calculate canvas coordinates
-        const canvasX = (touch.clientX - rect.left) - viewportTransform.x;
-        const canvasY = (touch.clientY - rect.top) - viewportTransform.y;
+        const canvasX = (touch.clientX - rect.left) - AppState.viewportTransform.x;
+        const canvasY = (touch.clientY - rect.top) - AppState.viewportTransform.y;
         
         // Skip handle checking on mobile when using sliders
         if (!isMobileDevice() && editingIcon) {
@@ -788,7 +908,7 @@ function handleViewportTouchEnd(e) {
                 showIconEditControls(clickedElement);
             } else {
                 editingIcon = clickedElement;
-                redrawCanvas();
+                CanvasManager.redraw();
             }
             return;
         } else {
@@ -811,7 +931,7 @@ function handleViewportTouchEnd(e) {
         // All touches ended - save action if we were modifying
         if ((isDragging && draggedElement) || isResizing || isRotating) {
             console.log('DEBUG: Saving action after touch interaction');
-            saveAction();
+            CanvasManager.saveAction();
         }
         
         // Reset all states
@@ -901,7 +1021,6 @@ function handleIconResize(x, y) {
 }
 
 // UPDATED: finishIconEditing function
-// REPLACE the existing finishIconEditing function with this:
 function finishIconEditing() {
     console.log('DEBUG: finishIconEditing() called');
     hideIconEditControls(); // Hide slider controls
@@ -928,13 +1047,8 @@ function finishIconEditing() {
     isResizing = false;
     isRotating = false;
     resizeHandle = null;
-    saveAction(); // Save the changes
-    redrawCanvas();
-}
-
-function updateViewportTransform() {
-    const container = document.getElementById('canvasContainer');
-    container.style.transform = `translate(${viewportTransform.x}px, ${viewportTransform.y}px)`;
+    CanvasManager.saveAction(); // Save the changes
+    CanvasManager.redraw();
 }
 
 function selectElement(type, content, styling, alt = '') {
@@ -999,8 +1113,8 @@ function getEventPos(e) {
     }
     
     // Convert to canvas coordinates considering viewport transform
-    const canvasX = (clientX - rect.left) - viewportTransform.x;
-    const canvasY = (clientY - rect.top) - viewportTransform.y;
+    const canvasX = (clientX - rect.left) - AppState.viewportTransform.x;
+    const canvasY = (clientY - rect.top) - AppState.viewportTransform.y;
     
     return { x: canvasX, y: canvasY };
 }
@@ -1062,7 +1176,7 @@ function handleCanvasClick(e) {
                 showIconEditControls(clickedElement);
             } else {
                 editingIcon = clickedElement;
-                redrawCanvas();
+                CanvasManager.redraw();
             }
         } else {
             // If clicking elsewhere, finish any current editing
@@ -1087,20 +1201,20 @@ function placeElement(x, y) {
         height: selectedElement.type === 'icon' ? 45 : 16,
         rotation: 0 // Initialize rotation for all elements
     };
-    placedElements.push(newElement);
+    AppState.placedElements.push(newElement);
     selectedElement = null;
     hideCustomCursor();
-    redrawCanvas();
-    saveAction();
+    CanvasManager.redraw();
+    CanvasManager.saveAction();
     console.log('DEBUG: Element placed:', newElement);
 }
 
 function getElementAt(x, y) {
     console.log('DEBUG: getElementAt() called with coords:', x, y);
-    console.log('DEBUG: Total placed elements:', placedElements.length);
+    console.log('DEBUG: Total placed elements:', AppState.placedElements.length);
     
-    for (let i = placedElements.length - 1; i >= 0; i--) {
-        const element = placedElements[i];
+    for (let i = AppState.placedElements.length - 1; i >= 0; i--) {
+        const element = AppState.placedElements[i];
         
         console.log('DEBUG: Checking element', i, ':', element);
         
@@ -1160,8 +1274,8 @@ function startEditingElement(element) {
     // Calculate screen position
     const viewport = document.getElementById('canvasViewport');
     const rect = viewport.getBoundingClientRect();
-    const screenX = rect.left + viewportTransform.x + element.x;
-    const screenY = rect.top + viewportTransform.y + element.y;
+    const screenX = rect.left + AppState.viewportTransform.x + element.x;
+    const screenY = rect.top + AppState.viewportTransform.y + element.y;
     
     editInput.style.left = screenX + 'px';
     editInput.style.top = screenY + 'px';
@@ -1221,8 +1335,8 @@ function startEditingElement(element) {
     // Store reference for position updates
     editInput._updatePosition = () => {
         const rect = viewport.getBoundingClientRect();
-        const screenX = rect.left + viewportTransform.x + element.x;
-        const screenY = rect.top + viewportTransform.y + element.y;
+        const screenX = rect.left + AppState.viewportTransform.x + element.x;
+        const screenY = rect.top + AppState.viewportTransform.y + element.y;
         editInput.style.left = screenX + 'px';
         editInput.style.top = screenY + 'px';
     };
@@ -1282,10 +1396,10 @@ function finishEditing() {
   }
   cleanupEditing();
   if (contentChanged) {
-    saveAction();
+    CanvasManager.saveAction();
   }
   // Don't automatically exit edit mode - let user control this
-  redrawCanvas();
+  CanvasManager.redraw();
 }
 
 function cancelEditing() {
@@ -1302,24 +1416,23 @@ function cleanupEditing() {
 
 function deleteElement(element) {
     console.log('DEBUG: deleteElement() called for:', element);
-    const index = placedElements.indexOf(element);
+    const index = AppState.placedElements.indexOf(element);
     if (index > -1) {
-        placedElements.splice(index, 1);
+        AppState.placedElements.splice(index, 1);
         // If we were editing this element, clear the editing state
         if (editingIcon === element) {
             hideIconEditControls(); // NEW: Hide slider controls
         }
-        redrawCanvas();
-        saveAction();
+        CanvasManager.redraw();
+        CanvasManager.saveAction();
         console.log('DEBUG: Element deleted successfully');
     }
 }
 
 // UPDATED: drawIconEditHandles function - simplified for slider integration
 function drawIconEditHandles(element) {
-    console.log('DEBUG: drawIconEditHandles() called for element:', element);
+    // REMOVED: Debug logging that was spamming console during every redraw
     if (!isEditMode || editingIcon !== element) {
-        console.log('DEBUG: Not drawing handles - isEditMode:', isEditMode, 'editingIcon === element:', editingIcon === element);
         return;
     }
     
@@ -1332,7 +1445,7 @@ function drawIconEditHandles(element) {
         ctx.setLineDash([8, 4]);
         ctx.strokeRect(element.x - 3, element.y - 3, element.width + 6, element.height + 6);
         ctx.setLineDash([]);
-        console.log('DEBUG: Drew simple border for slider mode');
+        // REMOVED: Debug logging
         return;
     }
     
@@ -1341,7 +1454,7 @@ function drawIconEditHandles(element) {
     const deleteSize = 22;
     const rotateSize = 25;
     
-    console.log('DEBUG: Drawing full edit handles for desktop');
+    // REMOVED: Debug logging that was spamming console
     
     // Draw red boundary around icon
     ctx.strokeStyle = '#e74c3c';
@@ -1424,7 +1537,7 @@ function drawIconEditHandles(element) {
     const rotateX = element.x + rotateOffsetX;
     const rotateY = element.y + rotateOffsetY;
     
-    console.log('DEBUG: Drawing rotate button at fixed position:', rotateX, rotateY);
+    // REMOVED: Debug logging for rotate button position
     
     ctx.fillStyle = '#9b59b6';
     ctx.beginPath();
@@ -1470,142 +1583,7 @@ function drawIconEditHandles(element) {
     ctx.lineTo(deleteX - offset, deleteY + offset);
     ctx.stroke();
     
-    console.log('DEBUG: Finished drawing all edit handles');
-}
-
-function redrawCanvas() {
-    console.log('DEBUG: redrawCanvas() called');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Save the current context state
-    ctx.save();
-    
-    placedElements.forEach((element, index) => {
-        console.log('DEBUG: Drawing element', index, ':', element);
-        
-        if (element.type === 'room') {
-            const styling = element.styling;
-            ctx.fillStyle = styling.backgroundColor || styling;
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-            ctx.lineWidth = 1;
-            
-            // Draw rounded rectangle
-            const radius = 4;
-            ctx.beginPath();
-            ctx.roundRect(element.x, element.y, element.width, element.height, radius);
-            ctx.fill();
-            ctx.stroke();
-            
-            // Draw text if not currently being edited
-            if (element !== editingElement) {
-                ctx.fillStyle = styling.color || 'white';
-                ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText(element.content, element.x + element.width/2, element.y + element.height/2 + 4);
-            }
-            
-            // Draw delete button (red X) in edit mode - BIGGER and OUTSIDE to the right
-            if (isEditMode && element !== editingElement) {
-                const deleteSize = 20; // Increased from 16 to 20
-                const deleteX = element.x + element.width + 5; // Position outside to the right
-                const deleteY = element.y - 2; // Slightly adjusted vertical position
-                
-                // Draw red circle background
-                ctx.fillStyle = '#e74c3c';
-                ctx.beginPath();
-                ctx.arc(deleteX + deleteSize/2, deleteY + deleteSize/2, deleteSize/2, 0, Math.PI * 2);
-                ctx.fill();
-                
-                // Draw white border around delete button
-                ctx.strokeStyle = 'white';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(deleteX + deleteSize/2, deleteY + deleteSize/2, deleteSize/2, 0, Math.PI * 2);
-                ctx.stroke();
-                
-                // Draw white X - bigger and thicker
-                ctx.strokeStyle = 'white';
-                ctx.lineWidth = 3; // Increased line width
-                ctx.lineCap = 'round';
-                const offset = 6; // Increased offset for bigger X
-                const centerX = deleteX + deleteSize/2;
-                const centerY = deleteY + deleteSize/2;
-                ctx.beginPath();
-                ctx.moveTo(centerX - offset, centerY - offset);
-                ctx.lineTo(centerX + offset, centerY + offset);
-                ctx.moveTo(centerX + offset, centerY - offset);
-                ctx.lineTo(centerX - offset, centerY + offset);
-                ctx.stroke();
-            }
-        } else if (element.type === 'icon') {
-            // Draw icon with rotation
-            const drawRotatedIcon = (img) => {
-                ctx.save();
-                
-                // Apply rotation if present
-                if (element.rotation) {
-                    console.log('DEBUG: Applying rotation', element.rotation, 'radians (', (element.rotation * 180 / Math.PI), 'degrees)');
-                    const centerX = element.x + element.width / 2;
-                    const centerY = element.y + element.height / 2;
-                    ctx.translate(centerX, centerY);
-                    ctx.rotate(element.rotation);
-                    ctx.translate(-centerX, -centerY);
-                }
-                
-                ctx.drawImage(img, element.x, element.y, element.width, element.height);
-                ctx.restore();
-                
-                // Draw edit handles for icons in edit mode (outside of save/restore)
-                drawIconEditHandles(element);
-            };
-            
-            if (!imageCache[element.content]) {
-                const img = new Image();
-                img.onload = () => {
-                    imageCache[element.content] = img;
-                    // Need to redraw the entire canvas when image loads
-                    redrawCanvas();
-                };
-                img.src = element.content;
-                // Don't draw anything yet - wait for onload
-            } else {
-                drawRotatedIcon(imageCache[element.content]);
-            }
-        }
-    });
-    
-    // Restore the context state
-    ctx.restore();
-    
-    updateLegend();
-    console.log('DEBUG: redrawCanvas() completed');
-}
-
-function saveAction() {
-    historyIndex++;
-    actionHistory = actionHistory.slice(0, historyIndex);
-    actionHistory.push(JSON.parse(JSON.stringify(placedElements)));
-    console.log('DEBUG: Action saved, history length:', actionHistory.length);
-}
-
-function undo() {
-    if (historyIndex > 0) {
-        historyIndex--;
-        placedElements = JSON.parse(JSON.stringify(actionHistory[historyIndex]));
-        hideIconEditControls(); // NEW: Clear any icon editing state
-        redrawCanvas();
-        console.log('DEBUG: Undo performed');
-    }
-}
-
-function redo() {
-    if (historyIndex < actionHistory.length - 1) {
-        historyIndex++;
-        placedElements = JSON.parse(JSON.stringify(actionHistory[historyIndex]));
-        hideIconEditControls(); // NEW: Clear any icon editing state
-        redrawCanvas();
-        console.log('DEBUG: Redo performed');
-    }
+    // REMOVED: Completion logging
 }
 
 function updateCustomCursor(e) {
@@ -1653,7 +1631,7 @@ function hideCustomCursor() {
 function updateLegend() {
     let bedrooms = 0;
     let bathrooms = 0;
-    placedElements.forEach(element => {
+    AppState.placedElements.forEach(element => {
         if (element.type === 'room') {
             const label = element.content.toLowerCase();
             if (label.includes('bedroom')) {
@@ -1670,7 +1648,6 @@ function updateLegend() {
     document.getElementById('legendBedrooms').textContent = bedrooms;
     document.getElementById('legendBathrooms').textContent = bathrooms;
 }
-
 
 function toggleLegend() {
     const legend = document.getElementById('summaryLegend');
@@ -1701,7 +1678,7 @@ function toggleEditMode() {
     }
     
     // Redraw to show/hide delete buttons and edit handles
-    redrawCanvas();
+    CanvasManager.redraw();
 }
 
 function showpallets(id) {
@@ -1714,16 +1691,109 @@ function showpallets(id) {
     }
 }
 
+// Updated showangleinput function in sketch.js
+// Replace the existing showangleinput function with this version
+ 
+
 function showangleinput() {
     const angleDisplay = document.getElementById('angleDisplay');
     const cornerArrows = document.querySelectorAll('.dir-btn.up-left, .dir-btn.up-right, .dir-btn.down-left, .dir-btn.down-right');
+    
     if (angleDisplay.classList.contains('hidden')) {
+        // Show angle input
         angleDisplay.classList.remove('hidden');
-        cornerArrows.forEach(arrow => { arrow.style.backgroundColor = '#FFB366'; });
+        cornerArrows.forEach(arrow => { 
+            arrow.style.backgroundColor = '#FFB366'; 
+        });
+        
+        // MOBILE FOCUS HANDLING - borrowed from drawing.js
+        // Temporarily suppress redraws during focus to prevent interference
+        let suppressRedrawForInput = true;
+        
+        // Setup mobile-specific attributes
+        if (isMobileDevice()) {
+            angleDisplay.setAttribute('readonly', 'readonly');
+            angleDisplay.setAttribute('inputmode', 'none');
+            angleDisplay.style.caretColor = 'transparent';
+            console.log('Angle field setup - mobile device detected, native keyboard prevented');
+        } else {
+            // Desktop - allow normal keyboard input (but keep readonly to match drawing.js pattern)
+            angleDisplay.setAttribute('readonly', 'readonly');
+            angleDisplay.setAttribute('inputmode', 'none');
+            angleDisplay.style.caretColor = 'transparent';
+            console.log('Angle field setup - desktop device');
+        }
+        
+        // Reset angle value
+        angleDisplay.value = '0.0';
+        
+        // IMPROVED FOCUS HANDLING with multiple strategies (from drawing.js)
+        setTimeout(() => {
+            if (isMobileDevice()) {
+                console.log('Mobile device detected, attempting angle input focus...');
+                
+                // Strategy 1: Immediate focus
+                angleDisplay.focus();
+                
+                // Strategy 2: Delayed focus
+                setTimeout(() => {
+                    console.log('Attempting delayed angle input focus...');
+                    angleDisplay.focus();
+                    angleDisplay.click(); // Simulate click
+                }, 100);
+                
+                // Strategy 3: Force selection
+                setTimeout(() => {
+                    if (document.activeElement === angleDisplay) {
+                        console.log('Angle input is focused, selecting text');
+                        angleDisplay.setSelectionRange(0, angleDisplay.value.length);
+                    } else {
+                        console.log('Angle input not focused, trying again...');
+                        angleDisplay.focus();
+                    }
+                }, 300);
+                
+                // Update visual active state (if you have this function)
+                if (typeof updateActiveInputVisuals === 'function') {
+                    updateActiveInputVisuals(angleDisplay);
+                }
+            } else {
+                // Desktop - immediate focus
+                angleDisplay.focus();
+                angleDisplay.select();
+            }
+            
+            // Re-enable redraws after focus is established
+            setTimeout(() => {
+                suppressRedrawForInput = false;
+            }, 400);
+        }, 50);
+        
     } else {
+        // Hide angle input
         angleDisplay.classList.add('hidden');
-        cornerArrows.forEach(arrow => { arrow.style.backgroundColor = '#3498db'; });
+        cornerArrows.forEach(arrow => { 
+            arrow.style.backgroundColor = '#3498db'; 
+        });
+        
+        // Refocus distance input when hiding angle input
+        const distanceInput = document.getElementById('distanceDisplay');
+        if (distanceInput) {
+            setTimeout(() => {
+                distanceInput.focus();
+                if (!isMobileDevice()) {
+                    distanceInput.select();
+                }
+                
+                // Update visual active state (if you have this function)
+                if (typeof updateActiveInputVisuals === 'function') {
+                    updateActiveInputVisuals(distanceInput);
+                }
+            }, 50);
+        }
     }
 }
 
-export { showpallets, showangleinput, initCanvas, undo, redo, toggleLegend, toggleEditMode };
+
+
+export { showpallets, showangleinput, initSketchModule, toggleLegend, toggleEditMode };

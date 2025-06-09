@@ -1,4 +1,4 @@
-// src/state.js - Centralized Application State
+// src/state.js - FIXED VERSION - Reduced excessive event logging
 export const AppState = {
   // Canvas & Viewport (will be populated by canvas.js)
   canvas: null,
@@ -18,6 +18,10 @@ export const AppState = {
   drawnPolygons: [],     // NEW - Polygons/areas (for drawing.js)
   drawnLines: [],        // NEW - Individual lines (for drawing.js)
   
+  // NEW: Current drawing state (for undo support)
+  currentPolygonPoints: [], // Points being drawn right now
+  currentPolygonCounter: 0, // Point counter for current polygon
+  
   // History system
   actionHistory: [],
   historyIndex: -1,
@@ -28,12 +32,20 @@ export const AppState = {
   // Helper methods for event communication
   emit(eventType, data) {
     this.events.dispatchEvent(new CustomEvent(eventType, { detail: data }));
-    console.log(`AppState emitted: ${eventType}`, data);
+    // REMOVED: Excessive logging that was spamming console during blinking animations
+    // Only log important events, not every single redraw event
+    if (!eventType.includes('redraw')) {
+      console.log(`AppState emitted: ${eventType}`, data);
+    }
   },
   
   on(eventType, callback) {
     this.events.addEventListener(eventType, callback);
-    console.log(`AppState listener added for: ${eventType}`);
+    // REMOVED: Logging for every event listener - was causing spam
+    // Only log when setting up major event listeners
+    if (!eventType.includes('redraw')) {
+      console.log(`AppState listener added for: ${eventType}`);
+    }
   },
   
   // Helper to get current state snapshot
@@ -41,7 +53,9 @@ export const AppState = {
     return {
       placedElements: JSON.parse(JSON.stringify(this.placedElements)),
       drawnPolygons: JSON.parse(JSON.stringify(this.drawnPolygons)),
-      drawnLines: JSON.parse(JSON.stringify(this.drawnLines))
+      drawnLines: JSON.parse(JSON.stringify(this.drawnLines)),
+      currentPolygonPoints: JSON.parse(JSON.stringify(this.currentPolygonPoints)),
+      currentPolygonCounter: this.currentPolygonCounter
     };
   },
   
@@ -50,5 +64,7 @@ export const AppState = {
     this.placedElements = JSON.parse(JSON.stringify(snapshot.placedElements || []));
     this.drawnPolygons = JSON.parse(JSON.stringify(snapshot.drawnPolygons || []));
     this.drawnLines = JSON.parse(JSON.stringify(snapshot.drawnLines || []));
+    this.currentPolygonPoints = JSON.parse(JSON.stringify(snapshot.currentPolygonPoints || []));
+    this.currentPolygonCounter = snapshot.currentPolygonCounter || 0;
   }
 };

@@ -179,9 +179,11 @@
                     <button class="dir-btn down-right">↘</button>
                   </div>
                   
-                  <input class="angle-display draw-inputs hidden" id="angleDisplay" type="text" value="0"/>
-                  <input class="distance-display draw-inputs" id="distanceDisplay" type="text" value="0"/>
-                   
+         
+    <input class="angle-display draw-inputs hidden" id="angleDisplay" type="text" value="0"/>
+     <input class="distance-display draw-inputs" id="distanceDisplay" type="text" value="0"/>
+
+ 
                   <div class="numeric-keypad">
                     <button class="key-btn">1</button>
                     <button class="key-btn">2</button>
@@ -194,7 +196,7 @@
                     <button class="key-btn">9</button>
                     <button class="key-btn">0</button>
                     <button class="key-btn secondary">del</button>
-                    <button class="key-btn secondary" id='angle-btn' onclick="showangleinput()">angle</button>
+                    <button class="key-btn secondary" id='angle-btn'>angle</button>
                     <button class="key-btn secondary">clear</button>
                     <button class="key-btn close-btn">cls</button>
                   </div>
@@ -302,32 +304,32 @@
             <h3>Label Polygon</h3>
             <input id="polygonName" placeholder="e.g., Floor 1, Garage" type="text"/>
             <select id="polygonType">
-                <option value="living">Living Area (GLA area)</option>
-                <option value="garage">Garage (non-GLA)</option>
-                <option value="carport">Carport (Exclude from GLA)</option>
-                <option value="driveway">Driveway (Exclude from GLA)</option>
-                <option value="patio">Patio/Deck (Exclude from GLA)</option>
-                <option value="utility">Utility Room (Exclude from GLA)</option>
-                <option value="storage">Storage (Exclude from GLA)</option>
-                <option value="basement">Basement (Exclude from GLA)</option>
-                <option value="attic">Attic (Exclude from GLA)</option>
-                <option value="ADU">ADU (Exclude from GLA)</option>
-                <option value="ADU-1">ADU-1 (Exclude from GLA)</option>
-                <option value="ADU-2">ADU-2 (Exclude from GLA)</option>
-                <option value="ADU-3">ADU-3 (Exclude from GLA)</option>
-                <option value="ADU-4">ADU-4 (Exclude from GLA)</option>
-                <option value="UNIT-1">UNIT-1 (Include in GLA)</option>
-                <option value="UNIT-2">UNIT-2 (Include in GLA)</option>
-                <option value="UNIT-3">UNIT-3 (Include in GLA)</option>
-                <option value="UNIT-4">UNIT-4 (Include in GLA)</option>
-                <option value="other">Other</option>
-                <option value="uncovered_patio">Uncovered Patio (Exclude from GLA)</option>
+                <option value="living" data-gla="1">Living Area (GLA area)</option>
+                <option value="garage" data-gla="0">Garage (non-GLA)</option>
+                <option value="carport" data-gla="0">Carport (Exclude from GLA)</option>
+                <option value="driveway" data-gla="2">Driveway (Exclude from GLA)</option>
+                <option value="patio" data-gla="2">Patio/Deck (Exclude from GLA)</option>
+                <option value="utility" data-gla="0">Utility Room (Exclude from GLA)</option>
+                <option value="storage" data-gla="0">Storage (Exclude from GLA)</option>
+                <option value="basement" data-gla="0">Basement (Exclude from GLA)</option>
+                <option value="attic" data-gla="0">Attic (Exclude from GLA)</option>
+                <option value="ADU" data-gla="0">ADU (Exclude from GLA)</option>
+                <option value="ADU-1" data-gla="0">ADU-1 (Exclude from GLA)</option>
+                <option value="ADU-2" data-gla="0">ADU-2 (Exclude from GLA)</option>
+                <option value="ADU-3" data-gla="0">ADU-3 (Exclude from GLA)</option>
+                <option value="ADU-4" data-gla="0">ADU-4 (Exclude from GLA)</option>
+                <option value="UNIT-1" data-gla="1">UNIT-1 (Include in GLA)</option>
+                <option value="UNIT-2" data-gla="1">UNIT-2 (Include in GLA)</option>
+                <option value="UNIT-3" data-gla="1">UNIT-3 (Include in GLA)</option>
+                <option value="UNIT-4" data-gla="1">UNIT-4 (Include in GLA)</option>
+                <option value="other" data-gla="2">Other</option>
+                <option value="uncovered_patio" data-gla="2">Uncovered Patio (Exclude from GLA)</option>
                 <option value="uncovered_porch">Uncovered Porch (Exclude from GLA)</option>
-                <option value="storage_shed">Storage Shed (Exclude from GLA)</option>
-                <option value="covered_patio">Covered Patio (Exclude from GLA)</option>
-                <option value="covered_porch">Covered Porch (Exclude from GLA)</option>
-                <option value="car_port_1">1 Car Port (Exclude from GLA)</option>
-                <option value="car_port_2">2 Car Port (Exclude from GLA)</option>
+                <option value="storage_shed" data-gla="2">Storage Shed (Exclude from GLA)</option>
+                <option value="covered_patio" data-gla="2">Covered Patio (Exclude from GLA)</option>
+                <option value="covered_porch" data-gla="2">Covered Porch (Exclude from GLA)</option>
+                <option value="car_port_1" data-gla="0">1 Car Port (Exclude from GLA)</option>
+                <option value="car_port_2" data-gla="0">2 Car Port (Exclude from GLA)</option>
             </select>
             <label>
                 <input id="includeInGLA" type="checkbox"/> Include in Gross Living Area

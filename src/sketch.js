@@ -15,6 +15,7 @@ let isEditMode = false;
 let editingElement = null;
 let editInput = null;
 
+
 // Icon editing variables - UPDATED for slider controls
 let editingIcon = null;
 let isResizing = false;
@@ -63,20 +64,8 @@ function initSketchModule() {
     AppState.viewportTransform = viewportTransform;
     
     // Set up viewport event listeners
-    const viewport = document.getElementById('canvasViewport');
-    
-    // Mouse events for panning
-    viewport.addEventListener('mousedown', handleViewportMouseDown);
-    viewport.addEventListener('mousemove', handleViewportMouseMove);
-    viewport.addEventListener('mouseup', handleViewportMouseUp);
-    
-    // Touch events for panning
-    viewport.addEventListener('touchstart', handleViewportTouchStart, { passive: false });
-    viewport.addEventListener('touchmove', handleViewportTouchMove, { passive: false });
-    viewport.addEventListener('touchend', handleViewportTouchEnd, { passive: false });
-    
-    // Canvas events for drawing/placing elements
-    canvas.addEventListener('click', handleCanvasClick);
+    // Activate the listeners for this module
+    activateSketchListeners();
     
     // Delay palette setup to ensure DOM is ready
     setTimeout(setupPaletteListeners, 100);
@@ -91,15 +80,15 @@ function initSketchModule() {
     console.log('DEBUG: initSketchModule() completed');
 }
 
+// In sketch.js, update the redrawPlacedElements function to handle area labels
+
+ // In sketch.js, update the redrawPlacedElements function to handle area labels
+
 function redrawPlacedElements() {
-    // REMOVED: Debug logging that was spamming console during every redraw
-    
     // Save the current context state
     ctx.save();
     
     AppState.placedElements.forEach((element, index) => {
-        // REMOVED: Logging for each element during redraw - was causing spam
-        
         if (element.type === 'room') {
             const styling = element.styling;
             ctx.fillStyle = styling.backgroundColor || styling;
@@ -123,9 +112,9 @@ function redrawPlacedElements() {
             
             // Draw delete button (red X) in edit mode - BIGGER and OUTSIDE to the right
             if (isEditMode && element !== editingElement) {
-                const deleteSize = 20; // Increased from 16 to 20
-                const deleteX = element.x + element.width + 5; // Position outside to the right
-                const deleteY = element.y - 2; // Slightly adjusted vertical position
+                const deleteSize = 20;
+                const deleteX = element.x + element.width + 5;
+                const deleteY = element.y - 2;
                 
                 // Draw red circle background
                 ctx.fillStyle = '#e74c3c';
@@ -142,9 +131,9 @@ function redrawPlacedElements() {
                 
                 // Draw white X - bigger and thicker
                 ctx.strokeStyle = 'white';
-                ctx.lineWidth = 3; // Increased line width
+                ctx.lineWidth = 3;
                 ctx.lineCap = 'round';
-                const offset = 6; // Increased offset for bigger X
+                const offset = 6;
                 const centerX = deleteX + deleteSize/2;
                 const centerY = deleteY + deleteSize/2;
                 ctx.beginPath();
@@ -154,14 +143,80 @@ function redrawPlacedElements() {
                 ctx.lineTo(centerX - offset, centerY + offset);
                 ctx.stroke();
             }
+        } else if (element.type === 'area_label') {
+            // *** NEW: Render area labels ***
+            ctx.save();
+            
+            // Get linked polygon for updated area calculation
+            const linkedPolygon = AppState.drawnPolygons.find(p => p.id === element.linkedPolygonId);
+            
+            if (linkedPolygon) {
+                // Update the area text in case it changed
+                element.areaData.sqftText = `${linkedPolygon.area.toFixed(1)} sq ft`;
+                element.areaData.areaText = linkedPolygon.label;
+            }
+            
+            // Draw area name (bold)
+            ctx.fillStyle = element.styling.color || '#000';
+            ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(element.areaData.areaText, element.x + element.width/2, element.y + element.height/2 - 8);
+            
+            // Draw square footage (normal weight)
+            ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+            ctx.fillText(element.areaData.sqftText, element.x + element.width/2, element.y + element.height/2 + 8);
+            
+            // Draw delete button in edit mode
+            if (isEditMode && element !== editingElement) {
+                const deleteSize = 20;
+                const deleteX = element.x + element.width + 5;
+                const deleteY = element.y - 2;
+                
+                // Draw red circle background
+                ctx.fillStyle = '#e74c3c';
+                ctx.beginPath();
+                ctx.arc(deleteX + deleteSize/2, deleteY + deleteSize/2, deleteSize/2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw white border around delete button
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(deleteX + deleteSize/2, deleteY + deleteSize/2, deleteSize/2, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                // Draw white X
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                const offset = 6;
+                const centerX = deleteX + deleteSize/2;
+                const centerY = deleteY + deleteSize/2;
+                ctx.beginPath();
+                ctx.moveTo(centerX - offset, centerY - offset);
+                ctx.lineTo(centerX + offset, centerY + offset);
+                ctx.moveTo(centerX + offset, centerY - offset);
+                ctx.lineTo(centerX - offset, centerY + offset);
+                ctx.stroke();
+            }
+            
+            // Visual feedback for dragging in normal mode
+            if (!isEditMode) {
+               // ctx.strokeStyle = 'rgba(52, 152, 219, 0.3)';
+                //ctx.lineWidth = 1;
+               // ctx.setLineDash([4, 4]);
+               //// ctx.strokeRect(element.x - 2, element.y - 2, element.width + 4, element.height + 4);
+               // ctx.setLineDash([]);
+            }
+            
+            ctx.restore();
         } else if (element.type === 'icon') {
-            // Draw icon with rotation
+            // Draw icon with rotation (existing icon code)
             const drawRotatedIcon = (img) => {
                 ctx.save();
                 
-                // Apply rotation if present
                 if (element.rotation) {
-                    // REMOVED: Debug logging for rotation - was spamming console
                     const centerX = element.x + element.width / 2;
                     const centerY = element.y + element.height / 2;
                     ctx.translate(centerX, centerY);
@@ -172,7 +227,6 @@ function redrawPlacedElements() {
                 ctx.drawImage(img, element.x, element.y, element.width, element.height);
                 ctx.restore();
                 
-                // Draw edit handles for icons in edit mode (outside of save/restore)
                 drawIconEditHandles(element);
             };
             
@@ -180,11 +234,9 @@ function redrawPlacedElements() {
                 const img = new Image();
                 img.onload = () => {
                     imageCache[element.content] = img;
-                    // Need to redraw the entire canvas when image loads
                     CanvasManager.redraw();
                 };
                 img.src = element.content;
-                // Don't draw anything yet - wait for onload
             } else {
                 drawRotatedIcon(imageCache[element.content]);
             }
@@ -195,7 +247,6 @@ function redrawPlacedElements() {
     ctx.restore();
     
     updateLegend();
-    // REMOVED: Completion logging that was spamming console
 }
 
 // UPDATED: setupPaletteListeners function to include slider controls
@@ -543,7 +594,10 @@ function rotateIcon90Degrees(icon) {
     console.log('DEBUG: *** rotateIcon90Degrees() completed! ***');
 }
 
-// KEPT: Viewport pan handlers
+ 
+
+ // In sketch.js, replace the handleViewportMouseDown function with this enhanced version
+
 function handleViewportMouseDown(e) {
     console.log('DEBUG: handleViewportMouseDown() called');
     if (e.button !== 0) return; // Only left mouse button
@@ -554,7 +608,28 @@ function handleViewportMouseDown(e) {
     const canvasY = (e.clientY - rect.top) - AppState.viewportTransform.y;
     console.log('DEBUG: Mouse down at canvas coords:', canvasX, canvasY);
 
-    // PRIORITY 1: Check for icon edit handles on the CURRENTLY editing icon (only if sliders not shown)
+    // *** PRIORITY 1: Check for area dragging in edit mode ***
+    if (isEditMode && window.areaManager) {
+        const syntheticTouchEvent = {
+            touches: [{
+                clientX: e.clientX,
+                clientY: e.clientY
+            }],
+            preventDefault: () => e.preventDefault(),
+            stopPropagation: () => e.stopPropagation(),
+            stopImmediatePropagation: () => {
+                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            }
+        };
+        
+        const areaHandled = window.areaManager.handleCanvasTouchStart(syntheticTouchEvent);
+        if (areaHandled) {
+            console.log('DEBUG: Area dragging started - blocking other interactions');
+            return; // Area manager handled it, don't process other interactions
+        }
+    }
+
+    // PRIORITY 2: Check for icon edit handles on the CURRENTLY editing icon (only if sliders not shown)
     if (isEditMode && editingIcon && !isMobileDevice()) {
         const handle = getIconEditHandle(editingIcon, canvasX, canvasY);
         console.log('DEBUG: In edit mode, checking for handles on editingIcon. Handle detected:', handle);
@@ -572,7 +647,6 @@ function handleViewportMouseDown(e) {
             } else if (handle === 'rotate') {
                 console.log('DEBUG: *** ROTATE HANDLE CLICKED! ***');
                 rotateIcon90Degrees(editingIcon);
-                // CRITICAL: Don't set any flags that might interfere
                 return;
             } else if (['proportional', 'horizontal', 'vertical'].includes(handle)) {
                 console.log('DEBUG: Resize handle clicked:', handle);
@@ -587,7 +661,7 @@ function handleViewportMouseDown(e) {
         }
     }
 
-    // Original logic for other actions (dragging, panning)
+    // Original logic for other actions (dragging elements, panning)
     const elementAtPoint = getElementAt(canvasX, canvasY);
     console.log('DEBUG: Element at point:', elementAtPoint);
 
@@ -606,9 +680,29 @@ function handleViewportMouseDown(e) {
     }
 }
 
+// In sketch.js, replace the handleViewportMouseMove function with this enhanced version
+
 function handleViewportMouseMove(e) {
+    // *** PRIORITY 1: Check for area dragging first ***
+    if (isEditMode && window.areaManager && window.areaManager.isDraggingArea) {
+        const syntheticTouchEvent = {
+            touches: [{
+                clientX: e.clientX,
+                clientY: e.clientY
+            }],
+            preventDefault: () => e.preventDefault(),
+            stopPropagation: () => e.stopPropagation(),
+            stopImmediatePropagation: () => {
+                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            }
+        };
+        
+        window.areaManager.handleCanvasTouchMove(syntheticTouchEvent);
+        return; // Area dragging takes priority
+    }
+
     if (isResizing && editingIcon && resizeHandle) {
-        // PRIORITY 1: Handle icon resizing
+        // PRIORITY 2: Handle icon resizing
         e.preventDefault();
         const viewport = document.getElementById('canvasViewport');
         const rect = viewport.getBoundingClientRect();
@@ -617,7 +711,7 @@ function handleViewportMouseMove(e) {
         handleIconResize(canvasX, canvasY);
         CanvasManager.redraw();
     } else if (isDragging && draggedElement && !isResizing && !isRotating && !editingIcon) {
-        // PRIORITY 2: Handle element dragging (DISABLED when editing an icon)
+        // PRIORITY 3: Handle element dragging (DISABLED when editing an icon)
         const viewport = document.getElementById('canvasViewport');
         const rect = viewport.getBoundingClientRect();
         const canvasX = (e.clientX - rect.left) - AppState.viewportTransform.x;
@@ -626,7 +720,7 @@ function handleViewportMouseMove(e) {
         draggedElement.y = canvasY - dragOffset.y;
         CanvasManager.redraw();
     } else if (isPanning && !isDragging && !isResizing && !isRotating && !editingIcon) {
-        // PRIORITY 3: Handle panning (DISABLED when editing an icon)
+        // PRIORITY 4: Handle panning (DISABLED when editing an icon)
         const dx = e.clientX - lastPanPoint.x;
         const dy = e.clientY - lastPanPoint.y;
         AppState.viewportTransform.x += dx;
@@ -637,8 +731,26 @@ function handleViewportMouseMove(e) {
     }
 }
 
+// In sketch.js, replace the handleViewportMouseUp function with this enhanced version
+
 function handleViewportMouseUp(e) {
     console.log('DEBUG: handleViewportMouseUp() called');
+    
+    // *** PRIORITY 1: Check for area dragging end first ***
+    if (isEditMode && window.areaManager && window.areaManager.isDraggingArea) {
+        const syntheticTouchEvent = {
+            touches: [],
+            preventDefault: () => e.preventDefault(),
+            stopPropagation: () => e.stopPropagation(),
+            stopImmediatePropagation: () => {
+                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            }
+        };
+        
+        window.areaManager.handleCanvasTouchEnd(syntheticTouchEvent);
+        return; // Area manager handled it
+    }
+    
     // Save action if we were doing any modification
     if ((isDragging && draggedElement) || isResizing || isRotating) {
         CanvasManager.saveAction();
@@ -655,6 +767,8 @@ function handleViewportMouseUp(e) {
     // Reset cursor
     canvas.style.cursor = selectedElement ? 'none' : 'default';
 }
+
+ 
 
 function handleWheel(e) {
     e.preventDefault();
@@ -691,6 +805,9 @@ function handleWheel(e) {
 }
 
 // KEPT: handleViewportTouchStart with slider integration
+ 
+// In sketch.js, replace the handleViewportTouchStart function with this enhanced version
+
 function handleViewportTouchStart(e) {
     console.log('DEBUG: handleViewportTouchStart() called with', e.touches.length, 'touches');
     
@@ -704,7 +821,16 @@ function handleViewportTouchStart(e) {
         
         console.log('DEBUG: Touch at canvas coords:', canvasX, canvasY);
 
-        // PRIORITY 1: Check for icon edit handles only on desktop (mobile uses sliders)
+        // *** PRIORITY 1: Check for area dragging in edit mode ***
+        if (isEditMode && window.areaManager) {
+            const areaHandled = window.areaManager.handleCanvasTouchStart(e);
+            if (areaHandled) {
+                console.log('DEBUG: Area dragging started via touch - blocking other interactions');
+                return; // Area manager handled it, don't process other interactions
+            }
+        }
+
+        // PRIORITY 2: Check for icon edit handles only on desktop (mobile uses sliders)
         if (isEditMode && editingIcon && !isMobileDevice()) {
             const handle = getIconEditHandle(editingIcon, canvasX, canvasY);
             console.log('DEBUG: Touch - checking for handles on editingIcon. Handle detected:', handle);
@@ -795,6 +921,8 @@ function handleViewportTouchStart(e) {
     }
 }
 
+// In sketch.js, replace the handleViewportTouchMove function with this enhanced version
+
 function handleViewportTouchMove(e) {
     if (e.touches.length === 1) {
         const touch = e.touches[0];
@@ -804,6 +932,12 @@ function handleViewportTouchMove(e) {
         // Calculate canvas coordinates
         const canvasX = (touch.clientX - rect.left) - AppState.viewportTransform.x;
         const canvasY = (touch.clientY - rect.top) - AppState.viewportTransform.y;
+        
+        // *** PRIORITY 1: Check for area dragging first ***
+        if (isEditMode && window.areaManager && window.areaManager.isDraggingArea) {
+            window.areaManager.handleCanvasTouchMove(e);
+            return; // Area dragging takes priority
+        }
         
         if (isResizing && editingIcon && resizeHandle) {
             // Handle icon resizing
@@ -840,7 +974,7 @@ function handleViewportTouchMove(e) {
         const panDx = newCenter.x - lastTouchCenter.x;
         const panDy = newCenter.y - lastTouchCenter.y;
         AppState.viewportTransform.x += panDx;
-        AppState.viewportTransform.y += panDy;
+        AppState.viewportTransform.y += pandy;
         
         lastTouchCenter = newCenter;
         CanvasManager.updateViewportTransform();
@@ -848,9 +982,16 @@ function handleViewportTouchMove(e) {
     }
 }
 
-// UPDATED: handleViewportTouchEnd with slider integration
+// In sketch.js, replace the handleViewportTouchEnd function with this enhanced version
+
 function handleViewportTouchEnd(e) {
     console.log('DEBUG: handleViewportTouchEnd() called');
+    
+    // *** PRIORITY 1: Check for area dragging end first ***
+    if (isEditMode && window.areaManager && window.areaManager.isDraggingArea) {
+        window.areaManager.handleCanvasTouchEnd(e);
+        return; // Area manager handled it
+    }
     
     // Handle edit mode touch interactions
     if (isEditMode && e.changedTouches.length > 0 && !isDragging && !isResizing && !isRotating) {
@@ -947,6 +1088,8 @@ function handleViewportTouchEnd(e) {
         isGesturing = false;
     }
 }
+ 
+ 
 
 // KEPT: THREE RESIZE MODES function
 function handleIconResize(x, y) {
@@ -1186,21 +1329,29 @@ function handleCanvasClick(e) {
     }
 }
 
+// In sketch.js, replace the existing placeElement function with this one
+
 function placeElement(x, y) {
     if (!selectedElement) return;
+
     const textWidth = selectedElement.type === 'room' ? Math.max(58, selectedElement.content.length * 8 + 8) : 45;
+    const elemWidth = selectedElement.type === 'icon' ? 45 : textWidth;
+    const elemHeight = selectedElement.type === 'icon' ? 45 : 16;
+
     const newElement = {
         id: Date.now(),
         type: selectedElement.type,
         content: selectedElement.content,
         styling: selectedElement.styling,
         alt: selectedElement.alt,
-        x: x,
-        y: y,
-        width: selectedElement.type === 'icon' ? 45 : textWidth,
-        height: selectedElement.type === 'icon' ? 45 : 16,
+        // CHANGED: Center the element on the cursor coordinates
+        x: x - elemWidth / 2,
+        y: y - elemHeight / 2,
+        width: elemWidth,
+        height: elemHeight,
         rotation: 0 // Initialize rotation for all elements
     };
+
     AppState.placedElements.push(newElement);
     selectedElement = null;
     hideCustomCursor();
@@ -1586,14 +1737,16 @@ function drawIconEditHandles(element) {
     // REMOVED: Completion logging
 }
 
+// In sketch.js, replace the existing updateCustomCursor function with this one
+
 function updateCustomCursor(e) {
     // Only update custom cursor on desktop
     if (isMobileDevice()) return;
-    
+
     const customCursor = document.getElementById('customCursor');
     if (customCursor) {
         let clientX, clientY;
-        
+
         if (e.touches && e.touches.length > 0) {
             clientX = e.touches[0].clientX;
             clientY = e.touches[0].clientY;
@@ -1601,9 +1754,10 @@ function updateCustomCursor(e) {
             clientX = e.clientX;
             clientY = e.clientY;
         }
-        
-        customCursor.style.left = (clientX + 10) + 'px';
-        customCursor.style.top = (clientY - 10) + 'px';
+
+        // CHANGED: Removed the (+ 10) and (- 10) offsets
+        customCursor.style.left = clientX + 'px';
+        customCursor.style.top = clientY + 'px';
     }
 }
 
@@ -1655,6 +1809,9 @@ function toggleLegend() {
 }
 
 // UPDATED: toggleEditMode function
+// Updated toggleEditMode function for sketch.js
+// Replace the existing toggleEditMode function with this enhanced version
+
 function toggleEditMode() {
     console.log('DEBUG: toggleEditMode() called, current isEditMode:', isEditMode);
     isEditMode = !isEditMode;
@@ -1663,13 +1820,18 @@ function toggleEditMode() {
     
     // Finish any current editing when toggling modes
     finishEditing();
-    hideIconEditControls(); // NEW: Hide icon edit controls
+    hideIconEditControls(); // Hide icon edit controls
     
     if (isEditMode) {
         modeIndicator.textContent = 'EDITING';
         modeIndicator.classList.add('edit-mode');
         editBtn.classList.add('active');
-        console.log('DEBUG: Edit mode ENABLED');
+        console.log('DEBUG: Edit mode ENABLED - Areas can now be dragged by clicking on them');
+        
+        // Show helpful message
+        setTimeout(() => {
+            console.log('💡 EDIT MODE: Click on any area to drag it along with its contents!');
+        }, 100);
     } else {
         modeIndicator.textContent = 'READY';
         modeIndicator.classList.remove('edit-mode');
@@ -1677,7 +1839,13 @@ function toggleEditMode() {
         console.log('DEBUG: Edit mode DISABLED');
     }
     
-    // Redraw to show/hide delete buttons and edit handles
+    // *** NEW: Emit edit mode toggle event for AreaManager ***
+    AppState.emit('mode:editToggled', { 
+        isEditMode: isEditMode,
+        timestamp: Date.now()
+    });
+    
+    // Redraw to show/hide delete buttons, edit handles, and area drag hints
     CanvasManager.redraw();
 }
 
@@ -1794,6 +1962,44 @@ function showangleinput() {
     }
 }
 
+// Add these two new functions inside src/sketch.js
 
+function activateSketchListeners() {
+    const viewport = document.getElementById('canvasViewport');
+    if (!viewport) return;
+    
+    console.log('Activating sketch.js listeners.');
+    viewport.addEventListener('mousedown', handleViewportMouseDown);
+    viewport.addEventListener('mousemove', handleViewportMouseMove);
+    viewport.addEventListener('mouseup', handleViewportMouseUp);
+    viewport.addEventListener('touchstart', handleViewportTouchStart, { passive: false });
+    viewport.addEventListener('touchmove', handleViewportTouchMove, { passive: false });
+    viewport.addEventListener('touchend', handleViewportTouchEnd, { passive: false });
+    canvas.addEventListener('click', handleCanvasClick);
+}
 
-export { showpallets, showangleinput, initSketchModule, toggleLegend, toggleEditMode };
+function deactivateSketchListeners() {
+    const viewport = document.getElementById('canvasViewport');
+    if (!viewport) return;
+
+    console.log('Deactivating sketch.js listeners.');
+    viewport.removeEventListener('mousedown', handleViewportMouseDown);
+    viewport.removeEventListener('mousemove', handleViewportMouseMove);
+    viewport.removeEventListener('mouseup', handleViewportMouseUp);
+    viewport.removeEventListener('touchstart', handleViewportTouchStart);
+    viewport.removeEventListener('touchmove', handleViewportTouchMove);
+    viewport.removeEventListener('touchend', handleViewportTouchEnd);
+    canvas.removeEventListener('click', handleCanvasClick);
+}
+
+ 
+
+export { 
+    showpallets, 
+    showangleinput, 
+    initSketchModule, 
+    toggleLegend, 
+    toggleEditMode,
+    activateSketchListeners,   // <-- ADD THIS
+    deactivateSketchListeners // <-- ADD THIS
+};

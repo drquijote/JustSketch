@@ -15,7 +15,9 @@ export class CanvasManager {
     console.log('CanvasManager: Canvas initialized with size:', AppState.canvas.width, 'x', AppState.canvas.height);
   }
   
-  static redraw() {
+  // In canvas.js, replace the redraw function with this version that ensures proper layer order
+
+static redraw() {
     const { ctx, canvas } = AppState;
     if (!ctx || !canvas) {
       console.warn('CanvasManager: Canvas not initialized, skipping redraw');
@@ -28,29 +30,31 @@ export class CanvasManager {
     // Save context state
     ctx.save();
     
-    // REMOVED: Excessive logging that was causing console spam during blinking
-    // Only log redraw start/complete during debugging, not every single redraw
-    
-    // 1. Background elements (grid, etc.)
+    // *** LAYER 1: Background elements (grid, etc.) ***
     AppState.emit('canvas:redraw:background');
     
-    // 2. Drawn polygons (floor plan areas)
+    // *** LAYER 2: Drawn polygons (floor plan areas) ***
     AppState.emit('canvas:redraw:polygons');
     
-    // 3. Drawn lines (individual lines)
+    // *** LAYER 3: Drawn lines (individual lines) ***
     AppState.emit('canvas:redraw:lines');
     
-    // 4. Placed elements (room labels & icons)
+    // *** LAYER 4: Placed elements (room labels & icons) ***
     AppState.emit('canvas:redraw:elements');
     
-    // 5. UI overlays (edit handles, etc.)
+    // *** LAYER 5: UI overlays (edit handles, etc.) ***
     AppState.emit('canvas:redraw:ui');
+    
+    // *** LAYER 6 (TOP): Current drawing elements - ALWAYS ON TOP ***
+    // This ensures purple drawing points (pX) are always visible above everything else
+    if (AppState.currentMode === 'drawing') {
+        // Force the drawing manager to redraw its elements on the top layer
+        AppState.emit('canvas:redraw:drawing-overlay');
+    }
     
     // Restore context state
     ctx.restore();
-    
-    // REMOVED: Completion logging that was spamming console
-  }
+}
   
   static saveAction() {
     AppState.historyIndex++;
@@ -76,42 +80,35 @@ export class CanvasManager {
   }
   
  // Replace your existing undo() function with this one
+// Replace the entire undo() function in src/canvas.js with this one:
+
+// Replace the entire undo() function in src/canvas.js with this one.
 static undo() {
-  console.log('CanvasManager: Undo button pressed');
-  console.log('Current history index:', AppState.historyIndex);
-  console.log('History length:', AppState.actionHistory.length);
-
-  if (AppState.historyIndex > 0) {
-    AppState.historyIndex--;
-    const snapshot = AppState.actionHistory[AppState.historyIndex];
-
-    console.log('CanvasManager: Restoring snapshot:', snapshot);
-    console.log('Snapshot current polygon points:', snapshot.currentPolygonPoints?.length || 0);
-
-    AppState.restoreStateSnapshot(snapshot);
-
-    // After restoring the path, update the helper points
-    HelperPointManager.updateHelperPoints();
-
-    // Restore viewport transform if it exists in the snapshot
-    if (snapshot.viewportTransform) {
-      AppState.viewportTransform.x = snapshot.viewportTransform.x;
-      AppState.viewportTransform.y = snapshot.viewportTransform.y;
-      AppState.viewportTransform.scale = snapshot.viewportTransform.scale;
-
-      // Update the visual transform
-      CanvasManager.updateViewportTransform();
-
-      console.log('CanvasManager: Restored viewport transform:', snapshot.viewportTransform);
+    console.log('--- UNDO: Button Pressed ---');
+    if (AppState.historyIndex <= 0) {
+        console.log('Undo: No more actions to undo.');
+        // If we are at the beginning, restore the very first state (or a clean state)
+        AppState.restoreStateSnapshot(AppState.actionHistory[0] || AppState.getInitialState());
+        AppState.historyIndex = 0;
+    } else {
+        // Otherwise, move to the previous state in the history
+        AppState.historyIndex--;
+        const stateToRestore = AppState.actionHistory[AppState.historyIndex];
+        if (stateToRestore) {
+            AppState.restoreStateSnapshot(stateToRestore);
+            console.log('Restored state to index:', AppState.historyIndex);
+        } else {
+            console.error("Could not find a state to restore.");
+        }
     }
-
-    console.log('CanvasManager: After restore - current polygon points:', AppState.currentPolygonPoints.length);
-    console.log('CanvasManager: Undo performed');
-    AppState.emit('history:undo');
+    
+    // --- NEW LOGIC ---
+    // After restoring the state, visually update the viewport's position and redraw.
+    CanvasManager.updateViewportTransform();
+    HelperPointManager.updateHelperPoints();
     CanvasManager.redraw();
-  } else {
-    console.log('CanvasManager: No more actions to undo');
-  }
+    
+    console.log('--- UNDO: Complete ---');
 }
   
 // Replace your existing redo() function with this one

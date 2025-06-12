@@ -314,20 +314,23 @@
         <!-- content... -->
     </div>
 
-    <!-- NEW: Photo Modal -->
+    <!-- NEW: Enhanced Photo Modal -->
     <div class="modal hidden" id="photoModal">
         <div class="modal-content">
-            <h3 id="roomNameHeader">Photos for...</h3>
+            <h3 id="roomNameHeader" style="text-align: center; margin-bottom: 15px;">Photos for...</h3>
+            
             <div id="cameraContainer">
                 <video id="cameraFeed" autoplay playsinline></video>
                 <canvas id="photoCaptureCanvas" class="hidden"></canvas>
             </div>
+
             <div id="photoGallery">
-                <!-- Thumbnails will be rendered here by JS -->
+                <!-- Thumbnails will be rendered here by photo.js -->
             </div>
-            <div class="modal-buttons" style="margin-top: 20px;">
-                <button id="takePhotoBtn" class="modal-btn btn-primary" style="flex-grow: 2;">Take Photo</button>
+            
+            <div class="modal-buttons" style="margin-top: auto; padding-top: 15px;">
                 <button id="cancelPhotoBtn" class="modal-btn btn-secondary">Cancel</button>
+                <button id="takePhotoBtn" class="modal-btn btn-primary" style="flex-grow: 1.5;">Take Photo</button>
                 <button id="savePhotosBtn" class="modal-btn" style="background-color: #27ae60; color: white;">Save & Close</button>
             </div>
         </div>

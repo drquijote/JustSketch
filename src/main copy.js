@@ -1,5 +1,4 @@
-// src/main.js - FINAL CORRECTED VERSION
-
+//import './style.css';
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
 import { DrawingManager } from './drawing.js';
@@ -34,9 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const splitterManager = new SplitterManager();
     splitterManager.init();
 
-    const saveManager = new SaveManager();
-    saveManager.init();
-    
+    const saveManager = new SaveManager(); // <-- 2. INSTANTIATE IT
+    saveManager.init();                    // <-- 3. INITIALIZE IT
     console.log("App loaded - initializing modular architecture");
 
     const canvas = document.getElementById('drawingCanvas');
@@ -47,28 +45,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const areaManager = new AreaManager();
     areaManager.init();
     
+    // NEW: Initialize the Preview Manager
     const previewManager = new PreviewManager();
     
+    // Initialize the older sketch/icon system
     initSketchModule();
 
-    // Setup all UI event handlers
+    // Setup all other UI event handlers and pass the manager
     initializeAppControls(previewManager, saveManager);
     setupKeyboardShortcuts();
 
     // Initial render and save
     CanvasManager.redraw();
     CanvasManager.saveAction();
-
-    // Check if the URL is requesting a specific sketch to be loaded
-    saveManager.loadSketchFromURL();
-
+    loadSketchFromURL();
     console.log("App initialization complete");
+
+
+
 });
 
 
+// In main.js, make sure this is the ONLY function named setupUIHandlers
+
 /**
  * Sets up all the primary UI event listeners for the application buttons.
- * This should be the ONLY version of this function in the file.
  * @param {PreviewManager} previewManager - The instance of the preview manager.
  * @param {SaveManager} saveManager - The instance of the save manager.
  */
@@ -118,11 +119,7 @@ function initializeAppControls(previewManager, saveManager) {
     if (exportBtn && exportMenu) {
         exportBtn.addEventListener('click', () => exportMenu.classList.toggle('hidden'));
         exportMenu.addEventListener('click', (e) => {
-            if (e.target.id === 'saveAsBtn') { // <-- NEW: Check if "Save As" was clicked
-                saveManager.promptForNewName();
-            } else if (e.target.textContent === 'JSON Data') {
-                exportSketchToJSON();
-            }
+            if (e.target.textContent === 'JSON Data') exportSketchToJSON();
             exportMenu.classList.add('hidden');
         });
     }
@@ -149,8 +146,83 @@ function initializeAppControls(previewManager, saveManager) {
     const saveBtn = document.getElementById('saveBtn');
     if (saveBtn && saveManager) {
         saveBtn.addEventListener('click', () => {
-            //saveManager.promptAndSaveSketch();
-            saveManager.promptOrSave(); 
+            saveManager.promptAndSaveSketch();
+        });
+    }
+}
+
+/**
+ * Sets up all the primary UI event listeners for the application buttons.
+ * @param {PreviewManager} previewManager - The instance of the preview manager.
+ */
+function setupUIHandlers(previewManager) {
+    // Palette button handlers
+    const paletteButtons = document.querySelectorAll('[data-palette]');
+    paletteButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            const paletteId = e.target.getAttribute('data-palette');
+            if ((paletteId === 'roomsPalette' || paletteId === 'iconsPalette') && AppState.currentMode === 'drawing') {
+                switchToPlacementMode();
+            }
+            showpallets(paletteId);
+            paletteButtons.forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+        });
+    });
+
+    // Listen for the custom event to exit drawing mode automatically
+    AppState.on('app:exitDrawingMode', switchToPlacementMode);
+    
+    // *** NEW: Listen for edge deletion event to switch to drawing mode ***
+    AppState.on('app:switchToDrawingMode', switchToDrawingMode);
+
+    // Control handlers
+    document.getElementById('editBtn').addEventListener('click', toggleEditMode);
+    document.getElementById('legendToggleBtn').addEventListener('click', toggleLegend);
+    const undoBtn = document.getElementById('undo');
+    const redoBtn = document.getElementById('redo');
+    if (undoBtn) undoBtn.addEventListener('click', (e) => { e.preventDefault(); CanvasManager.undo(); });
+    if (redoBtn) redoBtn.addEventListener('click', (e) => { e.preventDefault(); CanvasManager.redo(); });
+
+    // Drawing mode button handler
+    const startBtn = document.getElementById('startBtn');
+    if (startBtn) {
+        startBtn.addEventListener('click', () => {
+            if (AppState.currentMode === 'drawing') switchToPlacementMode();
+            else switchToDrawingMode();
+        });
+    }
+
+    // --- Export and Import Handlers ---
+    const exportBtn = document.querySelector('.export-dropdown > button');
+    const exportMenu = document.getElementById('exportMenu');
+    const fileInput = document.getElementById('importFile');
+    const allFinishButtons = Array.from(document.querySelectorAll('.control-btn.finish-btn'));
+    const importBtn = allFinishButtons.find(btn => btn.textContent.trim() === 'Import');
+
+    if (exportBtn && exportMenu) {
+        exportBtn.addEventListener('click', () => exportMenu.classList.toggle('hidden'));
+        exportMenu.addEventListener('click', (e) => {
+            if (e.target.textContent === 'JSON Data') exportSketchToJSON();
+            exportMenu.classList.add('hidden');
+        });
+    }
+    if (importBtn) {
+        importBtn.addEventListener('click', () => fileInput && fileInput.click());
+    }
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) importSketchFromJSON(file);
+            e.target.value = null;
+        });
+    }
+
+    // --- Preview Button Handler ---
+    const previewBtn = allFinishButtons.find(btn => btn.textContent.trim() === 'Preview');
+    if (previewBtn && previewManager) {
+        previewBtn.addEventListener('click', () => {
+            previewManager.showPreview();
         });
     }
 }
@@ -158,67 +230,137 @@ function initializeAppControls(previewManager, saveManager) {
 // --- Mode Switching Logic ---
 function switchToPlacementMode() {
     console.log('Switching to placement mode from:', AppState.currentMode);
+    console.log('--- LISTENER FIRED: Attempting to switch to placement mode. ---');
+
+    // Clean up any active modes
     activateSketchListeners();
+    
+    // Set mode state
     AppState.currentMode = 'placement';
+    
+    // Update UI elements
     const startBtn = document.getElementById('startBtn');
+    const editBtn = document.getElementById('editBtn');
+    const modeIndicator = document.getElementById('modeIndicator');
+    
     if (startBtn) {
         startBtn.textContent = 'Start';
         startBtn.classList.remove('active');
     }
-    document.getElementById('editBtn').classList.remove('active');
-    document.getElementById('modeIndicator').textContent = 'READY';
-    document.getElementById('modeIndicator').classList.remove('drawing-mode', 'edit-mode');
+    
+    if (editBtn) {
+        editBtn.classList.remove('active');
+    }
+    
+    if (modeIndicator) {
+        modeIndicator.textContent = 'READY';
+        modeIndicator.classList.remove('drawing-mode', 'edit-mode');
+    }
+    
+    // Emit events for other managers
     AppState.emit('mode:changed', { mode: 'placement' });
-    AppState.emit('mode:editToggled', { isEditMode: false });
+    AppState.emit('mode:editToggled', { isEditMode: false, timestamp: Date.now() });
+    
+    // Redraw to update visual state
     CanvasManager.redraw();
 }
 
+// *** FIXED: Deactivate sketch listeners in drawing mode to restore mobile panning ***
 function switchToDrawingMode() {
     console.log('Switching to drawing mode from:', AppState.currentMode);
+    
+    // *** CRITICAL FIX: Deactivate sketch listeners to restore mobile panning ***
+    //deactivateSketchListeners();
+    
+    // Set mode state
     AppState.currentMode = 'drawing';
+    
+    // Update UI elements
     const startBtn = document.getElementById('startBtn');
+    const editBtn = document.getElementById('editBtn');
+    const modeIndicator = document.getElementById('modeIndicator');
+    
     if (startBtn) {
         startBtn.textContent = 'Stop';
         startBtn.classList.add('active');
     }
-    document.getElementById('editBtn').classList.remove('active');
-    document.getElementById('modeIndicator').textContent = 'DRAWING';
-    document.getElementById('modeIndicator').classList.remove('edit-mode');
-    document.getElementById('modeIndicator').classList.add('drawing-mode');
+    
+    if (editBtn) {
+        editBtn.classList.remove('active');
+    }
+    
+    if (modeIndicator) {
+        modeIndicator.textContent = 'DRAWING';
+        modeIndicator.classList.remove('edit-mode');
+        modeIndicator.classList.add('drawing-mode');
+    }
+    
+    // Hide all palettes and show drawing controls
     document.querySelectorAll('.one-of-bottom-pallets').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('[data-palette]').forEach(btn => btn.classList.remove('active'));
+    
+    // Activate numbers palette for drawing
     const numbersBtn = document.getElementById('numbersBtn');
     const drawPalette = document.getElementById('drawPalette');
     if (numbersBtn && drawPalette) {
         numbersBtn.classList.add('active');
         drawPalette.classList.remove('hidden');
     }
+    
+    // Emit events for other managers
     AppState.emit('mode:changed', { mode: 'drawing' });
-    AppState.emit('mode:editToggled', { isEditMode: false });
+    AppState.emit('mode:editToggled', { isEditMode: false, timestamp: Date.now() });
+    
+    // Redraw to update visual state
     CanvasManager.redraw();
 }
 
 function switchToEditMode() {
     console.log('Switching to edit mode from:', AppState.currentMode);
-    activateSketchListeners();
+    
+    // Clean up any active modes
+    activateSketchListeners(); // Keep sketch listeners active for element interaction
+    
+    // Set mode state
     AppState.currentMode = 'edit';
+    
+    // Update UI elements
     const startBtn = document.getElementById('startBtn');
+    const editBtn = document.getElementById('editBtn');
+    const modeIndicator = document.getElementById('modeIndicator');
+    
     if (startBtn) {
         startBtn.textContent = 'Start';
         startBtn.classList.remove('active');
     }
-    document.getElementById('editBtn').classList.add('active');
-    document.getElementById('modeIndicator').textContent = 'EDITING';
-    document.getElementById('modeIndicator').classList.remove('drawing-mode');
-    document.getElementById('modeIndicator').classList.add('edit-mode');
+    
+    if (editBtn) {
+        editBtn.classList.add('active');
+    }
+    
+    if (modeIndicator) {
+        modeIndicator.textContent = 'EDITING';
+        modeIndicator.classList.remove('drawing-mode');
+        modeIndicator.classList.add('edit-mode');
+    }
+    
+    // Hide drawing palette if it's visible
     const drawPalette = document.getElementById('drawPalette');
     if (drawPalette && !drawPalette.classList.contains('hidden')) {
         drawPalette.classList.add('hidden');
         document.getElementById('numbersBtn')?.classList.remove('active');
     }
+    
+    // Emit events for other managers
     AppState.emit('mode:changed', { mode: 'edit' });
-    AppState.emit('mode:editToggled', { isEditMode: true });
-    setTimeout(() => console.log('💡 EDIT MODE: Click on areas to drag them, or click on edges to delete them!'), 100);
+    AppState.emit('mode:editToggled', { isEditMode: true, timestamp: Date.now() });
+    
+    // Show helpful message
+    setTimeout(() => {
+        console.log('💡 EDIT MODE: Click on areas to drag them, or click on edges to delete them!');
+    }, 100);
+    
+    // Redraw to show edit mode visual feedback
     CanvasManager.redraw();
 }
 
@@ -240,6 +382,7 @@ function setupKeyboardShortcuts() {
 }
 
 function exportSketchToJSON() {
+    console.log('Exporting sketch to JSON...');
     const sketchData = {
         version: '1.0',
         createdAt: new Date().toISOString(),
@@ -253,9 +396,11 @@ function exportSketchToJSON() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    console.log('Sketch exported successfully.');
 }
 
 function importSketchFromJSON(file) {
+    console.log('Starting import from JSON file:', file.name);
     const reader = new FileReader();
     reader.onload = (event) => {
         try {
@@ -263,6 +408,7 @@ function importSketchFromJSON(file) {
             if (!importedData.data || !importedData.data.drawnPolygons) {
                 throw new Error('Invalid or corrupted sketch file.');
             }
+            console.log('Successfully parsed sketch file. Loading data...');
             AppState.restoreStateSnapshot(importedData.data);
             HelperPointManager.updateHelperPoints();
             CanvasManager.updateViewportTransform();

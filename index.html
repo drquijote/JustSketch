@@ -109,11 +109,6 @@
             color: #333;
         }
 
-        /* Hide router container initially */
-        .router-container {
-            display: none;
-        }
-
         /* App frame for loading sketcher */
         .app-frame {
             position: fixed;
@@ -137,9 +132,6 @@
             border: none;
         }
 
-        .back-btn {
-            display: none !important;
-        }
     </style>
 </head>
 <body>
@@ -154,23 +146,21 @@
     <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
     
     <div class="side-drawer" id="sideDrawer">
-        <div class="drawer-header">Sketch</div>
-        <div class="drawer-item primary" onclick="loadApp('sketcher.html')">Sketch</div>
+        <div class="drawer-header">Sketch App</div>
+        
+        <div class="drawer-item" onclick="showHomePage()">Dashboard</div>
+        
+        <div class="drawer-item primary" onclick="loadApp('sketcher.html')">New Sketch</div>
         <div class="drawer-item" onclick="loadApp('comments.html')">Comments</div>
         <div class="drawer-item" onclick="loadApp('photos.html')">Photos</div>
     </div>
 
-    <div class="router-container" id="routerHome">
-        <h1 class="router-title">Just Sketcher</h1>
-        <div class="router-buttons">
-            <button class="router-btn" onclick="loadApp('sketcher.html')">Sketch</button>
-            <button class="router-btn secondary" onclick="loadApp('comments.html')">Comments</button>
-            <button class="router-btn secondary" onclick="loadApp('photos.html')">Photos</button>
-        </div>
+    <div class="router-container" id="routerHome" style="padding: 20px;">
+        <div id="savedSketchesList" style="margin-top: 2rem; max-width: 600px; margin-left: auto; margin-right: auto;">
+            </div>
     </div>
 
     <div class="app-frame" id="appFrame">
-        <button class="back-btn" id="backBtn" onclick="goHome()">← Back</button>
         <iframe class="app-iframe" id="appIframe"></iframe>
     </div>
 
@@ -179,12 +169,7 @@
 
         function toggleDrawer() {
             drawerOpen = !drawerOpen;
-            
-            if (drawerOpen) {
-                openDrawer();
-            } else {
-                closeDrawer();
-            }
+            drawerOpen ? openDrawer() : closeDrawer();
         }
 
         function openDrawer() {
@@ -199,29 +184,91 @@
             drawerOpen = false;
         }
 
-        function loadApp(url) {
-            const appFrame = document.getElementById('appFrame');
-            const appIframe = document.getElementById('appIframe');
-
-            // Close drawer
+        function showHomePage() {
+            document.getElementById('appFrame').classList.remove('show');
+            document.getElementById('routerHome').style.display = 'block';
+            displaySavedSketches(); 
             closeDrawer();
-            
-            // Show app frame (no back button)
-            appFrame.classList.add('show');
-            
-            // Load the app
-            appIframe.src = url;
         }
 
-        function goHome() {
+        function loadApp(url) {
+            document.getElementById('routerHome').style.display = 'none';
+            closeDrawer();
             const appFrame = document.getElementById('appFrame');
+            appFrame.classList.add('show');
+            document.getElementById('appIframe').src = url;
+        }
+    </script>
 
-            // Hide app frame
-            appFrame.classList.remove('show');
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('routerHome').style.display = 'block';
+            displaySavedSketches();
+        });
+
+        /**
+         * New function to handle sketch deletion with confirmation.
+         */
+        function deleteSketch(sketchName) {
+            // Use a confirmation dialog before deleting
+            if (confirm(`Are you sure you want to permanently delete "${sketchName}"?`)) {
+                const STORAGE_KEY = 'savedSketches';
+                const savedSketchesJSON = localStorage.getItem(STORAGE_KEY);
+                let allSketches = savedSketchesJSON ? JSON.parse(savedSketchesJSON) : {};
+
+                if (allSketches[sketchName]) {
+                    delete allSketches[sketchName]; // Remove the sketch from the object
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(allSketches)); // Save the updated object
+                    console.log(`Deleted sketch: ${sketchName}`);
+                    
+                    // Refresh the list to show the change immediately
+                    displaySavedSketches();
+                } else {
+                    console.error(`Attempted to delete a sketch that does not exist: ${sketchName}`);
+                }
+            }
         }
 
-        // Global function for iframe to call
-        window.goHome = goHome;
+        /**
+         * Renders the list of saved sketches from localStorage.
+         */
+        function displaySavedSketches() {
+            const listContainer = document.getElementById('savedSketchesList');
+            const STORAGE_KEY = 'savedSketches';
+            const savedSketchesJSON = localStorage.getItem(STORAGE_KEY);
+            const allSketches = savedSketchesJSON ? JSON.parse(savedSketchesJSON) : {};
+
+            if (Object.keys(allSketches).length === 0) {
+                listContainer.innerHTML = '<h2 style="text-align: center; margin-bottom: 1rem; color: #555;">Saved Sketches</h2><p style="text-align: center; color: #888;">No saved sketches found.</p>';
+                return;
+            }
+
+            let html = '<h2 style="text-align: center; margin-bottom: 1rem; color: #555;">Saved Sketches</h2>';
+            html += '<ul style="list-style: none; padding: 0; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">';
+
+            for (const sketchName in allSketches) {
+                if (allSketches.hasOwnProperty(sketchName)) {
+                    const sketchEntry = allSketches[sketchName];
+                    const savedDate = new Date(sketchEntry.savedAt).toLocaleString();
+                    const loadUrl = `sketcher.html?loadSketch=${sketchEntry.id}`;
+
+                    // --- HTML UPDATED to include the Delete button ---
+                    html += `<li style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid #eee;">
+                                <div>
+                                    <strong style="color: #333;">${sketchEntry.name}</strong>
+                                    <div style="font-size: 12px; color: #777;">Saved: ${savedDate}</div>
+                                </div>
+                                <div style="display: flex; gap: 10px; align-items: center;">
+                                    <a href="#" onclick="loadApp('${loadUrl}'); return false;" style="text-decoration: none; background: #007bff; color: white; padding: 8px 15px; border-radius: 5px; font-size: 14px;">Load</a>
+                                    <button onclick="deleteSketch('${sketchName}')" style="background: #e74c3c; color: white; border: none; padding: 8px 15px; border-radius: 5px; font-size: 14px; cursor: pointer;">Delete</button>
+                                </div>
+                            </li>`;
+                }
+            }
+
+            html += '</ul>';
+            listContainer.innerHTML = html;
+        }
     </script>
 </body>
 </html>

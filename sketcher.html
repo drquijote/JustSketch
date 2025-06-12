@@ -164,16 +164,18 @@
             <button class="control-btn finish-btn">Preview</button>
             <button class="control-btn finish-btn">Import</button>
             <div class="export-dropdown">
-                <button class="control-btn finish-btn">Export</button>
+                <button class="control-btn finish-btn">Save As</button>
                 <div class="export-menu hidden" id="exportMenu">
-                    <div class="export-option">JSON Data</div>
-                    <div class="export-option">SVG Vector</div>
-                    <div class="export-option">LaTeX/TikZ</div>
-                    <div class="export-option">PNG</div>
-                    <div class="export-option">PDF</div>
+                    <div class="export-option">JSON Export</div>
+                    <div class="export-option">SVG Export</div>
+                    <div class="export-option">LaTeX Export</div>
+                    <div class="export-option">PNG Export</div>
+                    <div class="export-option">PDF Export</div>
+                    <div class="export-option" id="saveAsBtn">SaveAs (new name)</div>
                 </div>
             </div>
             <button class="control-btn save-btn" id="saveBtn">Save</button>
+
             <div class="file-input-wrapper hidden">
                 <input accept=".json" id="importFile" type="file"/>
             </div>
@@ -381,6 +383,21 @@
         <div class="context-menu-header">Change Polygon Type:</div>
         <div id="contextMenuOptions"></div>
         <div class="context-menu-cancel">Cancel</div>
+    </div>
+
+
+    <div class="modal hidden" id="saveModal">
+        <div class="modal-content">
+            <h3>Save Sketch</h3>
+            <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                Enter a name for this sketch. It will be saved to your browser's local storage.
+            </p>
+            <input id="sketchNameInput" placeholder="e.g., Main Floor Plan" type="text"/>
+            <div class="modal-buttons">
+                <button id="cancelSaveBtn" class="modal-btn btn-secondary">Cancel</button>
+                <button id="confirmSaveBtn" class="modal-btn btn-primary">Save</button>
+            </div>
+        </div>
     </div>
 
     <div id="customCursor" class="hidden"></div>

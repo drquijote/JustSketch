@@ -31,6 +31,9 @@ export const AppState = {
   actionHistory: [],
   historyIndex: -1,
   
+  currentSketchId: null,
+  currentSketchName: null,
+
   // Event system for module communication
   events: new EventTarget(),
   

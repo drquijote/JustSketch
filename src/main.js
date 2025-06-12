@@ -1,4 +1,4 @@
-import './style.css';
+//import './style.css';
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
 import { DrawingManager } from './drawing.js';

@@ -90,7 +90,8 @@
             z-index: 1000;
         }
 
-         
+        /* Import the main CSS */
+        @import url('./src/style.css');
     </style>
 </head>
 <body>
@@ -164,9 +165,8 @@
             <button class="control-btn finish-btn">Preview</button>
             <button class="control-btn finish-btn">Import</button>
             <div class="export-dropdown">
-                <button class="control-btn finish-btn">Save As</button>
+                <button class="control-btn finish-btn">Export</button>
                 <div class="export-menu hidden" id="exportMenu">
-                    <div class="export-option" id="saveAsBtn">New File</div>
                     <div class="export-option">JSON Data</div>
                     <div class="export-option">SVG Vector</div>
                     <div class="export-option">LaTeX/TikZ</div>
@@ -385,20 +385,6 @@
     </div>
 
     <div id="customCursor" class="hidden"></div>
-
-    <div class="modal hidden" id="saveModal">
-        <div class="modal-content">
-            <h3>Save Sketch</h3>
-            <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
-                Enter a name for this sketch. It will be saved to your browser's local storage.
-            </p>
-            <input id="sketchNameInput" placeholder="e.g., Main Floor Plan" type="text"/>
-            <div class="modal-buttons">
-                <button id="cancelSaveBtn" class="modal-btn btn-secondary">Cancel</button>
-                <button id="confirmSaveBtn" class="modal-btn btn-primary">Save</button>
-            </div>
-        </div>
-    </div>
 
     <script type="module" src="src/main.js"></script>
 </body>

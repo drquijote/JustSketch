@@ -1,4 +1,4 @@
-// src/state.js - ENHANCED to include permanent helper points in state management
+// src/state.js - FINAL VERSION
 
 export const AppState = {
   // Canvas & Viewport (will be populated by canvas.js)
@@ -23,13 +23,17 @@ export const AppState = {
   currentPolygonPoints: [], // Points being drawn right now
   currentPolygonCounter: 0, // Point counter for current polygon
   
-  // *** NEW: Helper point collections ***
+  // Helper point collections
   helperPoints: [],          // Temporary helper points (from current drawing)
   permanentHelperPoints: [], // Permanent helper points (from completed paths)
   
   // History system
   actionHistory: [],
   historyIndex: -1,
+
+  // --- Properties to track the currently loaded sketch ---
+  currentSketchId: null,
+  currentSketchName: null,
   
   // Event system for module communication
   events: new EventTarget(),
@@ -37,22 +41,20 @@ export const AppState = {
   // Helper methods for event communication
   emit(eventType, data) {
     this.events.dispatchEvent(new CustomEvent(eventType, { detail: data }));
-    // Only log important events, not every single redraw event
     if (!eventType.includes('redraw')) {
-      console.log(`AppState emitted: ${eventType}`, data);
+      // console.log(`AppState emitted: ${eventType}`, data);
     }
   },
   
   on(eventType, callback) {
     this.events.addEventListener(eventType, callback);
-    // Only log when setting up major event listeners
     if (!eventType.includes('redraw')) {
-      console.log(`AppState listener added for: ${eventType}`);
+      // console.log(`AppState listener added for: ${eventType}`);
     }
   },
   
-  // *** ENHANCED: Helper to get current state snapshot including permanent helpers ***
-getStateSnapshot() {
+  // Helper to get current state snapshot
+  getStateSnapshot() {
     return {
         placedElements: JSON.parse(JSON.stringify(this.placedElements)),
         drawnPolygons: JSON.parse(JSON.stringify(this.drawnPolygons)),
@@ -60,10 +62,12 @@ getStateSnapshot() {
         currentPolygonPoints: JSON.parse(JSON.stringify(this.currentPolygonPoints)),
         currentPolygonCounter: this.currentPolygonCounter,
         permanentHelperPoints: JSON.parse(JSON.stringify(this.permanentHelperPoints || [])),
-        // NEW: Include viewport transform in the snapshot
-        viewportTransform: JSON.parse(JSON.stringify(this.viewportTransform))
+        viewportTransform: JSON.parse(JSON.stringify(this.viewportTransform)),
+        // Also save the current sketch info in the snapshot
+        currentSketchId: this.currentSketchId,
+        currentSketchName: this.currentSketchName
     };
-},
+  },
   
   // Helper to get initial state
   getInitialState() {
@@ -73,13 +77,15 @@ getStateSnapshot() {
       drawnLines: [],
       currentPolygonPoints: [],
       currentPolygonCounter: 0,
-      // *** NEW: Include permanent helper points in initial state ***
-      permanentHelperPoints: []
+      permanentHelperPoints: [],
+      viewportTransform: { x: 0, y: 0, scale: 1 },
+      currentSketchId: null,
+      currentSketchName: null
     };
   },
   
-  // *** ENHANCED: Helper to restore state from snapshot including permanent helpers ***
-   restoreStateSnapshot(snapshot) {
+  // Helper to restore state from snapshot
+  restoreStateSnapshot(snapshot) {
     this.placedElements = JSON.parse(JSON.stringify(snapshot.placedElements || []));
     this.drawnPolygons = JSON.parse(JSON.stringify(snapshot.drawnPolygons || []));
     this.drawnLines = JSON.parse(JSON.stringify(snapshot.drawnLines || []));
@@ -87,11 +93,14 @@ getStateSnapshot() {
     this.currentPolygonCounter = snapshot.currentPolygonCounter || 0;
     this.permanentHelperPoints = JSON.parse(JSON.stringify(snapshot.permanentHelperPoints || []));
     
-    // NEW: Restore the viewport transform if it exists in the snapshot
     if (snapshot.viewportTransform) {
         this.viewportTransform = JSON.parse(JSON.stringify(snapshot.viewportTransform));
     }
 
+    // Restore the current sketch info
+    this.currentSketchId = snapshot.currentSketchId || null;
+    this.currentSketchName = snapshot.currentSketchName || null;
+
     console.log('🔄 STATE DEBUG: Restored state snapshot.');
-}
+  }
 };

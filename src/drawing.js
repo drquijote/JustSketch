@@ -2,6 +2,412 @@ import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
 import { HelperPointManager } from './helpers.js';
 
+
+let splitMode = false;
+let splitSourcePolygon = null;
+let splitIntersectionPoints = [];
+let splitSourceVertex = null;
+
+
+
+// *** STEP 3: Add the working startSplitMode function ***
+function startSplitMode(polygon, vertex) {
+    console.log('🔪 SPLIT: Starting split mode');
+    splitMode = true;
+    splitSourcePolygon = polygon;
+    splitSourceVertex = vertex;
+    
+    // Convert to your current drawing system
+    AppState.currentPolygonPoints = [{
+        x: vertex.x,
+        y: vertex.y,
+        name: 'p0'
+    }];
+    AppState.currentPolygonCounter = 1;
+    this.waitingForFirstVertex = false;
+    
+    // Switch to drawing mode for path creation
+    AppState.currentMode = 'drawing';
+    AppState.emit('mode:changed', { mode: 'drawing' });
+    
+    // Calculate initial intersection points
+    updateSplitIntersectionPoints();
+    
+    // Update UI
+    const modeIndicator = document.getElementById('modeIndicator');
+    if (modeIndicator) {
+        modeIndicator.textContent = 'SPLIT MODE';
+        modeIndicator.style.background = '#e74c3c';
+    }
+    
+    CanvasManager.redraw();
+    console.log('🔪 SPLIT: Split mode activated');
+}
+
+// *** STEP 4: Add the working updateSplitIntersectionPoints function ***
+function updateSplitIntersectionPoints() {
+    if (!splitMode || !splitSourcePolygon) return;
+    
+    splitIntersectionPoints = [];
+    const tolerance = 0.01;
+    const currentX = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1]?.x || 0;
+    const currentY = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1]?.y || 0;
+    
+    // Check if current position is inside the polygon
+    const isInside = this.isPointInPolygon({ x: currentX, y: currentY }, splitSourcePolygon.path || splitSourcePolygon.lines);
+    if (!isInside) {
+        console.log('Current position is outside polygon');
+        return;
+    }
+    
+    // Get all edges of the polygon
+    const edges = [];
+    const polygonPath = splitSourcePolygon.path || splitSourcePolygon.lines;
+    polygonPath.forEach((line, index) => {
+        const start = line.start || line;
+        const end = line.end || polygonPath[(index + 1) % polygonPath.length];
+        edges.push({
+            start: start,
+            end: end,
+            index: index
+        });
+    });
+    
+    // Find intersections with horizontal line through current position
+    const horizontalLineStart = { x: currentX - 1000, y: currentY };
+    const horizontalLineEnd = { x: currentX + 1000, y: currentY };
+    
+    edges.forEach(edge => {
+        const intersection = getLineIntersection(
+            horizontalLineStart, horizontalLineEnd,
+            edge.start, edge.end
+        );
+        
+        if (intersection && Math.abs(intersection.x - currentX) > tolerance) {
+            splitIntersectionPoints.push({
+                x: intersection.x,
+                y: intersection.y,
+                type: 'horizontal',
+                edge: edge
+            });
+        }
+    });
+    
+    // Find intersections with vertical line through current position
+    const verticalLineStart = { x: currentX, y: currentY - 1000 };
+    const verticalLineEnd = { x: currentX, y: currentY + 1000 };
+    
+    edges.forEach(edge => {
+        const intersection = getLineIntersection(
+            verticalLineStart, verticalLineEnd,
+            edge.start, edge.end
+        );
+        
+        if (intersection && Math.abs(intersection.y - currentY) > tolerance) {
+            splitIntersectionPoints.push({
+                x: intersection.x,
+                y: intersection.y,
+                type: 'vertical',
+                edge: edge
+            });
+        }
+    });
+    
+    // Remove duplicates
+    splitIntersectionPoints = splitIntersectionPoints.filter((point, index, self) =>
+        index === self.findIndex(p => 
+            Math.abs(p.x - point.x) < tolerance && Math.abs(p.y - point.y) < tolerance
+        )
+    );
+    
+    console.log('Found', splitIntersectionPoints.length, 'split intersection points');
+}
+
+// *** STEP 5: Add the working handleSplitPointClick function ***
+function handleSplitPointClick(splitPoint) {
+    if (!splitMode || !splitSourcePolygon || !splitSourceVertex) return;
+    
+    console.log('🔪 SPLIT: Executing split from vertex to point', splitPoint);
+    
+    // Perform the split using the working algorithm from core.js
+    const newPolygons = performPerimeterSplit(splitSourcePolygon, splitSourceVertex, splitPoint);
+    
+    if (newPolygons && newPolygons.length === 2) {
+        // Remove original polygon
+        const polygonIndex = AppState.drawnPolygons.findIndex(p => p.id === splitSourcePolygon.id);
+        if (polygonIndex !== -1) {
+            AppState.drawnPolygons.splice(polygonIndex, 1);
+            
+            // Add new polygons with proper naming
+            const baseName = splitSourcePolygon.label;
+            newPolygons[0].label = baseName + 'A';
+            newPolygons[1].label = baseName + 'B';
+            
+            AppState.drawnPolygons.push(...newPolygons);
+            
+            // Exit split mode
+            exitSplitMode();
+            
+            // Update legend and redraw
+            CanvasManager.saveAction();
+            CanvasManager.redraw();
+            console.log('✅ SPLIT: Polygon split completed successfully');
+        }
+    } else {
+        console.error('🔪 SPLIT: Failed to create new polygons');
+    }
+}
+
+// *** STEP 6: Add the working performPerimeterSplit function ***
+function performPerimeterSplit(polygon, startVertex, endPoint) {
+    const tolerance = 0.01;
+    
+    console.log('🔪 SPLIT: Performing perimeter split');
+    console.log('Original polygon:', polygon.label, 'vertices:', polygon.path?.length || polygon.lines?.length);
+    
+    // Get the polygon path
+    const originalPath = polygon.path || polygon.lines;
+    if (!originalPath || originalPath.length < 3) {
+        console.error('Invalid polygon path');
+        return null;
+    }
+    
+    // Convert lines to vertices if needed
+    const originalVertices = [];
+    if (polygon.lines) {
+        // Convert from lines format
+        polygon.lines.forEach(line => {
+            originalVertices.push({
+                x: line.start.x,
+                y: line.start.y
+            });
+        });
+    } else {
+        // Already in vertex format
+        originalVertices.push(...originalPath);
+    }
+    
+    // Find start vertex index
+    let startVertexIndex = -1;
+    for (let i = 0; i < originalVertices.length; i++) {
+        if (Math.abs(originalVertices[i].x - startVertex.x) < tolerance && 
+            Math.abs(originalVertices[i].y - startVertex.y) < tolerance) {
+            startVertexIndex = i;
+            break;
+        }
+    }
+    
+    if (startVertexIndex === -1) {
+        console.error('Could not find start vertex');
+        return null;
+    }
+    
+    // Find end point on polygon boundary
+    let endVertexIndex = -1;
+    for (let i = 0; i < originalVertices.length; i++) {
+        if (Math.abs(originalVertices[i].x - endPoint.x) < tolerance && 
+            Math.abs(originalVertices[i].y - endPoint.y) < tolerance) {
+            endVertexIndex = i;
+            break;
+        }
+    }
+    
+    if (endVertexIndex === -1) {
+        console.error('Could not find end vertex');
+        return null;
+    }
+    
+    // Create the two split polygons
+    const polygon1Vertices = [];
+    const polygon2Vertices = [];
+    
+    // Add the drawn path to the splitting
+    const drawnPath = AppState.currentPolygonPoints || [];
+    
+    // Build first polygon: start -> end (forward) + drawn path (reverse)
+    let currentIndex = startVertexIndex;
+    while (currentIndex !== endVertexIndex) {
+        polygon1Vertices.push({
+            x: originalVertices[currentIndex].x,
+            y: originalVertices[currentIndex].y
+        });
+        currentIndex = (currentIndex + 1) % originalVertices.length;
+    }
+    polygon1Vertices.push({
+        x: originalVertices[endVertexIndex].x,
+        y: originalVertices[endVertexIndex].y
+    });
+    
+    // Add drawn path in reverse (excluding endpoints)
+    for (let i = drawnPath.length - 2; i > 0; i--) {
+        polygon1Vertices.push({
+            x: drawnPath[i].x,
+            y: drawnPath[i].y
+        });
+    }
+    
+    // Build second polygon: end -> start (forward) + drawn path (forward)
+    currentIndex = endVertexIndex;
+    while (currentIndex !== startVertexIndex) {
+        polygon2Vertices.push({
+            x: originalVertices[currentIndex].x,
+            y: originalVertices[currentIndex].y
+        });
+        currentIndex = (currentIndex + 1) % originalVertices.length;
+    }
+    polygon2Vertices.push({
+        x: originalVertices[startVertexIndex].x,
+        y: originalVertices[startVertexIndex].y
+    });
+    
+    // Add drawn path forward (excluding endpoints)
+    for (let i = 1; i < drawnPath.length - 1; i++) {
+        polygon2Vertices.push({
+            x: drawnPath[i].x,
+            y: drawnPath[i].y
+        });
+    }
+    
+    // Convert vertices to path format for your system
+    const polygon1Path = polygon1Vertices.map((vertex, index) => ({
+        x: vertex.x,
+        y: vertex.y,
+        name: `p${index}`
+    }));
+    
+    const polygon2Path = polygon2Vertices.map((vertex, index) => ({
+        x: vertex.x,
+        y: vertex.y,
+        name: `p${index}`
+    }));
+    
+    // Calculate areas
+    const area1 = this.calculatePolygonAreaFromPath(polygon1Path);
+    const area2 = this.calculatePolygonAreaFromPath(polygon2Path);
+    
+    console.log(`Split result: ${area1.toFixed(1)} + ${area2.toFixed(1)} = ${(area1 + area2).toFixed(1)} sq ft`);
+    
+    // Create polygon objects
+    const newPolygon1 = {
+        id: Date.now(),
+        path: polygon1Path,
+        label: polygon.label + 'A',
+        type: polygon.type,
+        glaType: polygon.glaType,
+        area: area1,
+        centroid: this.calculateCentroidFromPath(polygon1Path)
+    };
+    
+    const newPolygon2 = {
+        id: Date.now() + 1,
+        path: polygon2Path,
+        label: polygon.label + 'B',
+        type: polygon.type,
+        glaType: polygon.glaType,
+        area: area2,
+        centroid: this.calculateCentroidFromPath(polygon2Path)
+    };
+    
+    return [newPolygon1, newPolygon2];
+}
+
+// *** STEP 7: Add helper functions ***
+function getLineIntersection(p1, p2, p3, p4) {
+    const x1 = p1.x, y1 = p1.y;
+    const x2 = p2.x, y2 = p2.y;
+    const x3 = p3.x, y3 = p3.y;
+    const x4 = p4.x, y4 = p4.y;
+    
+    const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (Math.abs(denom) < 0.0001) return null;
+    
+    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+    const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+    
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+        return {
+            x: x1 + t * (x2 - x1),
+            y: y1 + t * (y2 - y1)
+        };
+    }
+    
+    return null;
+}
+
+// Add these to the global scope or ensure they're accessible
+window.startSplitMode = startSplitMode;
+window.handleSplitPointClick = handleSplitPointClick;
+window.updateSplitIntersectionPoints = updateSplitIntersectionPoints;
+window.splitMode = false;
+window.splitSourcePolygon = null;
+window.splitIntersectionPoints = [];
+window.splitSourceVertex = null;
+
+function exitSplitMode() {
+    splitMode = false;
+    splitSourcePolygon = null;
+    splitSourceVertex = null;
+    splitIntersectionPoints = [];
+    
+    // Clear drawing state
+    AppState.currentPolygonPoints = [];
+    AppState.currentPolygonCounter = 0;
+    this.waitingForFirstVertex = true;
+    
+    // Switch back to placement mode
+    AppState.currentMode = 'placement';
+    AppState.emit('mode:changed', { mode: 'placement' });
+    
+    // Update UI
+    const modeIndicator = document.getElementById('modeIndicator');
+    if (modeIndicator) {
+        modeIndicator.textContent = 'READY';
+        modeIndicator.style.background = '#95a5a6';
+    }
+    
+    console.log('🔪 SPLIT: Exited split mode');
+}
+
+// Add these methods to your DrawingManager class if they don't exist
+function isPointInPolygon(point, path) { // <--- FIX 1: Added 'function' keyword
+    let inside = false;
+    for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+        const pi = path[i];
+        const pj = path[j];
+        if ((pi.y > point.y) !== (pj.y > point.y) &&
+            point.x < ((pj.x - pi.x) * (point.y - pi.y)) / (pj.y - pi.y) + pi.x) {
+            inside = !inside;
+        }
+    }
+    return inside;
+}
+
+function calculatePolygonAreaFromPath(path) { // <--- FIX 2: Added 'function' keyword
+    if (!path || path.length < 3) return 0;
+    let area = 0;
+    for (let i = 0; i < path.length; i++) {
+        const p1 = path[i];
+        const p2 = path[(i + 1) % path.length];
+        area += (p1.x * p2.y - p2.x * p1.y);
+    }
+    return Math.abs(area / 2) / 64; // Convert to square feet
+}
+
+function calculateCentroidFromPath(path) { // <--- FIX 3: Added 'function' keyword
+    if (!path || path.length === 0) return { x: 0, y: 0 };
+    let sumX = 0;
+    let sumY = 0;
+    path.forEach(p => {
+        sumX += p.x;
+        sumY += p.y;
+    });
+    return { 
+        x: sumX / path.length, 
+        y: sumY / path.length 
+    };
+}
+
+
 export class DrawingManager {
 constructor() {
     console.log('DrawingManager: Initializing minimal version');
@@ -155,19 +561,28 @@ findDirectSharedPath(fromPoint, area, targetVertexIndex) {
 }
 
 // *** NEW: Calculate distance from point to line segment ***
+// In drawing.js, find and replace this specific function
+
+/**
+ * Calculates the shortest distance from a point to a line segment.
+ * @param {object} point The point {x, y}.
+ * @param {object} lineStart The starting point of the line segment {x, y}.
+ * @param {object} lineEnd The ending point of the line segment {x, y}.
+ * @returns {number} The distance in pixels.
+ */
 distanceFromPointToLineSegment(point, lineStart, lineEnd) {
     const A = point.x - lineStart.x;
     const B = point.y - lineStart.y;
     const C = lineEnd.x - lineStart.x;
     const D = lineEnd.y - lineStart.y;
-    
+
     const dot = A * C + B * D;
     const lenSq = C * C + D * D;
-    
+
     if (lenSq === 0) return Math.sqrt(A * A + B * B);
-    
+
     let param = dot / lenSq;
-    
+
     let xx, yy;
     if (param < 0) {
         xx = lineStart.x;
@@ -179,7 +594,7 @@ distanceFromPointToLineSegment(point, lineStart, lineEnd) {
         xx = lineStart.x + param * C;
         yy = lineStart.y + param * D;
     }
-    
+
     const dx = point.x - xx;
     const dy = point.y - yy;
     return Math.sqrt(dx * dx + dy * dy);
@@ -627,6 +1042,7 @@ completeCycleWithPermanentHelper(permanentHelper, tryOnly = false) {
 // In drawing.js, replace the drawPolygons function with this enhanced version that includes edge labels
 // In drawing.js, replace the drawPolygons function with this enhanced version that includes edge labels
 
+// Replace the entire drawPolygons function in drawing.js with this:
 drawPolygons() {
     const { ctx } = AppState;
     if (!ctx) return;
@@ -705,6 +1121,59 @@ drawPolygons() {
         // *** ENHANCED: Draw preview lines to potential cycle closing points ***
         if (AppState.currentPolygonPoints.length >= 2) {
             this.drawCyclePreviewLines(ctx);
+        }
+
+        // *** NEW: Draw closing edge preview if we have 3+ points ***
+        if (AppState.currentPolygonPoints.length >= 3) {
+            const firstPoint = AppState.currentPolygonPoints[0];
+            const lastPoint = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1];
+            
+            // Only show if points are not already very close
+            const dx = firstPoint.x - lastPoint.x;
+            const dy = firstPoint.y - lastPoint.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance > 5) {
+                // Draw closing edge preview
+                ctx.save();
+                ctx.strokeStyle = 'rgba(46, 204, 113, 0.8)'; // Green for close action
+                ctx.lineWidth = 3;
+                ctx.setLineDash([12, 6]);
+                ctx.beginPath();
+                ctx.moveTo(lastPoint.x, lastPoint.y);
+                ctx.lineTo(firstPoint.x, firstPoint.y);
+                ctx.stroke();
+                
+                // Add distance label for closing edge
+                const distanceInFeet = distance / this.PIXELS_PER_FOOT;
+                if (distanceInFeet >= 1) {
+                    const midX = (lastPoint.x + firstPoint.x) / 2;
+                    const midY = (lastPoint.y + firstPoint.y) / 2;
+                    
+                    ctx.setLineDash([]); // Reset dash for text
+                    ctx.fillStyle = 'rgba(46, 204, 113, 0.9)';
+                    ctx.font = 'bold 9px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    
+                    const text = `${distanceInFeet.toFixed(1)}' (cls)`;
+                    const textMetrics = ctx.measureText(text);
+                    const padding = 3;
+                    
+                    // Green background for closing edge label
+                    ctx.fillRect(
+                        midX - textMetrics.width / 2 - padding,
+                        midY - 6 - padding,
+                        textMetrics.width + padding * 2,
+                        12 + padding * 2
+                    );
+                    
+                    ctx.fillStyle = 'white';
+                    ctx.fillText(text, midX, midY);
+                }
+                
+                ctx.restore();
+            }
         }
 
         // *** ENHANCED: Draw vertices with higher z-index and better visibility ***
@@ -894,6 +1363,7 @@ drawCyclePreviewLines(ctx) {
  // Replace the entire drawHelperPoints function in drawing.js with this one.
 // In drawing.js, replace the drawHelperPoints function with this enhanced version
 
+ // Replace the entire drawHelperPoints function in drawing.js with this:
 drawHelperPoints() {
     // Only draw any helper points if we are currently in drawing mode.
     if (AppState.currentMode !== 'drawing') {
@@ -904,6 +1374,45 @@ drawHelperPoints() {
     if (!ctx) return;
 
     ctx.save();
+
+    // *** NEW: Draw edge snap preview when waiting for first vertex ***
+    if (this.waitingForFirstVertex && this.lastMousePosition) {
+        const nearbyEdge = this.findNearbyEdgeForSnapping(this.lastMousePosition.x, this.lastMousePosition.y);
+        if (nearbyEdge) {
+            const snapPoint = this.getSnapPointOnEdge(nearbyEdge, this.lastMousePosition);
+            
+            // Highlight the edge that would be snapped to
+            ctx.save();
+            ctx.strokeStyle = 'rgba(46, 204, 113, 0.8)'; // Green highlight
+            ctx.lineWidth = 4;
+            ctx.setLineDash([8, 4]);
+            ctx.beginPath();
+            ctx.moveTo(nearbyEdge.startPoint.x, nearbyEdge.startPoint.y);
+            ctx.lineTo(nearbyEdge.endPoint.x, nearbyEdge.endPoint.y);
+            ctx.stroke();
+            ctx.restore();
+            
+            // Draw the snap point preview
+            ctx.save();
+            ctx.fillStyle = '#2ecc71'; // Bright green for edge snap
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 3;
+            
+            // Larger circle for edge snap point
+            ctx.beginPath();
+            ctx.arc(snapPoint.x, snapPoint.y, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Add small center dot
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(snapPoint.x, snapPoint.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.restore();
+        }
+    }
 
     // *** FIRST: Draw permanent helper points (blue - from completed paths) ***
     // These are drawn BEHIND temporary helper points
@@ -1053,50 +1562,96 @@ setupEventListeners() {
     });
 }
 
-  activate() {
-    if (this.isActive) return;
-    console.log('DrawingManager: Activating drawing mode');
-    this.isActive = true;
-    // Only wait for first vertex if no path exists
-    this.waitingForFirstVertex = !AppState.currentPolygonPoints || AppState.currentPolygonPoints.length === 0;
-    
-    // Always clear sequences when activating to ensure clean state
-    this.distanceInputSequence.length = 0;
-    this.angleInputSequence.length = 0;
-    
-    this.showDrawingUI();
-    this.setupAngleButton();
-    this.setupNumericKeypad();
-    this.setupDirectionalPad();
-    this.setupArrowKeyListeners();
-    const canvas = AppState.canvas;
-    if (canvas) {
-      canvas.addEventListener('click', this.boundHandleCanvasClick);
-      canvas.addEventListener('touchend', this.boundHandleCanvasTouch);
-    }
-    AppState.emit('ui:drawing:activated');
-  }
+// Replace the entire activate function in drawing.js with this:
+ 
 
-  deactivate() {
+// *** NEW: Add mouse move handler for edge snap preview ***
+handleMouseMove(e) {
     if (!this.isActive) return;
-    console.log('DrawingManager: Deactivating drawing mode');
-    this.isActive = false;
-    // Don't reset waitingForFirstVertex or clear the path - preserve it
-    this.hideDrawingUI();
-    this.removeAngleButton();
-    this.removeNumericKeypad();
-    this.removeDirectionalPad();
-    this.removeArrowKeyListeners();
-    const canvas = AppState.canvas;
-    if (canvas) {
-      canvas.removeEventListener('click', this.boundHandleCanvasClick);
-      canvas.removeEventListener('touchend', this.boundHandleCanvasTouch);
+    
+    // Only track mouse movement when waiting for first vertex
+    if (this.waitingForFirstVertex) {
+        const canvas = AppState.canvas;
+        const rect = canvas.getBoundingClientRect();
+        
+        // Calculate the scale factor between display size and actual canvas size
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        
+        // Convert mouse coordinates to canvas space
+        const canvasX = (e.clientX - rect.left) * scaleX;
+        const canvasY = (e.clientY - rect.top) * scaleY;
+        
+        // Convert to viewport coordinates
+        const viewport = document.getElementById('canvasViewport');
+        const viewportRect = viewport.getBoundingClientRect();
+        const viewportX = (e.clientX - viewportRect.left) - AppState.viewportTransform.x;
+        const viewportY = (e.clientY - viewportRect.top) - AppState.viewportTransform.y;
+        
+        // Update mouse position for edge snap preview
+        this.lastMousePosition = { x: viewportX, y: viewportY };
+        
+        // Redraw to show/hide edge snap preview
+        CanvasManager.redraw();
     }
-    AppState.emit('ui:drawing:deactivated');
-  }
+}
 
-  handleCanvasClick(e) {
+ handleCanvasInteraction(e) {
+    // *** REMOVED: The zombie click blocking that was interfering with touch events ***
+    // The AppState.clickHasBeenProcessed flag was blocking legitimate touch interactions
+    
     if (!this.isActive) return;
+
+    // Get the correct canvas coordinates for the click/touch, accounting for pan/transform
+    const viewport = document.getElementById('canvasViewport');
+    const viewportRect = viewport.getBoundingClientRect();
+    const canvasX = (e.clientX - viewportRect.left) - AppState.viewportTransform.x;
+    const canvasY = (e.clientY - viewportRect.top) - AppState.viewportTransform.y;
+    this.lastMousePosition = { x: canvasX, y: canvasY };
+
+    // --- Rule 1: Placing the first vertex of a new shape ---
+    if (this.waitingForFirstVertex) {
+        this.placeFirstVertex(canvasX, canvasY);
+        return; // Action handled
+    }
+
+    // --- Priority #1: Clicking a vertex on the CURRENT path (to close or backtrack) ---
+    const clickedVertexIndex = this.findClickedVertex(canvasX, canvasY);
+    if (clickedVertexIndex !== -1) {
+        if (clickedVertexIndex === 0 && AppState.currentPolygonPoints.length >= 3) {
+            console.log('✅ Cycle completion triggered by clicking the first vertex.');
+            this.completeCycle(AppState.currentPolygonPoints);
+        } else {
+            this.continueFromVertex(clickedVertexIndex);
+        }
+        return; // Action handled
+    }
+
+    // --- Priority #2: Clicking a helper point (for snapping) ---
+    const clickedHelper = this.findClickedHelperPoint(canvasX, canvasY);
+    if (clickedHelper) {
+        console.log('🟣 Helper point clicked for snapping');
+        this.addHelperAsVertex(clickedHelper);
+        return; // Action handled
+    }
+    
+    // --- Priority #3: Clicking on existing polygon vertices for splitting ---
+    const clickedPolygonVertex = this.findClickedPolygonVertex(canvasX, canvasY);
+    if (clickedPolygonVertex) {
+        console.log('🔪 SPLIT: Clicked on completed polygon vertex');
+        this.addPolygonVertexToPath(clickedPolygonVertex);
+        return; // Action handled
+    }
+
+    // If we reach here, the click was in empty space - allow it to bubble up for panning
+    console.log('🖱️ Click in empty space - allowing panning');
+    return false; // Let other systems handle this
+}
+
+handleCanvasClick(e) {
+    if (!this.isActive) return;
+    
+    // *** IMPORTANT: Don't prevent default here - let panning work ***
     
     // Get the canvas element's bounding rect
     const canvas = AppState.canvas;
@@ -1116,12 +1671,21 @@ setupEventListeners() {
       clientY: canvasY / scaleY + rect.top
     };
     
-    this.handleCanvasInteraction(canvasEvent);
-  }
+    // Try to handle the interaction
+    const wasHandled = this.handleCanvasInteraction(canvasEvent);
+    
+    // *** KEY FIX: Only prevent propagation if we actually handled something ***
+    if (wasHandled) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+}
 
-  handleCanvasTouch(e) {
+handleCanvasTouch(e) {
     if (!this.isActive) return;
-    e.preventDefault(); // Prevent default touch behavior
+    
+    // *** IMPORTANT: Don't prevent default here initially - let panning work ***
+    
     if (e.changedTouches && e.changedTouches.length > 0) {
       // Use the first touch point
       const touch = e.changedTouches[0];
@@ -1144,57 +1708,386 @@ setupEventListeners() {
         clientY: canvasY / scaleY + rect.top
       };
       
-      this.handleCanvasInteraction(canvasEvent);
-    }
-  }
-
-// FIXED VERSION: Enhanced debugging and larger click radius for cycle detection
-// FIXED VERSION: Prioritize vertex clicks over helper point clicks for cycle detection
-
-// Replace the entire handleCanvasInteraction function in drawing.js with this one.
-// Replace the entire handleCanvasInteraction function in drawing.js with this one.
-handleCanvasInteraction(e) {
-    if (!this.isActive) return;
-
-    const viewport = document.getElementById('canvasViewport');
-    const viewportRect = viewport.getBoundingClientRect();
-    const canvasX = (e.clientX - viewportRect.left) - AppState.viewportTransform.x;
-    const canvasY = (e.clientY - viewportRect.top) - AppState.viewportTransform.y;
-
-    // Rule 1: If waiting for the first point, place it.
-    if (this.waitingForFirstVertex) {
-        this.placeFirstVertex(canvasX, canvasY);
-        return;
-    }
-
-    // Rule 2: Check if clicking on a vertex of the CURRENT path.
-    const clickedVertexIndex = this.findClickedVertex(canvasX, canvasY);
-    if (clickedVertexIndex !== -1) {
-        // If it's the FIRST vertex (and the path is long enough), it's a manual cycle close.
-        if (clickedVertexIndex === 0 && AppState.currentPolygonPoints.length >= 3) {
-            this.completeCycle(AppState.currentPolygonPoints);
-        } else {
-            // Otherwise, the user is editing the current path from that point.
-            this.continueFromVertex(clickedVertexIndex);
-        }
-        return;
-    }
-    
-    // Rule 3: Check if clicking on ANY helper point (from an old shape or a temporary one).
-    // If so, just add it as a new vertex to the current path.
-    const clickedPermanentHelper = this.findClickedPermanentHelper(canvasX, canvasY);
-    if (clickedPermanentHelper) {
-        this.addPermanentHelperAsVertex(clickedPermanentHelper);
-        return;
-    }
-    
-    const clickedHelperPoint = this.findClickedHelperPoint(canvasX, canvasY);
-    if (clickedHelperPoint) {
-        this.addHelperAsVertex(clickedHelperPoint);
-        return;
+      // Try to handle the interaction
+      const wasHandled = this.handleCanvasInteraction(canvasEvent);
+      
+      // *** KEY FIX: Only prevent default if we actually handled something ***
+      if (wasHandled) {
+          e.preventDefault();
+          e.stopPropagation();
+      }
     }
 }
 
+// *** FIXED: Activate function - don't interfere with viewport touch events ***
+activate() {
+    if (this.isActive) return;
+    console.log('DrawingManager: Activating drawing mode');
+    this.isActive = true;
+    // Only wait for first vertex if no path exists
+    this.waitingForFirstVertex = !AppState.currentPolygonPoints || AppState.currentPolygonPoints.length === 0;
+    
+    // Always clear sequences when activating to ensure clean state
+    this.distanceInputSequence.length = 0;
+    this.angleInputSequence.length = 0;
+    
+    this.showDrawingUI();
+    this.setupAngleButton();
+    this.setupNumericKeypad();
+    this.setupDirectionalPad();
+    this.setupArrowKeyListeners();
+    
+    const canvas = AppState.canvas;
+    if (canvas) {
+        // *** CRITICAL: Only add to canvas, not viewport, to avoid interfering with panning ***
+        canvas.addEventListener('click', this.boundHandleCanvasClick);
+        canvas.addEventListener('touchend', this.boundHandleCanvasTouch);
+        
+        // *** NEW: Add mouse move tracking for edge snap preview ***
+        this.boundHandleMouseMove = this.handleMouseMove.bind(this);
+        canvas.addEventListener('mousemove', this.boundHandleMouseMove);
+    }
+    
+    AppState.emit('ui:drawing:activated');
+}
+
+// *** FIXED: Deactivate function ***
+deactivate() {
+    if (!this.isActive) return;
+    console.log('DrawingManager: Deactivating drawing mode');
+    this.isActive = false;
+    // Don't reset waitingForFirstVertex or clear the path - preserve it
+    this.hideDrawingUI();
+    this.removeAngleButton();
+    this.removeNumericKeypad();
+    this.removeDirectionalPad();
+    this.removeArrowKeyListeners();
+    
+    const canvas = AppState.canvas;
+    if (canvas) {
+        canvas.removeEventListener('click', this.boundHandleCanvasClick);
+        canvas.removeEventListener('touchend', this.boundHandleCanvasTouch);
+        
+        // *** NEW: Remove mouse move listener ***
+        if (this.boundHandleMouseMove) {
+            canvas.removeEventListener('mousemove', this.boundHandleMouseMove);
+        }
+    }
+    
+    // Clear mouse position tracking
+    this.lastMousePosition = null;
+    
+    AppState.emit('ui:drawing:deactivated');
+}
+
+  
+
+ 
+
+// *** STEP 2: Add simplified polygon split detection ***
+// Add this new method to DrawingManager class
+checkForSimplePolygonSplit(helperPoint) {
+    const currentPath = AppState.currentPolygonPoints;
+    if (!currentPath || currentPath.length < 1) return null;
+    
+    const firstPoint = currentPath[0];
+    
+    console.log('🔍 SPLIT CHECK: Checking if both endpoints are on same polygon');
+    console.log('First point:', firstPoint);
+    console.log('Helper point:', helperPoint);
+    
+    // Check each existing polygon
+    for (const polygon of AppState.drawnPolygons) {
+        const firstOnPolygon = this.isPointOnPolygonBoundary(firstPoint, polygon, 10);
+        const helperOnPolygon = this.isPointOnPolygonBoundary(helperPoint, polygon, 10);
+        
+        console.log(`Checking polygon "${polygon.label}":`, {
+            firstOnPolygon: !!firstOnPolygon,
+            helperOnPolygon: !!helperOnPolygon
+        });
+        
+        if (firstOnPolygon && helperOnPolygon) {
+            // Both points are on the same polygon - this is a split!
+            console.log('✅ SPLIT DETECTED: Both endpoints on same polygon');
+            
+            // Add the helper point to complete the splitting path
+            const completePath = [...currentPath, helperPoint];
+            
+            return {
+                polygon: polygon,
+                splittingPath: completePath,
+                firstConnection: firstOnPolygon,
+                secondConnection: helperOnPolygon
+            };
+        }
+    }
+    
+    console.log('❌ No polygon split detected');
+    return null;
+}
+
+// *** STEP 3: Add simplified polygon split execution ***
+// Add this new method to DrawingManager class
+executePolygonSplit(splitInfo) {
+    const { polygon, splittingPath } = splitInfo;
+    
+    console.log('🔪 EXECUTING SPLIT on polygon:', polygon.label);
+    console.log('Splitting path length:', splittingPath.length);
+    
+    // Find connection points on the polygon boundary
+    const firstPoint = splittingPath[0];
+    const lastPoint = splittingPath[splittingPath.length - 1];
+    
+    // Find which vertices these points correspond to
+    const firstVertexIndex = this.findVertexIndex(polygon.path, firstPoint, 15);
+    const lastVertexIndex = this.findVertexIndex(polygon.path, lastPoint, 15);
+    
+    if (firstVertexIndex === -1 || lastVertexIndex === -1) {
+        console.error('🔪 SPLIT ERROR: Could not find connection vertices');
+        return false;
+    }
+    
+    console.log(`🔪 SPLIT: Connecting vertex ${firstVertexIndex} to vertex ${lastVertexIndex}`);
+    
+    // Create two new polygons using the simple approach
+    const newPolygons = this.createSplitPolygons(polygon, splittingPath, firstVertexIndex, lastVertexIndex);
+    
+    if (newPolygons && newPolygons.length === 2) {
+        // Remove original polygon
+        const originalIndex = AppState.drawnPolygons.findIndex(p => p.id === polygon.id);
+        if (originalIndex !== -1) {
+            AppState.drawnPolygons.splice(originalIndex, 1);
+            AppState.drawnPolygons.push(...newPolygons);
+            
+            // Clear the current drawing path
+            AppState.currentPolygonPoints = [];
+            AppState.currentPolygonCounter = 0;
+            this.waitingForFirstVertex = true;
+            
+            // Update and redraw
+            HelperPointManager.updateHelperPoints();
+            CanvasManager.saveAction();
+            CanvasManager.redraw();
+            
+            console.log('✅ SPLIT: Polygon split completed successfully');
+            return true;
+        }
+    }
+    
+    console.error('🔪 SPLIT ERROR: Failed to create new polygons');
+    return false;
+}
+
+// *** STEP 4: Add simple polygon creation from split ***
+// Add this new method to DrawingManager class
+createSplitPolygons(originalPolygon, splittingPath, startVertexIndex, endVertexIndex) {
+    console.log('🏗️ CREATING split polygons');
+    
+    const originalPath = originalPolygon.path;
+    const pathLength = originalPath.length;
+    
+    // Create first polygon: startVertex -> endVertex (forward) + splitting path (reverse)
+    const polygon1Path = [];
+    
+    // Add vertices from start to end (forward around original polygon)
+    let currentIndex = startVertexIndex;
+    while (currentIndex !== endVertexIndex) {
+        polygon1Path.push({
+            x: originalPath[currentIndex].x,
+            y: originalPath[currentIndex].y,
+            name: `p${polygon1Path.length}`
+        });
+        currentIndex = (currentIndex + 1) % pathLength;
+    }
+    // Add end vertex
+    polygon1Path.push({
+        x: originalPath[endVertexIndex].x,
+        y: originalPath[endVertexIndex].y,
+        name: `p${polygon1Path.length}`
+    });
+    
+    // Add splitting path in reverse (excluding first and last points to avoid duplicates)
+    for (let i = splittingPath.length - 2; i > 0; i--) {
+        polygon1Path.push({
+            x: splittingPath[i].x,
+            y: splittingPath[i].y,
+            name: `p${polygon1Path.length}`
+        });
+    }
+    
+    // Create second polygon: endVertex -> startVertex (forward) + splitting path (forward)
+    const polygon2Path = [];
+    
+    // Add vertices from end to start (forward around original polygon)
+    currentIndex = endVertexIndex;
+    while (currentIndex !== startVertexIndex) {
+        polygon2Path.push({
+            x: originalPath[currentIndex].x,
+            y: originalPath[currentIndex].y,
+            name: `p${polygon2Path.length}`
+        });
+        currentIndex = (currentIndex + 1) % pathLength;
+    }
+    // Add start vertex
+    polygon2Path.push({
+        x: originalPath[startVertexIndex].x,
+        y: originalPath[startVertexIndex].y,
+        name: `p${polygon2Path.length}`
+    });
+    
+    // Add splitting path forward (excluding first and last points to avoid duplicates)
+    for (let i = 1; i < splittingPath.length - 1; i++) {
+        polygon2Path.push({
+            x: splittingPath[i].x,
+            y: splittingPath[i].y,
+            name: `p${polygon2Path.length}`
+        });
+    }
+    
+    // Validate polygon sizes
+    if (polygon1Path.length < 3 || polygon2Path.length < 3) {
+        console.error('🔪 SPLIT ERROR: Invalid polygon sizes:', polygon1Path.length, polygon2Path.length);
+        return null;
+    }
+    
+    // Calculate areas
+    const area1 = this.calculatePolygonAreaFromPath(polygon1Path);
+    const area2 = this.calculatePolygonAreaFromPath(polygon2Path);
+    
+    console.log(`🔪 SPLIT RESULT: Created polygons with ${polygon1Path.length} and ${polygon2Path.length} vertices`);
+    console.log(`🔪 SPLIT AREAS: ${area1.toFixed(1)} + ${area2.toFixed(1)} = ${(area1 + area2).toFixed(1)} sq ft`);
+    
+    // Create polygon objects
+    const newPolygon1 = {
+        id: Date.now(),
+        path: polygon1Path,
+        label: originalPolygon.label + 'A',
+        type: originalPolygon.type,
+        glaType: originalPolygon.glaType,
+        area: area1,
+        centroid: this.calculateCentroidFromPath(polygon1Path)
+    };
+    
+    const newPolygon2 = {
+        id: Date.now() + 1,
+        path: polygon2Path,
+        label: originalPolygon.label + 'B',
+        type: originalPolygon.type,
+        glaType: originalPolygon.glaType,
+        area: area2,
+        centroid: this.calculateCentroidFromPath(polygon2Path)
+    };
+    
+    return [newPolygon1, newPolygon2];
+}
+
+// *** STEP 5: Helper functions (if not already present) ***
+// Add these helper methods if they don't exist in your DrawingManager class
+
+findVertexIndex(polygonPath, point, tolerance = 10) {
+    for (let i = 0; i < polygonPath.length; i++) {
+        const vertex = polygonPath[i];
+        const dx = point.x - vertex.x;
+        const dy = point.y - vertex.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance <= tolerance) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+isPointOnPolygonBoundary(point, polygon, tolerance = 5) {
+    // Check if point is exactly on a vertex
+    for (const vertex of polygon.path) {
+        const dx = point.x - vertex.x;
+        const dy = point.y - vertex.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance <= tolerance) {
+            return { type: 'vertex', vertex: vertex, polygon: polygon };
+        }
+    }
+    
+    // Check if point is on an edge
+    for (let i = 0; i < polygon.path.length; i++) {
+        const edgeStart = polygon.path[i];
+        const edgeEnd = polygon.path[(i + 1) % polygon.path.length];
+        const distanceToEdge = this.distanceFromPointToLineSegment(point, edgeStart, edgeEnd);
+        
+        if (distanceToEdge <= tolerance) {
+            return { type: 'edge', edgeStart: edgeStart, edgeEnd: edgeEnd, polygon: polygon };
+        }
+    }
+    
+    return null;
+}
+
+calculatePolygonAreaFromPath(path) {
+    if (!path || path.length < 3) return 0;
+    let area = 0;
+    for (let i = 0; i < path.length; i++) {
+        const p1 = path[i];
+        const p2 = path[(i + 1) % path.length];
+        area += (p1.x * p2.y - p2.x * p1.y);
+    }
+    return Math.abs(area / 2) / 64; // Convert to square feet (assuming 8 pixels per foot)
+}
+
+calculateCentroidFromPath(path) {
+    if (!path || path.length === 0) return { x: 0, y: 0 };
+    let sumX = 0;
+    let sumY = 0;
+    path.forEach(p => {
+        sumX += p.x;
+        sumY += p.y;
+    });
+    return { 
+        x: sumX / path.length, 
+        y: sumY / path.length 
+    };
+}
+
+findClickedPolygonVertex(x, y) {
+    const clickRadius = this.isMobileDevice() ? 30 : 20;
+    
+    for (const polygon of AppState.drawnPolygons) {
+        for (const vertex of polygon.path) {
+            const dx = x - vertex.x;
+            const dy = y - vertex.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance <= clickRadius) {
+                console.log('🔪 Found clicked polygon vertex:', vertex);
+                return vertex;
+            }
+        }
+    }
+    return null;
+}
+
+addPolygonVertexToPath(vertex) {
+    console.log('🔪 Adding polygon vertex to current path:', vertex);
+    
+    const newPoint = {
+        x: vertex.x,
+        y: vertex.y,
+        name: `p${AppState.currentPolygonCounter}`,
+        fromPolygonVertex: true
+    };
+
+    AppState.currentPolygonPoints.push(newPoint);
+    AppState.currentPolygonCounter++;
+    
+    // Update helper points and redraw
+    HelperPointManager.updateHelperPoints();
+    CanvasManager.saveAction();
+    CanvasManager.redraw();
+}
+  // In drawing.js, replace the entire handleCanvasInteraction function with this one:
+// In drawing.js, replace the entire handleCanvasInteraction function with this one:
+// In drawing.js, find and replace this function
+
+ 
 // *** NEW METHOD: Find clicked permanent helper point specifically ***
 findClickedPermanentHelper(x, y) {
     if (!AppState.permanentHelperPoints) return null;
@@ -1267,9 +2160,16 @@ getIntersectionPoint(p1, p2, p3, p4) {
 // *** NEW METHOD: Complete cycle by connecting to permanent helper ***
  // Replace the existing completeCycle function in drawing.js with this one.
 // Replace the entire completeCycle function in drawing.js with this one.
+ // Replace your existing completeCycle function with this enhanced version
 completeCycle(pathToComplete) {
-    console.log('🎉 Cycle closed manually with', pathToComplete.length, 'points.');
-
+    console.log('🎉 Attempting to complete cycle with', pathToComplete.length, 'points.');
+    
+    // First, check if this is a splitting scenario
+  
+    
+    // If not splitting, proceed with normal cycle completion
+    console.log('🎉 Creating new polygon cycle');
+    
     // Add vertices as permanent helpers for future snapping.
     this.addVerticesAsPermanentHelpers(pathToComplete);
     
@@ -1321,33 +2221,46 @@ addVerticesAsPermanentHelpers(completedPath) {
     
     console.log('🔗 HELPER DEBUG: Total permanent helper points:', AppState.permanentHelperPoints.length);
 }
-  findClickedVertex(x, y) {
+findClickedVertex(x, y) {
     if (!AppState.currentPolygonPoints) return -1;
     
     // INCREASED click radius for better detection - MAIN FIX
     const clickRadius = this.isMobileDevice() ? 50 : 25; // Increased from 30/15
     console.log('🔍 VERTEX DEBUG: Checking for vertex near world coordinates:', { x: x.toFixed(1), y: y.toFixed(1) });
     console.log('🎯 VERTEX DEBUG: Using click radius:', clickRadius);
+    console.log('🔍 VERTEX DEBUG: Current polygon points:', AppState.currentPolygonPoints.length);
     
+    // NEW: Also check existing polygon vertices for debugging
+    console.log('🔍 VERTEX DEBUG: Existing polygons:', AppState.drawnPolygons.length);
+    AppState.drawnPolygons.forEach((polygon, polyIndex) => {
+        polygon.path.forEach((vertex, vertexIndex) => {
+            const dx = x - vertex.x;
+            const dy = y - vertex.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            console.log(`🔍 VERTEX DEBUG: Polygon ${polyIndex} vertex ${vertexIndex} at (${vertex.x.toFixed(1)}, ${vertex.y.toFixed(1)}) - distance: ${distance.toFixed(1)}px`);
+        });
+    });
+    
+    // Check current drawing path vertices
     for (let i = 0; i < AppState.currentPolygonPoints.length; i++) {
-      const point = AppState.currentPolygonPoints[i];
-      
-      // The stored points are in canvas world coordinates.
-      // We are comparing them with the clicked world coordinates (x, y).
-      const dx = x - point.x;
-      const dy = y - point.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      console.log(`🔎 VERTEX DEBUG: ${point.name} at (${point.x.toFixed(1)}, ${point.y.toFixed(1)}) - distance: ${distance.toFixed(1)}px`);
-      
-      if (distance <= clickRadius) {
-        console.log(`✅ VERTEX DEBUG: Found clicked vertex: ${point.name} (index ${i})`);
-        return i;
-      }
+        const point = AppState.currentPolygonPoints[i];
+        
+        // The stored points are in canvas world coordinates.
+        // We are comparing them with the clicked world coordinates (x, y).
+        const dx = x - point.x;
+        const dy = y - point.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        console.log(`🔎 VERTEX DEBUG: ${point.name} at (${point.x.toFixed(1)}, ${point.y.toFixed(1)}) - distance: ${distance.toFixed(1)}px`);
+        
+        if (distance <= clickRadius) {
+            console.log(`✅ VERTEX DEBUG: Found clicked vertex: ${point.name} (index ${i})`);
+            return i;
+        }
     }
     console.log('❌ VERTEX DEBUG: No vertex found within click radius');
     return -1;
-  }
+}
 
  continueFromVertex(vertexIndex) {
     console.log(`DrawingManager: Continuing from vertex ${AppState.currentPolygonPoints[vertexIndex].name}`);
@@ -1391,16 +2304,51 @@ addVerticesAsPermanentHelpers(completedPath) {
     console.log(`Ready to continue drawing from ${AppState.currentPolygonPoints[vertexIndex].name}`);
   }
 
- placeFirstVertex(x, y) {
+// Replace the placeFirstVertex function in drawing.js with this fixed version:
+
+placeFirstVertex(x, y) {
     console.log('DrawingManager: Placing first vertex at:', x, y);
+    
+    let finalX = x;
+    let finalY = y;
+    let snapInfo = null;
+    
+    // *** PRIORITY 1: Check for vertex snapping first (highest priority) ***
+    const nearbyHelper = this.findClickedHelperPoint(x, y);
+    if (nearbyHelper) {
+        finalX = nearbyHelper.x;
+        finalY = nearbyHelper.y;
+        snapInfo = { type: 'vertex', point: nearbyHelper };
+        console.log('🎯 SNAP: First vertex snapped to helper point at:', finalX, finalY);
+    } else {
+        // *** PRIORITY 2: Check for edge snapping if no vertex found ***
+        const nearbyEdge = this.findNearbyEdgeForSnapping(x, y);
+        if (nearbyEdge) {
+            const snapPoint = this.getSnapPointOnEdge(nearbyEdge, { x, y });
+            finalX = snapPoint.x;
+            finalY = snapPoint.y;
+            snapInfo = { type: 'edge', edge: nearbyEdge, point: snapPoint };
+            console.log('🎯 SNAP: First vertex snapped to edge at:', finalX, finalY);
+        }
+    }
+    
     const firstPoint = {
-      x: x,
-      y: y,
-      name: 'p0'
+        x: finalX,
+        y: finalY,
+        name: 'p0',
+        snappedToHelper: !!nearbyHelper,
+        snappedToEdge: !!snapInfo && snapInfo.type === 'edge', // FIXED: Use snapInfo instead of nearbyEdge
+        snapInfo: snapInfo
     };
+    
     AppState.currentPolygonPoints = [firstPoint];
     AppState.currentPolygonCounter = 1;
     this.waitingForFirstVertex = false;
+
+    // *** NEW: Add snapped-to point as a permanent helper for future reference ***
+    if (snapInfo && snapInfo.type === 'edge') {
+        this.addSnapPointAsPermanentHelper(snapInfo.point);
+    }
 
     // Update helper points before redrawing
     HelperPointManager.updateHelperPoints();
@@ -1408,17 +2356,17 @@ addVerticesAsPermanentHelpers(completedPath) {
     CanvasManager.saveAction();
     CanvasManager.redraw();
 
-    console.log('DrawingManager: First vertex p0 placed');
+    console.log('DrawingManager: First vertex p0 placed with snap info:', snapInfo);
     const distanceInput = document.getElementById('distanceDisplay');
     if (distanceInput) {
-      this.activeInput = 'distance';
-      setTimeout(() => {
-        distanceInput.focus();
-        distanceInput.select();
-        console.log('Distance input focused after placing p0');
-      }, 100);
+        this.activeInput = 'distance';
+        setTimeout(() => {
+            distanceInput.focus();
+            distanceInput.select();
+            console.log('Distance input focused after placing p0');
+        }, 100);
     }
-  }
+}
 
   showDrawingUI() {
     console.log('DrawingManager: Showing drawing UI elements');
@@ -1674,7 +2622,9 @@ drawPolygons() {
         angleBtn.style.backgroundColor = '';
       }
       cornerArrows.forEach(arrow => {
-        arrow.style.backgroundColor = blueColor;
+        //arrow.style.backgroundColor = blueColor;
+        arrow.style.backgroundColor = "transparent";
+
       });
     }
   }
@@ -1728,7 +2678,8 @@ drawPolygons() {
     });
   }
 
-  handleKeypadClick(e) {
+ // Replace the entire handleKeypadClick function in drawing.js with this:
+handleKeypadClick(e) {
     e.preventDefault();
     e.stopPropagation();
     const buttonText = e.target.textContent.trim();
@@ -1738,9 +2689,9 @@ drawPolygons() {
     
     // Determine which input and sequence to use
     if (this.activeInput === 'angle' && angleInput && !angleInput.classList.contains('hidden')) {
-      targetInput = angleInput;
+        targetInput = angleInput;
     } else {
-      targetInput = distanceInput;
+        targetInput = distanceInput;
     }
     
     if (!targetInput) return;
@@ -1748,95 +2699,135 @@ drawPolygons() {
     console.log('Keypad click:', buttonText, 'Active input:', this.activeInput);
     
     switch (buttonText) {
-      case '0':
-      case '1':
-      case '2':
-      case '3':
-      case '4':
-      case '5':
-      case '6':
-      case '7':
-      case '8':
-      case '9':
-        // Work directly with the appropriate sequence
-        if (this.activeInput === 'angle' && angleInput && !angleInput.classList.contains('hidden')) {
-          // Check if we need to start fresh
-          if (targetInput.value === '0') {
-            this.angleInputSequence.length = 0;
-          }
-          
-          this.angleInputSequence.push(parseInt(buttonText));
-          // For angle: just concatenate the digits as a whole number
-          let angleNumber = 0;
-          for (let i = 0; i < this.angleInputSequence.length; i++) {
-            angleNumber = angleNumber * 10 + this.angleInputSequence[i];
-          }
-          targetInput.value = angleNumber.toString();
-          console.log('Updated angle sequence:', this.angleInputSequence, 'Display value:', targetInput.value);
-        } else {
-          // Check if we need to start fresh
-          if (targetInput.value === '0' || targetInput.value === '0.0') {
-            this.distanceInputSequence.length = 0;
-          }
-          
-          this.distanceInputSequence.push(parseInt(buttonText));
-          let number = 0;
-          for (let i = 0; i < this.distanceInputSequence.length; i++) {
-            number = number * 10 + this.distanceInputSequence[i];
-          }
-          number = number / 10;
-          targetInput.value = number.toFixed(1);
-          console.log('Updated distance sequence:', this.distanceInputSequence, 'Display value:', targetInput.value);
-        }
-        break;
-      case 'del':
-        if (this.activeInput === 'angle' && angleInput && !angleInput.classList.contains('hidden')) {
-          this.angleInputSequence.pop();
-          if (this.angleInputSequence.length === 0) {
-            targetInput.value = '0';
-          } else {
-            let angleNumber = 0;
-            for (let i = 0; i < this.angleInputSequence.length; i++) {
-              angleNumber = angleNumber * 10 + this.angleInputSequence[i];
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+            // Work directly with the appropriate sequence
+            if (this.activeInput === 'angle' && angleInput && !angleInput.classList.contains('hidden')) {
+                // Check if we need to start fresh
+                if (targetInput.value === '0') {
+                    this.angleInputSequence.length = 0;
+                }
+                
+                this.angleInputSequence.push(parseInt(buttonText));
+                // For angle: just concatenate the digits as a whole number
+                let angleNumber = 0;
+                for (let i = 0; i < this.angleInputSequence.length; i++) {
+                    angleNumber = angleNumber * 10 + this.angleInputSequence[i];
+                }
+                targetInput.value = angleNumber.toString();
+                console.log('Updated angle sequence:', this.angleInputSequence, 'Display value:', targetInput.value);
+            } else {
+                // Check if we need to start fresh
+                if (targetInput.value === '0' || targetInput.value === '0.0') {
+                    this.distanceInputSequence.length = 0;
+                }
+                
+                this.distanceInputSequence.push(parseInt(buttonText));
+                let number = 0;
+                for (let i = 0; i < this.distanceInputSequence.length; i++) {
+                    number = number * 10 + this.distanceInputSequence[i];
+                }
+                number = number / 10;
+                targetInput.value = number.toFixed(1);
+                console.log('Updated distance sequence:', this.distanceInputSequence, 'Display value:', targetInput.value);
             }
-            targetInput.value = angleNumber.toString();
-          }
-        } else {
-          this.distanceInputSequence.pop();
-          if (this.distanceInputSequence.length === 0) {
-            targetInput.value = '0';
-          } else {
-            let number = 0;
-            for (let i = 0; i < this.distanceInputSequence.length; i++) {
-              number = number * 10 + this.distanceInputSequence[i];
+            break;
+        case 'del':
+            if (this.activeInput === 'angle' && angleInput && !angleInput.classList.contains('hidden')) {
+                this.angleInputSequence.pop();
+                if (this.angleInputSequence.length === 0) {
+                    targetInput.value = '0';
+                } else {
+                    let angleNumber = 0;
+                    for (let i = 0; i < this.angleInputSequence.length; i++) {
+                        angleNumber = angleNumber * 10 + this.angleInputSequence[i];
+                    }
+                    targetInput.value = angleNumber.toString();
+                }
+            } else {
+                this.distanceInputSequence.pop();
+                if (this.distanceInputSequence.length === 0) {
+                    targetInput.value = '0';
+                } else {
+                    let number = 0;
+                    for (let i = 0; i < this.distanceInputSequence.length; i++) {
+                        number = number * 10 + this.distanceInputSequence[i];
+                    }
+                    number = number / 10;
+                    targetInput.value = number.toFixed(1);
+                }
             }
-            number = number / 10;
-            targetInput.value = number.toFixed(1);
-          }
-        }
-        break;
-      case 'clear':
-        if (this.activeInput === 'angle' && angleInput && !angleInput.classList.contains('hidden')) {
-          this.angleInputSequence.length = 0;
-          targetInput.value = '0';
-        } else {
-          this.distanceInputSequence.length = 0;
-          targetInput.value = '0';
-        }
-        break;
-      case 'angle':
-        console.log('Angle button clicked');
-        this.handleAngleButtonClick(e);
-        if (angleInput && !angleInput.classList.contains('hidden')) {
-          this.activeInput = 'angle';
-          angleInput.value = '0'; // Changed from '0.0' to '0'
-          angleInput.focus();
-        }
-        break;
-      case 'cls':
-        break;
+            break;
+        case 'clear':
+            if (this.activeInput === 'angle' && angleInput && !angleInput.classList.contains('hidden')) {
+                this.angleInputSequence.length = 0;
+                targetInput.value = '0';
+            } else {
+                this.distanceInputSequence.length = 0;
+                targetInput.value = '0';
+            }
+            break;
+        case 'angle':
+            console.log('Angle button clicked');
+            this.handleAngleButtonClick(e);
+            if (angleInput && !angleInput.classList.contains('hidden')) {
+                this.activeInput = 'angle';
+                angleInput.value = '0'; // Changed from '0.0' to '0'
+                angleInput.focus();
+            }
+            break;
+        case 'cls':
+            // *** NEW: Close polygon functionality ***
+            console.log('🔄 CLS: Close polygon button clicked');
+            this.closeCurrentPolygon();
+            break;
     }
-  }
+}
+
+// *** NEW: Add this new method to close the current polygon ***
+closeCurrentPolygon() {
+    console.log('🔄 CLS: Attempting to close current polygon');
+    
+    // Check if we have enough points to form a polygon
+    if (!AppState.currentPolygonPoints || AppState.currentPolygonPoints.length < 3) {
+        console.log('❌ CLS: Need at least 3 points to close a polygon. Current points:', AppState.currentPolygonPoints?.length || 0);
+        return;
+    }
+    
+    const firstPoint = AppState.currentPolygonPoints[0];
+    const lastPoint = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1];
+    
+    // Check if already closed (last point is very close to first point)
+    const dx = lastPoint.x - firstPoint.x;
+    const dy = lastPoint.y - firstPoint.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance < 5) {
+        console.log('🔄 CLS: Polygon already closed (distance to first point: ' + distance.toFixed(1) + 'px)');
+        // Complete the cycle as-is
+        this.completeCycle(AppState.currentPolygonPoints);
+        return;
+    }
+    
+    console.log(`🔄 CLS: Closing polygon by connecting ${lastPoint.name} to ${firstPoint.name}`);
+    console.log(`Distance to close: ${(distance / this.PIXELS_PER_FOOT).toFixed(1)} feet`);
+    
+    // Create a copy of the current points for the completed cycle
+    const closedPath = [...AppState.currentPolygonPoints];
+    
+    // Complete the cycle
+    this.completeCycle(closedPath);
+    
+    console.log('✅ CLS: Polygon closed successfully');
+}
 
   setupDirectionalPad() {
     const directionButtons = document.querySelectorAll('.dir-btn');
@@ -1854,11 +2845,19 @@ drawPolygons() {
     });
   }
 
- handleDirectionClick(e) {
+// Replace the entire handleDirectionClick function in drawing.js with this:
+handleDirectionClick(e) {
     e.preventDefault();
     e.stopPropagation();
     const button = e.target;
-    if (button.classList.contains('center')) return;
+    
+    // *** NEW: Handle center button for polygon closing ***
+    if (button.classList.contains('center')) {
+        console.log('🔴 CENTER: Center button clicked - closing polygon');
+        this.closeCurrentPolygon();
+        return;
+    }
+    
     const angleInput = document.getElementById('angleDisplay');
     if (!angleInput) return;
     
@@ -1869,41 +2868,41 @@ drawPolygons() {
     let finalAngle = currentAngleValue;
     
     if (isCustomAngle) {
-      console.log('DEBUG: Custom angle detected:', currentAngleValue);
-      // Apply custom angle transformations based on quadrant clicked
-      if (button.classList.contains('up-right')) {
-        finalAngle = currentAngleValue; // θ = a
-        console.log('DEBUG: Upper right clicked, using angle:', finalAngle);
-      } else if (button.classList.contains('down-right')) {
-        finalAngle = -currentAngleValue; // θ = -a
-        console.log('DEBUG: Lower right clicked, using angle:', finalAngle);
-      } else if (button.classList.contains('up-left')) {
-        finalAngle = 180 - currentAngleValue; // θ = 180-a
-        console.log('DEBUG: Upper left clicked, using angle:', finalAngle);
-      } else if (button.classList.contains('down-left')) {
-        finalAngle = 180 + currentAngleValue; // θ = 180+a
-        console.log('DEBUG: Lower left clicked, using angle:', finalAngle);
-      } else {
-        // For cardinal directions (up, down, left, right), use the custom angle as-is
-        console.log('DEBUG: Cardinal direction clicked, using custom angle as-is:', finalAngle);
-      }
-      
-      // Normalize angle to 0-360 range
-      finalAngle = ((finalAngle % 360) + 360) % 360;
-      console.log('DEBUG: Final normalized angle:', finalAngle);
-      
-    } else {
-      // Use the directional preset angle
-      for (const [className, angle] of Object.entries(this.directionAngles)) {
-        if (button.classList.contains(className)) {
-          finalAngle = angle;
-          angleInput.value = angle;
-          this.activeInput = 'angle';
-          angleInput.focus();
-          console.log('Direction clicked:', className, 'preset angle:', angle);
-          break;
+        console.log('DEBUG: Custom angle detected:', currentAngleValue);
+        // Apply custom angle transformations based on quadrant clicked
+        if (button.classList.contains('up-right')) {
+            finalAngle = currentAngleValue; // θ = a
+            console.log('DEBUG: Upper right clicked, using angle:', finalAngle);
+        } else if (button.classList.contains('down-right')) {
+            finalAngle = -currentAngleValue; // θ = -a
+            console.log('DEBUG: Lower right clicked, using angle:', finalAngle);
+        } else if (button.classList.contains('up-left')) {
+            finalAngle = 180 - currentAngleValue; // θ = 180-a
+            console.log('DEBUG: Upper left clicked, using angle:', finalAngle);
+        } else if (button.classList.contains('down-left')) {
+            finalAngle = 180 + currentAngleValue; // θ = 180+a
+            console.log('DEBUG: Lower left clicked, using angle:', finalAngle);
+        } else {
+            // For cardinal directions (up, down, left, right), use the custom angle as-is
+            console.log('DEBUG: Cardinal direction clicked, using custom angle as-is:', finalAngle);
         }
-      }
+        
+        // Normalize angle to 0-360 range
+        finalAngle = ((finalAngle % 360) + 360) % 360;
+        console.log('DEBUG: Final normalized angle:', finalAngle);
+        
+    } else {
+        // Use the directional preset angle
+        for (const [className, angle] of Object.entries(this.directionAngles)) {
+            if (button.classList.contains(className)) {
+                finalAngle = angle;
+                angleInput.value = angle;
+                this.activeInput = 'angle';
+                angleInput.focus();
+                console.log('Direction clicked:', className, 'preset angle:', angle);
+                break;
+            }
+        }
     }
     
     // Place the vertex with the calculated angle
@@ -1915,7 +2914,7 @@ drawPolygons() {
         console.log('Custom angle used; hiding angle input field post-placement.');
         this.handleAngleButtonClick();
     }
-  }
+}
   
   placeVertexWithAngle(angleDegrees) {
     const distanceInput = document.getElementById('distanceDisplay');
@@ -2109,30 +3108,53 @@ addPermanentHelperAsVertex(permanentHelper) {
 }
 
 // *** NEW: Enhanced placeFirstVertex with helper point snapping ***
+// Replace the entire placeFirstVertex function in drawing.js with this:
+// In drawing.js, replace this entire function
+
 placeFirstVertex(x, y) {
     console.log('DrawingManager: Placing first vertex at:', x, y);
     
-    // Check if we're close to any existing helper points for snapping
-    const nearbyHelper = this.findClickedHelperPoint(x, y);
     let finalX = x;
     let finalY = y;
+    let snapInfo = null;
+    let nearbyEdge = null; // CORRECTED: Variable declared here to be in scope.
     
+    // *** PRIORITY 1: Check for vertex snapping first (highest priority) ***
+    const nearbyHelper = this.findClickedHelperPoint(x, y);
     if (nearbyHelper) {
         finalX = nearbyHelper.x;
         finalY = nearbyHelper.y;
+        snapInfo = { type: 'vertex', point: nearbyHelper };
         console.log('🎯 SNAP: First vertex snapped to helper point at:', finalX, finalY);
+    } else {
+        // *** PRIORITY 2: Check for edge snapping if no vertex found ***
+        nearbyEdge = this.findNearbyEdgeForSnapping(x, y); // CORRECTED: Assign to existing variable.
+        if (nearbyEdge) {
+            const snapPoint = this.getSnapPointOnEdge(nearbyEdge, { x, y });
+            finalX = snapPoint.x;
+            finalY = snapPoint.y;
+            snapInfo = { type: 'edge', edge: nearbyEdge, point: snapPoint };
+            console.log('🎯 SNAP: First vertex snapped to edge at:', finalX, finalY);
+        }
     }
     
     const firstPoint = {
         x: finalX,
         y: finalY,
         name: 'p0',
-        snappedToHelper: !!nearbyHelper
+        snappedToHelper: !!nearbyHelper,
+        snappedToEdge: !!nearbyEdge, // CORRECTED: This line now works safely.
+        snapInfo: snapInfo
     };
     
     AppState.currentPolygonPoints = [firstPoint];
     AppState.currentPolygonCounter = 1;
     this.waitingForFirstVertex = false;
+
+    // *** NEW: Add snapped-to point as a permanent helper for future reference ***
+    if (snapInfo && snapInfo.type === 'edge') {
+        this.addSnapPointAsPermanentHelper(snapInfo.point);
+    }
 
     // Update helper points before redrawing
     HelperPointManager.updateHelperPoints();
@@ -2140,7 +3162,7 @@ placeFirstVertex(x, y) {
     CanvasManager.saveAction();
     CanvasManager.redraw();
 
-    console.log('DrawingManager: First vertex p0 placed');
+    console.log('DrawingManager: First vertex p0 placed with snap info:', snapInfo);
     const distanceInput = document.getElementById('distanceDisplay');
     if (distanceInput) {
         this.activeInput = 'distance';
@@ -2152,6 +3174,346 @@ placeFirstVertex(x, y) {
     }
 }
 
+// Add these new functions to the DrawingManager class in drawing.js:
+
+
+// Add this new method to DrawingManager class in drawing.js
+checkForPolygonSplitting() {
+    const currentPath = AppState.currentPolygonPoints;
+    if (!currentPath || currentPath.length < 2) return false;
+    
+    const firstPoint = currentPath[0];
+    const lastPoint = currentPath[currentPath.length - 1];
+    
+    console.log('🔍 SPLIT CHECK: Checking if path splits a polygon');
+    console.log('First point:', firstPoint);
+    console.log('Last point:', lastPoint);
+    
+    // Check if both endpoints are on existing polygons
+    for (const polygon of AppState.drawnPolygons) {
+        const firstOnPolygon = this.isPointOnPolygonBoundary(firstPoint, polygon);
+        const lastOnPolygon = this.isPointOnPolygonBoundary(lastPoint, polygon);
+        
+        console.log(`Checking polygon "${polygon.label}":`, {
+            firstOnPolygon: !!firstOnPolygon,
+            lastOnPolygon: !!lastOnPolygon
+        });
+        
+        if (firstOnPolygon && lastOnPolygon) {
+            // Additional check: make sure the path doesn't just trace the polygon boundary
+            const isJustTracingBoundary = this.isPathTracingBoundary(currentPath, polygon);
+            
+            if (!isJustTracingBoundary) {
+                console.log('🔪 SPLIT: Path connects two points on same polygon - attempting split');
+                return this.performPolygonSplit(polygon, currentPath);
+            } else {
+                console.log('❌ Path is just tracing the boundary, not a valid split');
+            }
+        }
+    }
+    
+    return false;
+}
+
+// Add this helper method to check if a point is on polygon boundary
+isPointOnPolygonBoundary(point, polygon, tolerance = 5) {
+    // Check if point is exactly on a vertex
+    for (const vertex of polygon.path) {
+        const dx = point.x - vertex.x;
+        const dy = point.y - vertex.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance <= tolerance) {
+            return { type: 'vertex', vertex: vertex, polygon: polygon };
+        }
+    }
+    
+    // Check if point is on an edge
+    for (let i = 0; i < polygon.path.length; i++) {
+        const edgeStart = polygon.path[i];
+        const edgeEnd = polygon.path[(i + 1) % polygon.path.length];
+        const distanceToEdge = this.distanceFromPointToLineSegment(point, edgeStart, edgeEnd);
+        
+        if (distanceToEdge <= tolerance) {
+            return { type: 'edge', edgeStart: edgeStart, edgeEnd: edgeEnd, polygon: polygon };
+        }
+    }
+    
+    return null;
+}
+
+
+// *** NEW: Check if path is just tracing the polygon boundary ***
+isPathTracingBoundary(path, polygon) {
+    // If the path has intermediate points, check if they're all on the polygon boundary
+    if (path.length <= 2) return false;
+    
+    // Check each intermediate point
+    for (let i = 1; i < path.length - 1; i++) {
+        const point = path[i];
+        if (!this.isPointOnPolygonBoundary(point, polygon)) {
+            // At least one point is not on the boundary - this is a valid split
+            return false;
+        }
+    }
+    
+    // All points are on the boundary - this might just be tracing the edge
+    return true;
+}
+
+
+// Add the core splitting algorithm
+performPolygonSplit(polygon, splittingPath) {
+    console.log('🔪 SPLIT: Performing polygon split');
+    console.log('Original polygon:', polygon.label, 'with', polygon.path.length, 'vertices');
+    console.log('Splitting path:', splittingPath.length, 'points');
+    
+    const firstPoint = splittingPath[0];
+    const lastPoint = splittingPath[splittingPath.length - 1];
+    
+    // Find the indices where the splitting path connects to the original polygon
+    const firstIndex = this.findVertexIndex(polygon.path, firstPoint);
+    const lastIndex = this.findVertexIndex(polygon.path, lastPoint);
+    
+    if (firstIndex === -1 || lastIndex === -1) {
+        console.error('🔪 SPLIT: Could not find connection points on polygon');
+        return false;
+    }
+    
+    console.log(`🔪 SPLIT: Connecting vertex ${firstIndex} to vertex ${lastIndex}`);
+    
+    // Create the two new polygons
+    const polygon1Path = [];
+    const polygon2Path = [];
+    
+    // Build first polygon: from firstIndex to lastIndex + splitting path
+    let currentIndex = firstIndex;
+    while (currentIndex !== lastIndex) {
+        polygon1Path.push({ ...polygon.path[currentIndex] });
+        currentIndex = (currentIndex + 1) % polygon.path.length;
+    }
+    polygon1Path.push({ ...polygon.path[lastIndex] }); // Add the last point
+    
+    // Add the splitting path in reverse (to close the loop properly)
+    for (let i = splittingPath.length - 2; i > 0; i--) {
+        polygon1Path.push({ ...splittingPath[i] });
+    }
+    
+    // Build second polygon: from lastIndex to firstIndex + splitting path  
+    currentIndex = lastIndex;
+    while (currentIndex !== firstIndex) {
+        polygon2Path.push({ ...polygon.path[currentIndex] });
+        currentIndex = (currentIndex + 1) % polygon.path.length;
+    }
+    polygon2Path.push({ ...polygon.path[firstIndex] }); // Add the first point
+    
+    // Add the splitting path forward
+    for (let i = 1; i < splittingPath.length - 1; i++) {
+        polygon2Path.push({ ...splittingPath[i] });
+    }
+    
+    // Validate that both polygons have enough vertices
+    if (polygon1Path.length < 3 || polygon2Path.length < 3) {
+        console.error('🔪 SPLIT: Invalid split - polygons must have at least 3 vertices');
+        console.log('Polygon 1 vertices:', polygon1Path.length);
+        console.log('Polygon 2 vertices:', polygon2Path.length);
+        return false;
+    }
+    
+    // Create the new polygon objects
+    const newPolygon1 = {
+        id: Date.now(),
+        path: polygon1Path,
+        label: polygon.label + 'A',
+        glaType: polygon.glaType,
+        area: this.calculatePolygonAreaFromPath(polygon1Path),
+        centroid: this.calculateCentroidFromPath(polygon1Path)
+    };
+    
+    const newPolygon2 = {
+        id: Date.now() + 1,
+        path: polygon2Path,
+        label: polygon.label + 'B', 
+        glaType: polygon.glaType,
+        area: this.calculatePolygonAreaFromPath(polygon2Path),
+        centroid: this.calculateCentroidFromPath(polygon2Path)
+    };
+    
+    console.log('🔪 SPLIT: Created two new polygons:');
+    console.log(`- ${newPolygon1.label}: ${newPolygon1.area.toFixed(1)} sq ft (${newPolygon1.path.length} vertices)`);
+    console.log(`- ${newPolygon2.label}: ${newPolygon2.area.toFixed(1)} sq ft (${newPolygon2.path.length} vertices)`);
+    console.log(`- Original total: ${polygon.area.toFixed(1)} sq ft`);
+    console.log(`- New total: ${(newPolygon1.area + newPolygon2.area).toFixed(1)} sq ft`);
+    
+    // Remove the original polygon and add the new ones
+    const originalIndex = AppState.drawnPolygons.findIndex(p => p.id === polygon.id);
+    if (originalIndex !== -1) {
+        AppState.drawnPolygons.splice(originalIndex, 1);
+        AppState.drawnPolygons.push(newPolygon1, newPolygon2);
+        
+        // Clear the current drawing path
+        AppState.currentPolygonPoints = [];
+        AppState.currentPolygonCounter = 0;
+        this.waitingForFirstVertex = true;
+        
+        // Update helper points and redraw
+        HelperPointManager.updateHelperPoints();
+        CanvasManager.saveAction();
+        CanvasManager.redraw();
+        
+        console.log('✅ SPLIT: Polygon split completed successfully');
+        return true;
+    }
+    
+    return false;
+}
+
+// Add helper methods for the splitting algorithm
+findVertexIndex(polygonPath, point, tolerance = 10) {  // Changed from 5 to 10
+    for (let i = 0; i < polygonPath.length; i++) {
+        const vertex = polygonPath[i];
+        const dx = point.x - vertex.x;
+        const dy = point.y - vertex.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance <= tolerance) {
+            console.log(`🔍 Found matching vertex at index ${i}, distance: ${distance.toFixed(2)}`);
+            return i;
+        }
+    }
+    console.log(`❌ No matching vertex found for point at (${point.x.toFixed(1)}, ${point.y.toFixed(1)})`);
+    return -1;
+}
+
+calculatePolygonAreaFromPath(path) {
+    if (!path || path.length < 3) return 0;
+    let area = 0;
+    for (let i = 0; i < path.length; i++) {
+        const p1 = path[i];
+        const p2 = path[(i + 1) % path.length];
+        area += (p1.x * p2.y - p2.x * p1.y);
+    }
+    return Math.abs(area / 2) / 64; // Convert to square feet (assuming 8 pixels per foot)
+}
+
+calculateCentroidFromPath(path) {
+    if (!path || path.length === 0) return { x: 0, y: 0 };
+    let sumX = 0;
+    let sumY = 0;
+    path.forEach(p => {
+        sumX += p.x;
+        sumY += p.y;
+    });
+    return { 
+        x: sumX / path.length, 
+        y: sumY / path.length 
+    };
+}
+
+// *** NEW: Find nearby edge for snapping ***
+findNearbyEdgeForSnapping(x, y) {
+    const snapRadius = this.isMobileDevice() ? 25 : 20; // Slightly larger radius for edge snapping
+    
+    console.log('🔍 EDGE SNAP: Looking for edges near click at:', x.toFixed(1), y.toFixed(1));
+    
+    // Check all completed polygons for nearby edges
+    if (!AppState.drawnPolygons || AppState.drawnPolygons.length === 0) {
+        console.log('🔍 EDGE SNAP: No completed polygons to check');
+        return null;
+    }
+    
+    let closestEdge = null;
+    let closestDistance = Infinity;
+    
+    for (const polygon of AppState.drawnPolygons) {
+        for (let i = 0; i < polygon.path.length; i++) {
+            const p1 = polygon.path[i];
+            const p2 = polygon.path[(i + 1) % polygon.path.length];
+            
+            const distanceToEdge = this.distanceFromPointToLineSegment({ x, y }, p1, p2);
+            
+            if (distanceToEdge <= snapRadius && distanceToEdge < closestDistance) {
+                closestEdge = {
+                    polygon: polygon,
+                    startPoint: p1,
+                    endPoint: p2,
+                    edgeIndex: i
+                };
+                closestDistance = distanceToEdge;
+                console.log(`🔍 EDGE SNAP: Found closer edge at distance ${distanceToEdge.toFixed(1)}px`);
+            }
+        }
+    }
+    
+    if (closestEdge) {
+        console.log('✅ EDGE SNAP: Found closest edge at distance:', closestDistance.toFixed(1), 'px');
+        return closestEdge;
+    } else {
+        console.log('❌ EDGE SNAP: No edges found within snap radius');
+        return null;
+    }
+}
+
+// *** NEW: Get the exact snap point on an edge ***
+getSnapPointOnEdge(edgeInfo, clickPoint) {
+    const { startPoint, endPoint } = edgeInfo;
+    
+    // Calculate the projection of the click point onto the line segment
+    const A = clickPoint.x - startPoint.x;
+    const B = clickPoint.y - startPoint.y;
+    const C = endPoint.x - startPoint.x;
+    const D = endPoint.y - startPoint.y;
+    
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    
+    if (lenSq === 0) {
+        // Edge has zero length, snap to start point
+        return { x: startPoint.x, y: startPoint.y };
+    }
+    
+    let param = dot / lenSq;
+    
+    // Clamp parameter to stay within the line segment
+    param = Math.max(0, Math.min(1, param));
+    
+    const snapPoint = {
+        x: startPoint.x + param * C,
+        y: startPoint.y + param * D
+    };
+    
+    console.log('🎯 EDGE SNAP: Calculated snap point at:', snapPoint.x.toFixed(1), snapPoint.y.toFixed(1));
+    console.log('🎯 EDGE SNAP: Parameter along edge:', param.toFixed(3));
+    
+    return snapPoint;
+}
+
+// *** NEW: Add snap point as permanent helper for future snapping ***
+addSnapPointAsPermanentHelper(snapPoint) {
+    // Initialize permanent helper points array if it doesn't exist
+    if (!AppState.permanentHelperPoints) {
+        AppState.permanentHelperPoints = [];
+    }
+    
+    // Check if this point already exists (avoid duplicates)
+    const existingPoint = AppState.permanentHelperPoints.find(p => 
+        Math.abs(p.x - snapPoint.x) < 2 && Math.abs(p.y - snapPoint.y) < 2
+    );
+    
+    if (!existingPoint) {
+        const helperPoint = {
+            x: snapPoint.x,
+            y: snapPoint.y,
+            source: 'edge_snap',
+            pathId: Date.now()
+        };
+        
+        AppState.permanentHelperPoints.push(helperPoint);
+        console.log('🔗 SNAP HELPER: Added edge snap point as permanent helper at:', snapPoint.x.toFixed(1), snapPoint.y.toFixed(1));
+    } else {
+        console.log('🔗 SNAP HELPER: Edge snap point already exists as permanent helper');
+    }
+}
+
+ 
 // *** ENHANCED: Update placeNextVertex with better snapping detection ***
 placeNextVertex(distance, angleDegrees) {
     console.log('DEBUG: placeNextVertex called with angle =', angleDegrees, 'degrees');

@@ -1,14 +1,11 @@
-// src/main.js - CORRECTED AND COMPLETE
-
 import './style.css';
-
-// Import the modular system
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
 import { DrawingManager } from './drawing.js';
 import { HelperPointManager } from './helpers.js';
 import { AreaManager } from './areaManager.js';
-import { PreviewManager } from './previewManager.js'; // <-- Added import
+import { SplitterManager } from './splitter.js';
+import { PreviewManager } from './previewManager.js';
 
 // Import existing sketch.js functions
 import { 
@@ -31,6 +28,10 @@ window.switchToDrawingMode = switchToDrawingMode;
 
 // --- Main Application Setup ---
 document.addEventListener('DOMContentLoaded', () => {
+
+    const splitterManager = new SplitterManager();
+    splitterManager.init();
+
     console.log("App loaded - initializing modular architecture");
 
     const canvas = document.getElementById('drawingCanvas');
@@ -48,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSketchModule();
 
     // Setup all other UI event handlers and pass the manager
-    setupUIHandlers(previewManager); // <-- Pass the new manager
+    setupUIHandlers(previewManager);
     setupKeyboardShortcuts();
 
     // Initial render and save
@@ -79,6 +80,9 @@ function setupUIHandlers(previewManager) {
 
     // Listen for the custom event to exit drawing mode automatically
     AppState.on('app:exitDrawingMode', switchToPlacementMode);
+    
+    // *** NEW: Listen for edge deletion event to switch to drawing mode ***
+    AppState.on('app:switchToDrawingMode', switchToDrawingMode);
 
     // Control handlers
     document.getElementById('editBtn').addEventListener('click', toggleEditMode);
@@ -133,39 +137,139 @@ function setupUIHandlers(previewManager) {
 
 // --- Mode Switching Logic ---
 function switchToPlacementMode() {
-    console.log('Switching to placement mode');
+    console.log('Switching to placement mode from:', AppState.currentMode);
+    console.log('--- LISTENER FIRED: Attempting to switch to placement mode. ---');
+
+    // Clean up any active modes
     activateSketchListeners();
+    
+    // Set mode state
     AppState.currentMode = 'placement';
+    
+    // Update UI elements
     const startBtn = document.getElementById('startBtn');
+    const editBtn = document.getElementById('editBtn');
     const modeIndicator = document.getElementById('modeIndicator');
+    
     if (startBtn) {
         startBtn.textContent = 'Start';
         startBtn.classList.remove('active');
     }
+    
+    if (editBtn) {
+        editBtn.classList.remove('active');
+    }
+    
     if (modeIndicator) {
         modeIndicator.textContent = 'READY';
-        modeIndicator.classList.remove('drawing-mode');
+        modeIndicator.classList.remove('drawing-mode', 'edit-mode');
     }
+    
+    // Emit events for other managers
     AppState.emit('mode:changed', { mode: 'placement' });
+    AppState.emit('mode:editToggled', { isEditMode: false, timestamp: Date.now() });
+    
+    // Redraw to update visual state
+    CanvasManager.redraw();
 }
 
+// *** FIXED: Deactivate sketch listeners in drawing mode to restore mobile panning ***
 function switchToDrawingMode() {
-    console.log('Switching to drawing mode');
-    deactivateSketchListeners();
+    console.log('Switching to drawing mode from:', AppState.currentMode);
+    
+    // *** CRITICAL FIX: Deactivate sketch listeners to restore mobile panning ***
+    //deactivateSketchListeners();
+    
+    // Set mode state
     AppState.currentMode = 'drawing';
+    
+    // Update UI elements
     const startBtn = document.getElementById('startBtn');
+    const editBtn = document.getElementById('editBtn');
     const modeIndicator = document.getElementById('modeIndicator');
+    
     if (startBtn) {
         startBtn.textContent = 'Stop';
         startBtn.classList.add('active');
     }
+    
+    if (editBtn) {
+        editBtn.classList.remove('active');
+    }
+    
     if (modeIndicator) {
         modeIndicator.textContent = 'DRAWING';
+        modeIndicator.classList.remove('edit-mode');
         modeIndicator.classList.add('drawing-mode');
     }
+    
+    // Hide all palettes and show drawing controls
     document.querySelectorAll('.one-of-bottom-pallets').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('[data-palette]').forEach(btn => btn.classList.remove('active'));
+    
+    // Activate numbers palette for drawing
+    const numbersBtn = document.getElementById('numbersBtn');
+    const drawPalette = document.getElementById('drawPalette');
+    if (numbersBtn && drawPalette) {
+        numbersBtn.classList.add('active');
+        drawPalette.classList.remove('hidden');
+    }
+    
+    // Emit events for other managers
     AppState.emit('mode:changed', { mode: 'drawing' });
+    AppState.emit('mode:editToggled', { isEditMode: false, timestamp: Date.now() });
+    
+    // Redraw to update visual state
+    CanvasManager.redraw();
+}
+
+function switchToEditMode() {
+    console.log('Switching to edit mode from:', AppState.currentMode);
+    
+    // Clean up any active modes
+    activateSketchListeners(); // Keep sketch listeners active for element interaction
+    
+    // Set mode state
+    AppState.currentMode = 'edit';
+    
+    // Update UI elements
+    const startBtn = document.getElementById('startBtn');
+    const editBtn = document.getElementById('editBtn');
+    const modeIndicator = document.getElementById('modeIndicator');
+    
+    if (startBtn) {
+        startBtn.textContent = 'Start';
+        startBtn.classList.remove('active');
+    }
+    
+    if (editBtn) {
+        editBtn.classList.add('active');
+    }
+    
+    if (modeIndicator) {
+        modeIndicator.textContent = 'EDITING';
+        modeIndicator.classList.remove('drawing-mode');
+        modeIndicator.classList.add('edit-mode');
+    }
+    
+    // Hide drawing palette if it's visible
+    const drawPalette = document.getElementById('drawPalette');
+    if (drawPalette && !drawPalette.classList.contains('hidden')) {
+        drawPalette.classList.add('hidden');
+        document.getElementById('numbersBtn')?.classList.remove('active');
+    }
+    
+    // Emit events for other managers
+    AppState.emit('mode:changed', { mode: 'edit' });
+    AppState.emit('mode:editToggled', { isEditMode: true, timestamp: Date.now() });
+    
+    // Show helpful message
+    setTimeout(() => {
+        console.log('💡 EDIT MODE: Click on areas to drag them, or click on edges to delete them!');
+    }, 100);
+    
+    // Redraw to show edit mode visual feedback
+    CanvasManager.redraw();
 }
 
 // --- Utility Functions ---
@@ -227,3 +331,5 @@ function importSketchFromJSON(file) {
     reader.onerror = () => alert('An error occurred while trying to read the file.');
     reader.readAsText(file);
 }
+
+window.switchToEditMode = switchToEditMode;

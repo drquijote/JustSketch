@@ -57,7 +57,7 @@ body {
   bottom: 0;
   overflow: hidden;
   background: #e0e0e0;
-  touch-action: none;
+  touch-action: pan-x pan-y;
 }
 
 .canvas-container {
@@ -290,7 +290,7 @@ body {
 }
 
 .key-btn.close-btn {
-  background: #87CEEB;
+  background: #f5f5f5;
   color: #2c3e50;
   border-color: #7FDD7F;
   font-size: 12px;
@@ -775,9 +775,128 @@ body {
   font-weight: bold;
 }
  
+/* Add this to your CSS file */
+.btn-delete {
+    background-color: #e74c3c !important;
+    color: white !important;
+    border: none !important;
+    padding: 10px 20px !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    font-weight: 600 !important;
+    transition: background-color 0.2s ease !important;
+}
 
+.btn-delete:hover {
+    background-color: #c0392b !important;
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    align-items: center;
+}
 /* Add this to style.css for mobile visual feedback */
 .mobile-input-active {
   border: 2px solid #3498db !important;
   box-shadow: 0 0 8px rgba(52, 152, 219, 0.5);
 }
+
+
+
+/*
+ * Styles for mobile devices to make the right-side controls less wide.
+ * This targets screens with a maximum width of 600px.
+ */
+@media (max-width: 600px) {
+  .top-controls .control-btn {
+    /* Reduces the space inside the button on the left and right */
+    padding-left: -2px;
+    padding-right: -2px;
+
+    /* Reduces the space between the buttons */
+    margin-bottom: 0px; /* Adjust as needed */
+
+    /* Makes the text slightly smaller to fit better */
+    font-size: 10px;
+    
+    /* You can also set a minimum width to prevent them from becoming too small */
+    max-width: 80px;
+  }
+}
+
+
+/*
+ * Styles for mobile devices to shrink the directional pad by 35%.
+ * This targets screens with a maximum width of 600px (e.g., iPhones).
+ */
+@media (max-width: 600px) {
+  #directionalPad {
+    /* * Shrinks the entire widget to 65% of its original size (a 35% reduction).
+     * You can adjust this value if you want it smaller or larger.
+     */
+    transform: scale(0.85);
+
+    /* * This is important. It anchors the widget to the bottom-left corner 
+     * as it scales down, which keeps its position stable in the layout.
+     */
+    transform-origin: bottom left;
+  }
+}
+
+
+/*
+ * Makes the background of the drawing directional pad transparent
+ * for a more subtle appearance on mobile devices.
+ */
+#directionalPad {
+    background-color: transparent;
+    box-shadow: none;
+}
+
+
+/*
+ * Simple restyle for the directional pad:
+ * 1. Make the pad's white container transparent.
+ * 2. Make the blue button backgrounds transparent.
+ * 3. Change the arrow color from white to blue.
+ */
+
+/* Makes the container box behind the buttons disappear */
+#directionalPad {
+    background: transparent;
+    box-shadow: none;
+}
+
+/* Targets all directional buttons (but not the center one) */
+#directionalPad .dir-btn {
+    background: transparent;  /* Removes the blue square background */
+    color: #3498db;           /* Makes the arrow character blue */
+    font-weight: bold;        /* Makes the arrow character a bit thicker */
+}
+
+/* Provides subtle feedback when a button is pressed */
+#directionalPad .dir-btn:active {
+    background: rgba(52, 152, 219, 0.15); /* A very light, transparent blue flash */
+    color: #2980b9;                       /* A slightly darker blue on press */
+}
+
+/* IMPORTANT: This rule ensures the red center button is not affected */
+#directionalPad .dir-btn.center {
+    background: #e74c3c; /* Keeps the original red background */
+    color: white;        /* Keeps the original white dot */
+}
+
+
+
+
+/*
+ * Changes the center button of the directional pad to a blue dot
+ * on a transparent background.
+ */
+#directionalPad .dir-btn.center {
+    background: transparent;  /* Removes the red background */
+    color: #3498db;           /* Makes the dot character blue */
+}
+

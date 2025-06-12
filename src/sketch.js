@@ -974,7 +974,7 @@ function handleViewportTouchMove(e) {
         const panDx = newCenter.x - lastTouchCenter.x;
         const panDy = newCenter.y - lastTouchCenter.y;
         AppState.viewportTransform.x += panDx;
-        AppState.viewportTransform.y += pandy;
+        AppState.viewportTransform.y += panDy;
         
         lastTouchCenter = newCenter;
         CanvasManager.updateViewportTransform();
@@ -984,110 +984,7 @@ function handleViewportTouchMove(e) {
 
 // In sketch.js, replace the handleViewportTouchEnd function with this enhanced version
 
-function handleViewportTouchEnd(e) {
-    console.log('DEBUG: handleViewportTouchEnd() called');
-    
-    // *** PRIORITY 1: Check for area dragging end first ***
-    if (isEditMode && window.areaManager && window.areaManager.isDraggingArea) {
-        window.areaManager.handleCanvasTouchEnd(e);
-        return; // Area manager handled it
-    }
-    
-    // Handle edit mode touch interactions
-    if (isEditMode && e.changedTouches.length > 0 && !isDragging && !isResizing && !isRotating) {
-        console.log('DEBUG: Handling edit mode touch end');
-        const touch = e.changedTouches[0];
-        const viewport = document.getElementById('canvasViewport');
-        const rect = viewport.getBoundingClientRect();
-        
-        // Calculate canvas coordinates
-        const canvasX = (touch.clientX - rect.left) - AppState.viewportTransform.x;
-        const canvasY = (touch.clientY - rect.top) - AppState.viewportTransform.y;
-        
-        // Skip handle checking on mobile when using sliders
-        if (!isMobileDevice() && editingIcon) {
-            const handle = getIconEditHandle(editingIcon, canvasX, canvasY);
-            console.log('DEBUG: Touch end - checking for handles, found:', handle);
-            
-            if (handle) {
-                console.log('DEBUG: Touch ended on a handle - KEEPING edit mode active');
-                e.preventDefault();
-                e.stopPropagation();
-                return;
-            }
-        }
-        
-        const clickedElement = getElementAt(canvasX, canvasY);
-        console.log('DEBUG: Clicked element on touch end:', clickedElement);
-        
-        if (clickedElement && clickedElement.type === 'room') {
-            // Check if tapping on delete button area
-            const deleteSize = 20;
-            const deleteX = clickedElement.x + clickedElement.width + 5;
-            const deleteY = clickedElement.y - 2;
-            const centerX = deleteX + deleteSize/2;
-            const centerY = deleteY + deleteSize/2;
-            const distance = Math.sqrt((canvasX - centerX) * (canvasX - centerX) + (canvasY - centerY) * (canvasY - centerY));
-            
-            if (distance <= deleteSize/2) {
-                // Delete button was handled
-            } else {
-                // Tapped on room label for editing
-                e.preventDefault();
-                e.stopPropagation();
-                hideIconEditControls(); // Hide icon controls
-                startEditingElement(clickedElement);
-                return;
-            }
-        } else if (clickedElement && clickedElement.type === 'icon') {
-            // Tapped on icon - show appropriate controls (sliders for mobile, handles for desktop)
-            console.log('DEBUG: Tapped on icon, showing controls');
-            e.preventDefault();
-            e.stopPropagation();
-            finishEditing(); // Finish any text editing
-            if (isMobileDevice()) {
-                showIconEditControls(clickedElement);
-            } else {
-                editingIcon = clickedElement;
-                CanvasManager.redraw();
-            }
-            return;
-        } else {
-            // Only finish editing if we tapped somewhere completely away from any elements
-            console.log('DEBUG: Tapped elsewhere, finishing editing');
-            hideIconEditControls();
-            finishEditing();
-        }
-    }
-    
-    // Handle placing elements (only when NOT in edit mode)
-    if (!isEditMode && selectedElement && e.touches.length === 0 && !isDragging && !isResizing && !isRotating) {
-        console.log('DEBUG: Placing element from touch end');
-        e.preventDefault();
-        const pos = getEventPos(e);
-        placeElement(pos.x, pos.y);
-    }
-    
-    if (e.touches.length === 0) {
-        // All touches ended - save action if we were modifying
-        if ((isDragging && draggedElement) || isResizing || isRotating) {
-            console.log('DEBUG: Saving action after touch interaction');
-            CanvasManager.saveAction();
-        }
-        
-        // Reset all states
-        isPanning = false;
-        isGesturing = false;
-        isDragging = false;
-        isResizing = false;
-        isRotating = false;
-        resizeHandle = null;
-        draggedElement = null;
-    } else if (e.touches.length === 1) {
-        // Switching from two fingers to one - stop gesturing
-        isGesturing = false;
-    }
-}
+ 
  
  
 
@@ -1262,72 +1159,7 @@ function getEventPos(e) {
     return { x: canvasX, y: canvasY };
 }
 
-// UPDATED: handleCanvasClick function
-function handleCanvasClick(e) {
-    console.log('DEBUG: handleCanvasClick() called');
-    
-    // Get the click position
-    const pos = getEventPos(e);
-    
-    // PRIORITY 1: Check for icon edit handles FIRST in edit mode (only on desktop)
-    if (isEditMode && editingIcon && !isMobileDevice()) {
-        const handle = getIconEditHandle(editingIcon, pos.x, pos.y);
-        console.log('DEBUG: handleCanvasClick - checking for handles, found:', handle);
-        
-        if (handle) {
-            console.log('DEBUG: Handle detected in canvas click, preventing default behavior');
-            e.preventDefault();
-            e.stopPropagation();
-            
-            if (handle === 'delete') {
-                console.log('DEBUG: Delete handle in canvas click');
-                deleteElement(editingIcon);
-                return;
-            } else if (handle === 'rotate') {
-                console.log('DEBUG: ROTATE HANDLE in canvas click - IGNORING (already handled in mousedown)');
-                // DON'T call rotateIcon90Degrees here - it was already called in mousedown
-                return;
-            } else if (['proportional', 'horizontal', 'vertical'].includes(handle)) {
-                console.log('DEBUG: Resize handle in canvas click:', handle);
-                // Don't do anything here - resize is handled in mouse down/move
-                return;
-            }
-        }
-    }
-    
-    // Only proceed with normal click behavior if no handles were clicked
-    if (selectedElement && !isPanning && !isDragging && !isResizing && !isRotating) {
-        placeElement(pos.x, pos.y);
-    } else if (isEditMode && !isPanning && !isDragging && !isResizing && !isRotating) {
-        // In edit mode, check if clicking on a room label or icon
-        const clickedElement = getElementAt(pos.x, pos.y);
-        
-        console.log('DEBUG: Canvas click in edit mode, element:', clickedElement);
-        
-        if (clickedElement && clickedElement.type === 'room') {
-            e.preventDefault();
-            e.stopPropagation();
-            hideIconEditControls(); // Hide icon controls
-            startEditingElement(clickedElement);
-        } else if (clickedElement && clickedElement.type === 'icon') {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log('DEBUG: Icon clicked in edit mode');
-            finishEditing(); // Finish any text editing
-            // Use appropriate editing method based on device
-            if (isMobileDevice()) {
-                showIconEditControls(clickedElement);
-            } else {
-                editingIcon = clickedElement;
-                CanvasManager.redraw();
-            }
-        } else {
-            // If clicking elsewhere, finish any current editing
-            hideIconEditControls();
-            finishEditing();
-        }
-    }
-}
+ 
 
 // In sketch.js, replace the existing placeElement function with this one
 
@@ -1360,170 +1192,7 @@ function placeElement(x, y) {
     console.log('DEBUG: Element placed:', newElement);
 }
 
-function getElementAt(x, y) {
-    console.log('DEBUG: getElementAt() called with coords:', x, y);
-    console.log('DEBUG: Total placed elements:', AppState.placedElements.length);
-    
-    for (let i = AppState.placedElements.length - 1; i >= 0; i--) {
-        const element = AppState.placedElements[i];
-        
-        console.log('DEBUG: Checking element', i, ':', element);
-        
-        // In edit mode, check for icon edit handles first (only on desktop)
-        if (isEditMode && element.type === 'icon' && editingIcon === element && !isMobileDevice()) {
-            console.log('DEBUG: Checking icon edit handles for element', i);
-            const handle = getIconEditHandle(element, x, y);
-            if (handle === 'delete') {
-                console.log('DEBUG: Delete handle detected, deleting element');
-                deleteElement(element);
-                return null;
-            }
-        }
-        
-        // In edit mode, check if clicking on delete button for room elements
-        if (isEditMode && element.type === 'room') {
-            const deleteSize = 20; // Updated to match drawing size
-            const deleteX = element.x + element.width + 5; // Updated to match drawing position
-            const deleteY = element.y - 2; // Updated to match drawing position
-            
-            // Check if click is within delete button area (circular hit detection)
-            const centerX = deleteX + deleteSize/2;
-            const centerY = deleteY + deleteSize/2;
-            const distance = Math.sqrt((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY));
-            
-            if (distance <= deleteSize/2) {
-                // Handle delete action
-                console.log('DEBUG: Room delete button clicked');
-                deleteElement(element);
-                return null; // Return null to prevent further processing
-            }
-        }
-        
-        // Check if clicking on the element itself
-        if (x >= element.x && x <= element.x + element.width && 
-            y >= element.y && y <= element.y + element.height) {
-            console.log('DEBUG: Element hit detected:', element);
-            return element;
-        }
-    }
-    console.log('DEBUG: No element found at coordinates');
-    return null;
-}
-
-function startEditingElement(element) {
-    // Finish any current editing first
-    finishEditing();
-    
-    editingElement = element;
-    
-    // Create an input element for editing
-    editInput = document.createElement('input');
-    editInput.type = 'text';
-    editInput.value = element.content;
-    editInput.style.position = 'fixed'; // Use fixed positioning
-    
-    // Calculate screen position
-    const viewport = document.getElementById('canvasViewport');
-    const rect = viewport.getBoundingClientRect();
-    const screenX = rect.left + AppState.viewportTransform.x + element.x;
-    const screenY = rect.top + AppState.viewportTransform.y + element.y;
-    
-    editInput.style.left = screenX + 'px';
-    editInput.style.top = screenY + 'px';
-    
-    // CHANGE: Set a wider width during editing (enough for 4-5 words)
-    const editingWidth = Math.max(160, element.content.length * 8 + 40); // Wider for editing
-    editInput.style.width = editingWidth + 'px';
-    
-    editInput.style.height = (element.height + 8) + 'px'; // Slightly taller for mobile
-    editInput.style.fontSize = '16px'; // Always 16px to prevent zoom
-    editInput.style.fontWeight = '600';
-    editInput.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-    editInput.style.border = '3px solid #3498db';
-    editInput.style.borderRadius = '4px';
-    editInput.style.padding = '4px 8px';
-    editInput.style.backgroundColor = 'white';
-    editInput.style.color = '#333';
-    editInput.style.zIndex = '999999'; // Very high z-index
-    editInput.style.textAlign = 'center';
-    editInput.style.touchAction = 'auto';
-    editInput.style.userSelect = 'text';
-    editInput.style.webkitUserSelect = 'text';
-    editInput.style.pointerEvents = 'auto';
-    editInput.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
-    
-    // Mobile-specific attributes
-    editInput.setAttribute('autocomplete', 'off');
-    editInput.setAttribute('autocorrect', 'off');
-    editInput.setAttribute('autocapitalize', 'off');
-    editInput.setAttribute('spellcheck', 'false');
-    editInput.setAttribute('inputmode', 'text');
-    
-    // Debug logging
-    console.log('Creating edit input for element:', element.content);
-    
-    // Add event listeners
-    editInput.addEventListener('blur', () => {
-        console.log('Input blurred');
-        setTimeout(finishEditing, 200);
-    });
-    editInput.addEventListener('keydown', handleEditKeydown);
-    
-    // Add touch event handlers to prevent propagation
-    editInput.addEventListener('touchstart', (e) => {
-        console.log('Touch start on input');
-        e.stopPropagation();
-    }, { passive: false });
-    
-    editInput.addEventListener('click', (e) => {
-        console.log('Click on input');
-        e.stopPropagation();
-    });
-    
-    // Add to document body for highest z-index context
-    document.body.appendChild(editInput);
-    
-    // Store reference for position updates
-    editInput._updatePosition = () => {
-        const rect = viewport.getBoundingClientRect();
-        const screenX = rect.left + AppState.viewportTransform.x + element.x;
-        const screenY = rect.top + AppState.viewportTransform.y + element.y;
-        editInput.style.left = screenX + 'px';
-        editInput.style.top = screenY + 'px';
-    };
-    
-    // Focus handling with multiple strategies
-    if (isMobileDevice()) {
-        console.log('Mobile device detected, attempting focus...');
-        
-        // Strategy 1: Immediate focus
-        editInput.focus();
-        
-        // Strategy 2: Delayed focus
-        setTimeout(() => {
-            console.log('Attempting delayed focus...');
-            editInput.focus();
-            editInput.click(); // Simulate click
-        }, 100);
-        
-        // Strategy 3: Force selection
-        setTimeout(() => {
-            if (document.activeElement === editInput) {
-                console.log('Input is focused, selecting text');
-                editInput.setSelectionRange(0, editInput.value.length);
-            } else {
-                console.log('Input not focused, trying again...');
-                editInput.focus();
-            }
-        }, 300);
-    } else {
-        // Desktop - immediate focus
-        setTimeout(() => {
-            editInput.focus();
-            editInput.select();
-        }, 50);
-    }
-}
+ 
 
 function handleEditKeydown(e) {
     if (e.key === 'Enter') {
@@ -1535,23 +1204,7 @@ function handleEditKeydown(e) {
     }
 }
 
-// UPDATED: finishEditing function
-function finishEditing() {
-  if (!editingElement || !editInput) return;
-  const newContent = editInput.value.trim();
-  let contentChanged = false;
-  if (newContent && newContent !== editingElement.content) {
-    editingElement.content = newContent;
-    editingElement.width = Math.max(58, newContent.length * 8 + 8);
-    contentChanged = true;
-  }
-  cleanupEditing();
-  if (contentChanged) {
-    CanvasManager.saveAction();
-  }
-  // Don't automatically exit edit mode - let user control this
-  CanvasManager.redraw();
-}
+ 
 
 function cancelEditing() {
     cleanupEditing();
@@ -1808,46 +1461,7 @@ function toggleLegend() {
     legend.classList.toggle('hidden');
 }
 
-// UPDATED: toggleEditMode function
-// Updated toggleEditMode function for sketch.js
-// Replace the existing toggleEditMode function with this enhanced version
-
-function toggleEditMode() {
-    console.log('DEBUG: toggleEditMode() called, current isEditMode:', isEditMode);
-    isEditMode = !isEditMode;
-    const modeIndicator = document.getElementById('modeIndicator');
-    const editBtn = document.getElementById('editBtn');
-    
-    // Finish any current editing when toggling modes
-    finishEditing();
-    hideIconEditControls(); // Hide icon edit controls
-    
-    if (isEditMode) {
-        modeIndicator.textContent = 'EDITING';
-        modeIndicator.classList.add('edit-mode');
-        editBtn.classList.add('active');
-        console.log('DEBUG: Edit mode ENABLED - Areas can now be dragged by clicking on them');
-        
-        // Show helpful message
-        setTimeout(() => {
-            console.log('💡 EDIT MODE: Click on any area to drag it along with its contents!');
-        }, 100);
-    } else {
-        modeIndicator.textContent = 'READY';
-        modeIndicator.classList.remove('edit-mode');
-        editBtn.classList.remove('active');
-        console.log('DEBUG: Edit mode DISABLED');
-    }
-    
-    // *** NEW: Emit edit mode toggle event for AreaManager ***
-    AppState.emit('mode:editToggled', { 
-        isEditMode: isEditMode,
-        timestamp: Date.now()
-    });
-    
-    // Redraw to show/hide delete buttons, edit handles, and area drag hints
-    CanvasManager.redraw();
-}
+ 
 
 function showpallets(id) {
     const target = document.getElementById(id);
@@ -1862,7 +1476,451 @@ function showpallets(id) {
 // Updated showangleinput function in sketch.js
 // Replace the existing showangleinput function with this version
  
+// Replace the entire toggleEditMode function in sketch.js with this:
+function toggleEditMode() {
+    console.log('DEBUG: toggleEditMode() called, current mode:', AppState.currentMode);
+    console.log('DEBUG: Setting isEditMode flag');
+    
+    // Finish any current editing when toggling modes
+    finishEditing();
+    hideIconEditControls();
+    
+    if (AppState.currentMode === 'edit') {
+        // Exit edit mode and go to ready/placement mode
+        console.log('DEBUG: Exiting edit mode to READY mode');
+        isEditMode = false; // *** ENSURE THIS IS SET ***
+        switchToPlacementMode();
+    } else {
+        // Enter edit mode from any other mode
+        console.log('DEBUG: Entering edit mode from', AppState.currentMode, 'mode');
+        isEditMode = true; // *** ENSURE THIS IS SET ***
+        switchToEditMode();
+    }
+}
 
+// Replace the entire handleCanvasClick function in sketch.js with this:
+function handleCanvasClick(e) {
+    console.log('DEBUG: handleCanvasClick() called, isEditMode:', isEditMode);
+    console.log('DEBUG: AppState.currentMode:', AppState.currentMode);
+    
+    // Get the click position
+    const pos = getEventPos(e);
+    console.log('DEBUG: Click position:', pos.x, pos.y);
+    
+    // PRIORITY 1: Check for icon edit handles FIRST in edit mode (only on desktop)
+    if (isEditMode && editingIcon && !isMobileDevice()) {
+        const handle = getIconEditHandle(editingIcon, pos.x, pos.y);
+        console.log('DEBUG: handleCanvasClick - checking for handles, found:', handle);
+        
+        if (handle) {
+            console.log('DEBUG: Handle detected in canvas click, preventing default behavior');
+            e.preventDefault();
+            e.stopPropagation();
+            
+            if (handle === 'delete') {
+                console.log('DEBUG: Delete handle in canvas click');
+                deleteElement(editingIcon);
+                return;
+            } else if (handle === 'rotate') {
+                console.log('DEBUG: ROTATE HANDLE in canvas click - IGNORING (already handled in mousedown)');
+                return;
+            } else if (['proportional', 'horizontal', 'vertical'].includes(handle)) {
+                console.log('DEBUG: Resize handle in canvas click:', handle);
+                return;
+            }
+        }
+    }
+    
+    // Only proceed with normal click behavior if no handles were clicked
+    if (selectedElement && !isPanning && !isDragging && !isResizing && !isRotating) {
+        placeElement(pos.x, pos.y);
+    } else if (isEditMode && !isPanning && !isDragging && !isResizing && !isRotating) {
+        // In edit mode, check if clicking on a room label, area label, or icon
+        const clickedElement = getElementAt(pos.x, pos.y);
+        console.log('DEBUG: Canvas click in edit mode, element:', clickedElement);
+        
+        if (clickedElement && clickedElement.type === 'room') {
+            console.log('DEBUG: Room clicked for editing:', clickedElement.content);
+            e.preventDefault();
+            e.stopPropagation();
+            hideIconEditControls();
+            startEditingElement(clickedElement);
+        } else if (clickedElement && clickedElement.type === 'area_label') {
+            // *** ENHANCED: Add support for area labels ***
+            console.log('DEBUG: Area label clicked for editing:', clickedElement.content);
+            e.preventDefault();
+            e.stopPropagation();
+            hideIconEditControls();
+            startEditingElement(clickedElement);
+        } else if (clickedElement && clickedElement.type === 'icon') {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('DEBUG: Icon clicked in edit mode');
+            finishEditing();
+            if (isMobileDevice()) {
+                showIconEditControls(clickedElement);
+            } else {
+                editingIcon = clickedElement;
+                CanvasManager.redraw();
+            }
+        } else {
+            console.log('DEBUG: Clicked elsewhere, finishing editing');
+            hideIconEditControls();
+            finishEditing();
+        }
+    }
+}
+
+// Replace the entire handleViewportTouchEnd function in sketch.js with this:
+function handleViewportTouchEnd(e) {
+    console.log('DEBUG: handleViewportTouchEnd() called, isEditMode:', isEditMode);
+    
+    // *** PRIORITY 1: Check for area dragging end first ***
+    if (isEditMode && window.areaManager && window.areaManager.isDraggingArea) {
+        window.areaManager.handleCanvasTouchEnd(e);
+        return;
+    }
+    
+    // Handle edit mode touch interactions
+    if (isEditMode && e.changedTouches.length > 0 && !isDragging && !isResizing && !isRotating) {
+        console.log('DEBUG: Handling edit mode touch end');
+        const touch = e.changedTouches[0];
+        const viewport = document.getElementById('canvasViewport');
+        const rect = viewport.getBoundingClientRect();
+        
+        // Calculate canvas coordinates
+        const canvasX = (touch.clientX - rect.left) - AppState.viewportTransform.x;
+        const canvasY = (touch.clientY - rect.top) - AppState.viewportTransform.y;
+        console.log('DEBUG: Touch coordinates:', canvasX, canvasY);
+        
+        // Skip handle checking on mobile when using sliders
+        if (!isMobileDevice() && editingIcon) {
+            const handle = getIconEditHandle(editingIcon, canvasX, canvasY);
+            console.log('DEBUG: Touch end - checking for handles, found:', handle);
+            
+            if (handle) {
+                console.log('DEBUG: Touch ended on a handle - KEEPING edit mode active');
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+        }
+        
+        const clickedElement = getElementAt(canvasX, canvasY);
+        console.log('DEBUG: Clicked element on touch end:', clickedElement);
+        
+        if (clickedElement && clickedElement.type === 'room') {
+            // Check if tapping on delete button area
+            const deleteSize = 20;
+            const deleteX = clickedElement.x + clickedElement.width + 5;
+            const deleteY = clickedElement.y - 2;
+            const centerX = deleteX + deleteSize/2;
+            const centerY = deleteY + deleteSize/2;
+            const distance = Math.sqrt((canvasX - centerX) * (canvasX - centerX) + (canvasY - centerY) * (canvasY - centerY));
+            
+            if (distance <= deleteSize/2) {
+                console.log('DEBUG: Delete button clicked');
+                deleteElement(clickedElement);
+            } else {
+                // Tapped on room label for editing
+                console.log('DEBUG: Room label tapped for editing:', clickedElement.content);
+                e.preventDefault();
+                e.stopPropagation();
+                hideIconEditControls();
+                startEditingElement(clickedElement);
+                return;
+            }
+        } else if (clickedElement && clickedElement.type === 'area_label') {
+            // *** ENHANCED: Add support for area labels ***
+            // Check if tapping on delete button area
+            const deleteSize = 20;
+            const deleteX = clickedElement.x + clickedElement.width + 5;
+            const deleteY = clickedElement.y - 2;
+            const centerX = deleteX + deleteSize/2;
+            const centerY = deleteY + deleteSize/2;
+            const distance = Math.sqrt((canvasX - centerX) * (canvasX - centerX) + (canvasY - centerY) * (canvasY - centerY));
+            
+            if (distance <= deleteSize/2) {
+                console.log('DEBUG: Area label delete button clicked');
+                deleteElement(clickedElement);
+            } else {
+                // Tapped on area label for editing
+                console.log('DEBUG: Area label tapped for editing:', clickedElement.content);
+                e.preventDefault();
+                e.stopPropagation();
+                hideIconEditControls();
+                startEditingElement(clickedElement);
+                return;
+            }
+        } else if (clickedElement && clickedElement.type === 'icon') {
+            console.log('DEBUG: Tapped on icon, showing controls');
+            e.preventDefault();
+            e.stopPropagation();
+            finishEditing();
+            if (isMobileDevice()) {
+                showIconEditControls(clickedElement);
+            } else {
+                editingIcon = clickedElement;
+                CanvasManager.redraw();
+            }
+            return;
+        } else {
+            console.log('DEBUG: Tapped elsewhere, finishing editing');
+            hideIconEditControls();
+            finishEditing();
+        }
+    }
+    
+    // Handle placing elements (only when NOT in edit mode)
+    if (!isEditMode && selectedElement && e.touches.length === 0 && !isDragging && !isResizing && !isRotating) {
+        console.log('DEBUG: Placing element from touch end');
+        e.preventDefault();
+        const pos = getEventPos(e);
+        placeElement(pos.x, pos.y);
+    }
+    
+    if (e.touches.length === 0) {
+        // All touches ended - save action if we were modifying
+        if ((isDragging && draggedElement) || isResizing || isRotating) {
+            console.log('DEBUG: Saving action after touch interaction');
+            CanvasManager.saveAction();
+        }
+        
+        // Reset all states
+        isPanning = false;
+        isGesturing = false;
+        isDragging = false;
+        isResizing = false;
+        isRotating = false;
+        resizeHandle = null;
+        draggedElement = null;
+    } else if (e.touches.length === 1) {
+        // Switching from two fingers to one - stop gesturing
+        isGesturing = false;
+    }
+}
+
+// Replace the entire startEditingElement function in sketch.js with this:
+function startEditingElement(element) {
+    console.log('DEBUG: startEditingElement called for:', element.type, element.content);
+    
+    // Finish any current editing first
+    finishEditing();
+    
+    editingElement = element;
+    
+    // Create an input element for editing
+    editInput = document.createElement('input');
+    editInput.type = 'text';
+    
+    // Handle different element types
+    if (element.type === 'area_label') {
+        editInput.value = element.areaData ? element.areaData.areaText : element.content;
+        console.log('DEBUG: Editing area label with value:', editInput.value);
+    } else {
+        editInput.value = element.content;
+        console.log('DEBUG: Editing room label with value:', editInput.value);
+    }
+    
+    editInput.style.position = 'fixed';
+    
+    // Calculate screen position
+    const viewport = document.getElementById('canvasViewport');
+    const rect = viewport.getBoundingClientRect();
+    const screenX = rect.left + AppState.viewportTransform.x + element.x;
+    const screenY = rect.top + AppState.viewportTransform.y + element.y;
+    
+    editInput.style.left = screenX + 'px';
+    editInput.style.top = screenY + 'px';
+    
+    // Set appropriate width during editing
+    const editingWidth = Math.max(160, element.content.length * 8 + 40);
+    editInput.style.width = editingWidth + 'px';
+    editInput.style.height = (element.height + 8) + 'px';
+    editInput.style.fontSize = '16px';
+    editInput.style.fontWeight = '600';
+    editInput.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+    editInput.style.border = '3px solid #3498db';
+    editInput.style.borderRadius = '4px';
+    editInput.style.padding = '4px 8px';
+    editInput.style.backgroundColor = 'white';
+    editInput.style.color = '#333';
+    editInput.style.zIndex = '999999';
+    editInput.style.textAlign = 'center';
+    editInput.style.touchAction = 'auto';
+    editInput.style.userSelect = 'text';
+    editInput.style.webkitUserSelect = 'text';
+    editInput.style.pointerEvents = 'auto';
+    editInput.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+    
+    // Mobile-specific attributes
+    editInput.setAttribute('autocomplete', 'off');
+    editInput.setAttribute('autocorrect', 'off');
+    editInput.setAttribute('autocapitalize', 'off');
+    editInput.setAttribute('spellcheck', 'false');
+    editInput.setAttribute('inputmode', 'text');
+    
+    console.log('DEBUG: Created edit input for element:', element.content);
+    
+    // Add event listeners
+    editInput.addEventListener('blur', () => {
+        console.log('DEBUG: Input blurred');
+        setTimeout(finishEditing, 200);
+    });
+    editInput.addEventListener('keydown', handleEditKeydown);
+    
+    // Add touch event handlers
+    editInput.addEventListener('touchstart', (e) => {
+        console.log('DEBUG: Touch start on input');
+        e.stopPropagation();
+    }, { passive: false });
+    
+    editInput.addEventListener('click', (e) => {
+        console.log('DEBUG: Click on input');
+        e.stopPropagation();
+    });
+    
+    document.body.appendChild(editInput);
+    
+    // Store reference for position updates
+    editInput._updatePosition = () => {
+        const rect = viewport.getBoundingClientRect();
+        const screenX = rect.left + AppState.viewportTransform.x + element.x;
+        const screenY = rect.top + AppState.viewportTransform.y + element.y;
+        editInput.style.left = screenX + 'px';
+        editInput.style.top = screenY + 'px';
+    };
+    
+    // Focus handling
+    if (isMobileDevice()) {
+        console.log('DEBUG: Mobile device detected, attempting focus...');
+        editInput.focus();
+        setTimeout(() => {
+            console.log('DEBUG: Attempting delayed focus...');
+            editInput.focus();
+            editInput.click();
+        }, 100);
+        setTimeout(() => {
+            if (document.activeElement === editInput) {
+                console.log('DEBUG: Input is focused, selecting text');
+                editInput.setSelectionRange(0, editInput.value.length);
+            } else {
+                console.log('DEBUG: Input not focused, trying again...');
+                editInput.focus();
+            }
+        }, 300);
+    } else {
+        setTimeout(() => {
+            editInput.focus();
+            editInput.select();
+        }, 50);
+    }
+}
+
+// Replace the entire finishEditing function in sketch.js with this:
+function finishEditing() {
+    if (!editingElement || !editInput) return;
+    
+    console.log('DEBUG: finishEditing called for:', editingElement.type, editingElement.content);
+    
+    const newContent = editInput.value.trim();
+    let contentChanged = false;
+    
+    if (newContent && newContent !== editingElement.content) {
+        if (editingElement.type === 'area_label') {
+            // Update area label
+            editingElement.content = newContent;
+            editingElement.areaData.areaText = newContent;
+            editingElement.width = Math.max(80, newContent.length * 8 + 16);
+            
+            // Also update the linked polygon if it exists
+            const linkedPolygon = AppState.drawnPolygons.find(p => p.id === editingElement.linkedPolygonId);
+            if (linkedPolygon) {
+                linkedPolygon.label = newContent;
+                console.log('DEBUG: Updated linked polygon label to:', newContent);
+            }
+            
+            contentChanged = true;
+            console.log('DEBUG: Area label content updated to:', newContent);
+        } else {
+            // Update room label
+            editingElement.content = newContent;
+            editingElement.width = Math.max(58, newContent.length * 8 + 8);
+            contentChanged = true;
+            console.log('DEBUG: Room label content updated to:', newContent);
+        }
+    }
+    
+    cleanupEditing();
+    
+    if (contentChanged) {
+        CanvasManager.saveAction();
+        // Update legend if area was changed
+        if (editingElement.type === 'area_label') {
+            AppState.emit('app:requestLegendUpdate');
+        }
+    }
+    
+    CanvasManager.redraw();
+}
+
+// Replace the entire getElementAt function in sketch.js with this:
+function getElementAt(x, y) {
+    console.log('DEBUG: getElementAt() called with coords:', x.toFixed(1), y.toFixed(1));
+    console.log('DEBUG: Total placed elements:', AppState.placedElements.length);
+    
+    for (let i = AppState.placedElements.length - 1; i >= 0; i--) {
+        const element = AppState.placedElements[i];
+        
+        console.log('DEBUG: Checking element', i, '- Type:', element.type, 'Content:', element.content);
+        console.log('DEBUG: Element bounds:', {
+            x: element.x.toFixed(1), 
+            y: element.y.toFixed(1), 
+            width: element.width, 
+            height: element.height
+        });
+        
+        // In edit mode, check for icon edit handles first (only on desktop)
+        if (isEditMode && element.type === 'icon' && editingIcon === element && !isMobileDevice()) {
+            console.log('DEBUG: Checking icon edit handles for element', i);
+            const handle = getIconEditHandle(element, x, y);
+            if (handle === 'delete') {
+                console.log('DEBUG: Delete handle detected, deleting element');
+                deleteElement(element);
+                return null;
+            }
+        }
+        
+        // In edit mode, check if clicking on delete button for room and area_label elements
+        if (isEditMode && (element.type === 'room' || element.type === 'area_label')) {
+            const deleteSize = 20;
+            const deleteX = element.x + element.width + 5;
+            const deleteY = element.y - 2;
+            
+            // Check if click is within delete button area (circular hit detection)
+            const centerX = deleteX + deleteSize/2;
+            const centerY = deleteY + deleteSize/2;
+            const distance = Math.sqrt((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY));
+            
+            console.log('DEBUG: Delete button check for', element.type, '- Distance:', distance.toFixed(1), 'Threshold:', deleteSize/2);
+            
+            if (distance <= deleteSize/2) {
+                console.log('DEBUG:', element.type, 'delete button clicked');
+                deleteElement(element);
+                return null;
+            }
+        }
+        
+        // Check if clicking on the element itself
+        if (x >= element.x && x <= element.x + element.width && 
+            y >= element.y && y <= element.y + element.height) {
+            console.log('DEBUG: Element hit detected:', element.type, element.content);
+            return element;
+        }
+    }
+    console.log('DEBUG: No element found at coordinates');
+    return null;
+}
 function showangleinput() {
     const angleDisplay = document.getElementById('angleDisplay');
     const cornerArrows = document.querySelectorAll('.dir-btn.up-left, .dir-btn.up-right, .dir-btn.down-left, .dir-btn.down-right');
@@ -1872,6 +1930,7 @@ function showangleinput() {
         angleDisplay.classList.remove('hidden');
         cornerArrows.forEach(arrow => { 
             arrow.style.backgroundColor = '#FFB366'; 
+            //arrow.style.backgroundColor = 'rgba(255, 179, 102, 0.2)'; 
         });
         
         // MOBILE FOCUS HANDLING - borrowed from drawing.js
@@ -1941,7 +2000,8 @@ function showangleinput() {
         // Hide angle input
         angleDisplay.classList.add('hidden');
         cornerArrows.forEach(arrow => { 
-            arrow.style.backgroundColor = '#3498db'; 
+            //arrow.style.backgroundColor = '#3498db'; 
+            arrow.style.backgroundColor = 'transparent';
         });
         
         // Refocus distance input when hiding angle input

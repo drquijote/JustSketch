@@ -2054,13 +2054,13 @@ function deactivateSketchListeners() {
 }
 
  
+
 export { 
     showpallets, 
     showangleinput, 
     initSketchModule, 
     toggleLegend, 
     toggleEditMode,
-    activateSketchListeners,
-    deactivateSketchListeners,
-    handleCanvasClick // <--- This is the only line that was added.
-}; 
+    activateSketchListeners,   // <-- ADD THIS
+    deactivateSketchListeners // <-- ADD THIS
+};

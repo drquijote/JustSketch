@@ -1,123 +1,150 @@
-// src/main.js - FINAL CORRECTED VERSION
+// src/main.js - Complete and Corrected
 
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
 import { DrawingManager } from './drawing.js';
-import { HelperPointManager } from './helpers.js';
 import { AreaManager } from './areaManager.js';
-import { SplitterManager } from './splitter.js';
-import { PreviewManager } from './previewManager.js';
 import { SaveManager } from './saveManager.js'; 
+import { PhotoManager } from './photo.js';
+import { PreviewManager } from './previewManager.js';
+import { SplitterManager } from './splitter.js';
+import { HelperPointManager } from './helpers.js';
 
-// Import existing sketch.js functions
+// Import functions from sketch.js
 import { 
   showpallets, 
   initSketchModule,
   toggleLegend, 
   toggleEditMode,
-  activateSketchListeners,
-  deactivateSketchListeners
+  handleCanvasClick as sketchHandleCanvasClick
 } from './sketch.js';
 
-// Global functions for HTML onclick handlers
-window.showpallets = showpallets;
+// --- Globals for HTML onclicks ---
 window.toggleLegend = toggleLegend;
-window.toggleEditMode = toggleEditMode;
 
-// Mode switching functions
-window.switchToPlacementMode = switchToPlacementMode;
-window.switchToDrawingMode = switchToDrawingMode;
+// --- Managers ---
+let photoManager;
+let drawingManager;
+let saveManager;
+let previewManager;
 
 // --- Main Application Setup ---
 document.addEventListener('DOMContentLoaded', () => {
-
-    const splitterManager = new SplitterManager();
-    splitterManager.init();
-
-    const saveManager = new SaveManager();
-    saveManager.init();
     
     console.log("App loaded - initializing modular architecture");
 
     const canvas = document.getElementById('drawingCanvas');
     CanvasManager.init(canvas);
 
-    // Initialize all the managers
-    new DrawingManager();
-    const areaManager = new AreaManager();
-    areaManager.init();
+    // --- Initialize Managers ---
+    saveManager = new SaveManager();
+    saveManager.init();
     
-    const previewManager = new PreviewManager();
+    drawingManager = new DrawingManager();
+    new AreaManager().init();
     
-    initSketchModule();
+    photoManager = new PhotoManager();
+    photoManager.init();
 
-    // Setup all UI event handlers
-    initializeAppControls(previewManager, saveManager);
+    previewManager = new PreviewManager();
+    new SplitterManager().init();
+    
+    initSketchModule(); 
+
+    // --- Initialize UI Controls and Event Routing ---
+    initializeAppControls();
+    setupPrimaryCanvasListener();
     setupKeyboardShortcuts();
 
-    // Initial render and save
+    // --- Initial State ---
     CanvasManager.redraw();
     CanvasManager.saveAction();
-
-    // Check if the URL is requesting a specific sketch to be loaded
     saveManager.loadSketchFromURL();
 
     console.log("App initialization complete");
 });
 
+/**
+ * Central event router for all canvas clicks.
+ */
+function setupPrimaryCanvasListener() {
+    const viewport = document.getElementById('canvasViewport');
+    if (viewport) {
+        viewport.addEventListener('click', (e) => {
+            console.log(`--- Canvas Click Routed | Mode: ${AppState.currentMode} ---`);
+            
+            switch (AppState.currentMode) {
+                case 'photo':
+                    photoManager.handleCanvasClick(e);
+                    break;
+                case 'drawing':
+                    break; // Drawing manager handles its own events
+                case 'edit':
+                case 'placement':
+                    sketchHandleCanvasClick(e);
+                    break;
+            }
+        });
+    }
+}
 
 /**
  * Sets up all the primary UI event listeners for the application buttons.
- * This should be the ONLY version of this function in the file.
- * @param {PreviewManager} previewManager - The instance of the preview manager.
- * @param {SaveManager} saveManager - The instance of the save manager.
  */
-function initializeAppControls(previewManager, saveManager) {
+function initializeAppControls() {
     // Palette button handlers
     const paletteButtons = document.querySelectorAll('[data-palette]');
     paletteButtons.forEach(button => {
         button.addEventListener('click', (e) => {
             const paletteId = e.target.getAttribute('data-palette');
-            if ((paletteId === 'roomsPalette' || paletteId === 'iconsPalette') && AppState.currentMode === 'drawing') {
+            
+            if (paletteId === 'photoPalette') {
+                switchToPhotoMode();
+            } else if (paletteId === 'drawPalette') {
+                switchToDrawingMode();
+            } else { // roomsPalette, iconsPalette
                 switchToPlacementMode();
             }
+
             showpallets(paletteId);
             paletteButtons.forEach(btn => btn.classList.remove('active'));
             e.target.classList.add('active');
         });
     });
 
-    // Listen for custom app events
-    AppState.on('app:exitDrawingMode', switchToPlacementMode);
-    AppState.on('app:switchToDrawingMode', switchToDrawingMode);
+    // Main action button handlers
+    document.getElementById('editBtn').addEventListener('click', switchToEditMode);
+    document.getElementById('startBtn').addEventListener('click', () => {
+        if (AppState.currentMode === 'drawing') {
+            const roomsBtn = document.getElementById('roomsBtn');
+            if(roomsBtn) roomsBtn.click();
+        } else {
+            const numbersBtn = document.getElementById('numbersBtn');
+            if(numbersBtn) numbersBtn.click();
+        }
+    });
 
-    // Control handlers
-    document.getElementById('editBtn').addEventListener('click', toggleEditMode);
-    document.getElementById('legendToggleBtn').addEventListener('click', toggleLegend);
+    // Undo/Redo handlers
     const undoBtn = document.getElementById('undo');
     const redoBtn = document.getElementById('redo');
     if (undoBtn) undoBtn.addEventListener('click', (e) => { e.preventDefault(); CanvasManager.undo(); });
     if (redoBtn) redoBtn.addEventListener('click', (e) => { e.preventDefault(); CanvasManager.redo(); });
 
-    // Drawing mode button handler
-    const startBtn = document.getElementById('startBtn');
-    if (startBtn) {
-        startBtn.addEventListener('click', () => {
-            if (AppState.currentMode === 'drawing') switchToPlacementMode();
-            else switchToDrawingMode();
-        });
-    }
-
-    // --- Export and Import Handlers ---
+    // Save/Export/Import handlers
     const exportBtn = document.querySelector('.export-dropdown > button');
     const exportMenu = document.getElementById('exportMenu');
     const fileInput = document.getElementById('importFile');
     const allFinishButtons = Array.from(document.querySelectorAll('.control-btn.finish-btn'));
     const importBtn = allFinishButtons.find(btn => btn.textContent.trim() === 'Import');
-    const saveAsBtn = document.getElementById('saveAsBtn');
 
     if (exportBtn && exportMenu) {
         exportBtn.addEventListener('click', () => exportMenu.classList.toggle('hidden'));
+        document.addEventListener('click', (e) => {
+            if (!exportBtn.contains(e.target) && !exportMenu.contains(e.target)) {
+                exportMenu.classList.add('hidden');
+            }
+        });
+
         exportMenu.addEventListener('click', (e) => {
             if (e.target.id === 'saveAsBtn') {
                 saveManager.promptForNewName();
@@ -139,7 +166,6 @@ function initializeAppControls(previewManager, saveManager) {
         });
     }
 
-    // --- Preview Button Handler ---
     const previewBtn = allFinishButtons.find(btn => btn.textContent.trim() === 'Preview');
     if (previewBtn && previewManager) {
         previewBtn.addEventListener('click', () => {
@@ -147,7 +173,6 @@ function initializeAppControls(previewManager, saveManager) {
         });
     }
     
-    // --- Save Button Handler ---
     const saveBtn = document.getElementById('saveBtn');
     if (saveBtn && saveManager) {
         saveBtn.addEventListener('click', () => {
@@ -157,69 +182,46 @@ function initializeAppControls(previewManager, saveManager) {
 }
 
 // --- Mode Switching Logic ---
+
 function switchToPlacementMode() {
-    console.log('Switching to placement mode from:', AppState.currentMode);
-    activateSketchListeners();
+    if (AppState.currentMode === 'placement') return;
     AppState.currentMode = 'placement';
-    const startBtn = document.getElementById('startBtn');
-    if (startBtn) {
-        startBtn.textContent = 'Start';
-        startBtn.classList.remove('active');
-    }
-    document.getElementById('editBtn').classList.remove('active');
     document.getElementById('modeIndicator').textContent = 'READY';
-    document.getElementById('modeIndicator').classList.remove('drawing-mode', 'edit-mode');
-    AppState.emit('mode:changed', { mode: 'placement' });
-    AppState.emit('mode:editToggled', { isEditMode: false });
+    document.getElementById('modeIndicator').className = 'mode-indicator';
+    document.getElementById('editBtn').classList.remove('active');
+    document.getElementById('startBtn').classList.remove('active');
+    document.getElementById('startBtn').textContent = 'Start';
     CanvasManager.redraw();
 }
 
 function switchToDrawingMode() {
-    console.log('Switching to drawing mode from:', AppState.currentMode);
+    if (AppState.currentMode === 'drawing') return;
     AppState.currentMode = 'drawing';
-    const startBtn = document.getElementById('startBtn');
-    if (startBtn) {
-        startBtn.textContent = 'Stop';
-        startBtn.classList.add('active');
-    }
-    document.getElementById('editBtn').classList.remove('active');
     document.getElementById('modeIndicator').textContent = 'DRAWING';
-    document.getElementById('modeIndicator').classList.remove('edit-mode');
-    document.getElementById('modeIndicator').classList.add('drawing-mode');
-    document.querySelectorAll('.one-of-bottom-pallets').forEach(p => p.classList.add('hidden'));
-    document.querySelectorAll('[data-palette]').forEach(btn => btn.classList.remove('active'));
-    const numbersBtn = document.getElementById('numbersBtn');
-    const drawPalette = document.getElementById('drawPalette');
-    if (numbersBtn && drawPalette) {
-        numbersBtn.classList.add('active');
-        drawPalette.classList.remove('hidden');
-    }
-    AppState.emit('mode:changed', { mode: 'drawing' });
-    AppState.emit('mode:editToggled', { isEditMode: false });
+    document.getElementById('modeIndicator').className = 'mode-indicator drawing-mode';
+    document.getElementById('editBtn').classList.remove('active');
+    document.getElementById('startBtn').classList.add('active');
+    document.getElementById('startBtn').textContent = 'Stop';
     CanvasManager.redraw();
 }
 
 function switchToEditMode() {
-    console.log('Switching to edit mode from:', AppState.currentMode);
-    activateSketchListeners();
     AppState.currentMode = 'edit';
-    const startBtn = document.getElementById('startBtn');
-    if (startBtn) {
-        startBtn.textContent = 'Start';
-        startBtn.classList.remove('active');
-    }
-    document.getElementById('editBtn').classList.add('active');
+    toggleEditMode();
     document.getElementById('modeIndicator').textContent = 'EDITING';
-    document.getElementById('modeIndicator').classList.remove('drawing-mode');
-    document.getElementById('modeIndicator').classList.add('edit-mode');
-    const drawPalette = document.getElementById('drawPalette');
-    if (drawPalette && !drawPalette.classList.contains('hidden')) {
-        drawPalette.classList.add('hidden');
-        document.getElementById('numbersBtn')?.classList.remove('active');
-    }
-    AppState.emit('mode:changed', { mode: 'edit' });
-    AppState.emit('mode:editToggled', { isEditMode: true });
-    setTimeout(() => console.log('💡 EDIT MODE: Click on areas to drag them, or click on edges to delete them!'), 100);
+    document.getElementById('modeIndicator').className = 'mode-indicator edit-mode';
+    document.getElementById('editBtn').classList.add('active');
+    document.getElementById('startBtn').classList.remove('active');
+    CanvasManager.redraw();
+}
+
+function switchToPhotoMode() {
+    if (AppState.currentMode === 'photo') return;
+    AppState.currentMode = 'photo';
+    document.getElementById('modeIndicator').textContent = 'PHOTO';
+    document.getElementById('modeIndicator').className = 'mode-indicator photo-mode';
+    document.getElementById('editBtn').classList.remove('active');
+    document.getElementById('startBtn').classList.remove('active');
     CanvasManager.redraw();
 }
 
@@ -229,6 +231,7 @@ function setupKeyboardShortcuts() {
         const isCtrlOrCmd = event.ctrlKey || event.metaKey;
         const targetTagName = event.target.tagName.toLowerCase();
         if (targetTagName === 'input' || targetTagName === 'textarea') return;
+
         if (isCtrlOrCmd && event.key.toLowerCase() === 'z' && !event.shiftKey) {
             event.preventDefault();
             CanvasManager.undo();
@@ -242,7 +245,7 @@ function setupKeyboardShortcuts() {
 
 function exportSketchToJSON() {
     const sketchData = {
-        version: '1.0',
+        version: '1.1',
         createdAt: new Date().toISOString(),
         data: AppState.getStateSnapshot()
     };
@@ -278,5 +281,3 @@ function importSketchFromJSON(file) {
     reader.onerror = () => alert('An error occurred while trying to read the file.');
     reader.readAsText(file);
 }
-
-window.switchToEditMode = switchToEditMode;

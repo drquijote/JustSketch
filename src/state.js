@@ -1,4 +1,3 @@
-// src/state.js - FINAL VERSION
 
 export const AppState = {
   // Canvas & Viewport (will be populated by canvas.js)
@@ -7,7 +6,7 @@ export const AppState = {
   viewportTransform: { x: 0, y: 0, scale: 1 },
   
   // Current interaction mode
-  currentMode: 'placement', // 'placement', 'drawing', 'edit'
+  currentMode: 'placement', // 'placement', 'drawing', 'edit', 'photo'
   
   // Selection and interaction state
   selectedElement: null,

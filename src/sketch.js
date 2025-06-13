@@ -85,14 +85,15 @@ function initSketchModule() {
 
  
 // This is the complete placeElement function, updated to add a unique ID to rooms.
-function placeElement(x, y) {
+ function placeElement(x, y) {
     if (!selectedElement) return;
 
     const elemWidth = selectedElement.type === 'icon' ? 45 : Math.max(58, selectedElement.content.length * 8 + 8);
     const elemHeight = selectedElement.type === 'icon' ? 45 : 16;
 
     const newElement = {
-        id: selectedElement.type === 'room' ? crypto.randomUUID() : Date.now(),
+        // --- MODIFIED: Replaced crypto.randomUUID() with a more reliable method ---
+        id: selectedElement.type === 'room' ? `room_${Date.now()}_${Math.random()}` : Date.now(),
         type: selectedElement.type,
         content: selectedElement.content,
         styling: selectedElement.styling,
@@ -110,7 +111,6 @@ function placeElement(x, y) {
     CanvasManager.redraw();
     CanvasManager.saveAction();
 }
-
 // This is the complete redrawPlacedElements function. The red border and camera icon logic has been removed.
 function redrawPlacedElements() {
     // Save the current context state

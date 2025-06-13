@@ -1,4 +1,4 @@
-// src/photo.js - Correct version with robust file handling and image resizing for mobile
+// src/photo.js - Reverted to a simpler, single uploader for reliability
 
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
@@ -19,7 +19,7 @@ export class PhotoManager {
         AppState.on('canvas:redraw:ui', () => this.drawActiveRoomHighlight());
         const viewport = document.getElementById('canvasViewport');
         viewport.addEventListener('touchend', this.handleCanvasTouch, { passive: false });
-        console.log("PhotoManager Initialized with robust mobile camera fix.");
+        console.log("PhotoManager Initialized with single uploader fix.");
     }
 
     drawActiveRoomHighlight() {
@@ -79,32 +79,41 @@ export class PhotoManager {
         this.photoPalette.scrollLeft = this.photoPalette.scrollWidth;
     }
     
+    // --- REVERTED to a single uploader element ---
     createUploaderElement() {
-        const uploaderContainer = document.createElement('div');
-        uploaderContainer.className = 'palette-uploader-container';
-        const uploadButton = document.createElement('div');
-        uploadButton.className = 'palette-upload-button';
-        uploadButton.innerHTML = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>Library</span>`;
+        const dropArea = document.createElement('div');
+        dropArea.className = 'palette-file-drop-area';
+        dropArea.innerHTML = `
+            <div style="pointer-events: none;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="#888" viewBox="0 0 16 16">
+                  <path fill-rule="evenodd" d="M7.646 5.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 6.707V10.5a.5.5 0 0 1-1 0V6.707L6.354 7.854a.5.5 0 1 1-.708-.708l2-2z"/>
+                  <path d="M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383zm.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z"/>
+                </svg>
+                <p style="font-size: 0.9em; color: #666; margin-top: 5px;">Add Photo</p>
+            </div>`;
+        
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
         fileInput.multiple = true;
         fileInput.accept = 'image/*';
-        uploadButton.appendChild(fileInput);
-        uploadButton.addEventListener('click', () => fileInput.click());
+        // This 'capture' attribute tells mobile devices to offer the camera
+        fileInput.capture = 'environment'; 
+        fileInput.style.display = 'none';
+        
+        dropArea.appendChild(fileInput);
+
+        // Add event listeners
+        dropArea.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (e) => this.handleFileSelect(e.target.files));
-        const cameraButton = document.createElement('div');
-        cameraButton.className = 'palette-upload-button';
-        cameraButton.innerHTML = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg><span>Camera</span>`;
-        const cameraInput = document.createElement('input');
-        cameraInput.type = 'file';
-        cameraInput.accept = 'image/*';
-        cameraInput.capture = 'environment';
-        cameraButton.appendChild(cameraInput);
-        cameraButton.addEventListener('click', () => cameraInput.click());
-        cameraInput.addEventListener('change', (e) => this.handleFileSelect(e.target.files));
-        uploaderContainer.appendChild(uploadButton);
-        uploaderContainer.appendChild(cameraButton);
-        return uploaderContainer;
+        dropArea.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.classList.add('active'); });
+        dropArea.addEventListener('dragleave', () => dropArea.classList.remove('active'));
+        dropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropArea.classList.remove('active');
+            this.handleFileSelect(e.dataTransfer.files);
+        });
+
+        return dropArea;
     }
     
     createThumbnailElement(photoDataUrl, index) {
@@ -120,7 +129,6 @@ export class PhotoManager {
         return thumb;
     }
 
-    // --- MODIFIED: This is the new, robust file handler with image resizing ---
     async handleFileSelect(files) {
         if (!files || files.length === 0 || !this.activeRoomElement) return;
 
@@ -133,7 +141,6 @@ export class PhotoManager {
         const filesToProcess = Array.from(files).slice(0, remainingSlots);
         if (filesToProcess.length === 0) return;
 
-        // This function resizes an image file and returns a Data URL
         const processImageFile = (file) => {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -142,31 +149,17 @@ export class PhotoManager {
                     img.onload = () => {
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
-                        
-                        // Set a max dimension for the images to save memory
                         const MAX_DIMENSION = 1920;
                         let { width, height } = img;
-                        
                         if (width > height) {
-                            if (width > MAX_DIMENSION) {
-                                height *= MAX_DIMENSION / width;
-                                width = MAX_DIMENSION;
-                            }
+                            if (width > MAX_DIMENSION) { height *= MAX_DIMENSION / width; width = MAX_DIMENSION; }
                         } else {
-                            if (height > MAX_DIMENSION) {
-                                width *= MAX_DIMENSION / height;
-                                height = MAX_DIMENSION;
-                            }
+                            if (height > MAX_DIMENSION) { width *= MAX_DIMENSION / height; height = MAX_DIMENSION; }
                         }
-                        
                         canvas.width = width;
                         canvas.height = height;
-                        
-                        // Draw the resized image to the canvas
                         ctx.drawImage(img, 0, 0, width, height);
-                        
-                        // Get the resized image as a JPEG Data URL
-                        resolve(canvas.toDataURL('image/jpeg', 0.85)); // 85% quality
+                        resolve(canvas.toDataURL('image/jpeg', 0.85));
                     };
                     img.onerror = reject;
                     img.src = event.target.result;
@@ -177,31 +170,19 @@ export class PhotoManager {
         };
 
         try {
-            // Show a simple loading indicator
             this.showLoadingState();
-
-            // Process all files in parallel
             const newPhotoDataUrls = await Promise.all(filesToProcess.map(processImageFile));
-            
             const updatedPhotos = photos.concat(newPhotoDataUrls);
-            
-            // Save the newly processed photos and refresh the UI
             this.saveAndRefreshPalette(updatedPhotos);
-
         } catch (error) {
             console.error("An error occurred while processing images:", error);
             alert("There was an error processing one or more photos. Please try again.");
-            // Refresh the palette to its previous state in case of error
             this.openPhotoPaletteFor(this.activeRoomElement);
         }
     }
     
     showLoadingState() {
-        this.photoPalette.innerHTML = `
-            <div class="photo-palette-wrapper" style="justify-content: center; width: 100%;">
-                <h3>Processing photos...</h3>
-            </div>
-        `;
+        this.photoPalette.innerHTML = `<div class="photo-palette-wrapper" style="justify-content: center; width: 100%;"><h3>Processing...</h3></div>`;
     }
 
     deletePhoto(index) {
@@ -213,11 +194,9 @@ export class PhotoManager {
     
     saveAndRefreshPalette(updatedPhotosArray) {
         if (!this.activeRoomElement) return;
-        
         const allPhotos = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '{}');
         allPhotos[this.activeRoomElement.id] = updatedPhotosArray;
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(allPhotos));
-
         this.openPhotoPaletteFor(this.activeRoomElement);
     }
     

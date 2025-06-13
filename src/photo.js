@@ -120,57 +120,49 @@ export class PhotoManager {
         return thumb;
     }
 
-    // --- MODIFIED: This function is now more robust ---
-    handleFileSelect(files) {
+    // --- MODIFIED: This function now uses async/await and Promise.all for reliability ---
+    async handleFileSelect(files) {
         if (!files || files.length === 0 || !this.activeRoomElement) {
             console.log("File selection cancelled or no active room.");
             return;
         }
 
-        console.log(`Processing ${files.length} file(s).`);
-        
         let photos = this.loadPhotosFromStorage(this.activeRoomElement.id) || [];
-        const originalPhotoCount = photos.length;
-        const remainingSlots = 5 - originalPhotoCount;
+        const remainingSlots = 5 - photos.length;
 
         if (files.length > remainingSlots) {
             alert(`You can only add ${remainingSlots} more photo(s). Only the first ${remainingSlots} will be added.`);
         }
         
-        let filesToProcess = Array.from(files).slice(0, remainingSlots);
+        const filesToProcess = Array.from(files).slice(0, remainingSlots);
         if (filesToProcess.length === 0) return;
 
-        let processedCount = 0;
-        
-        filesToProcess.forEach(file => {
-            if (file.type && file.type.startsWith('image/')) {
+        // Creates a promise that resolves with the file's data URL
+        const readFileAsDataURL = (file) => {
+            return new Promise((resolve, reject) => {
+                // We no longer check file.type, as it's unreliable on iOS for camera captures
                 const reader = new FileReader();
-                reader.onload = (e) => {
-                    // Add the new photo to our temporary array
-                    photos.push(e.target.result);
-                    processedCount++;
-                    // Once all selected files have been read by the FileReader
-                    if (processedCount === filesToProcess.length) {
-                        console.log("All files processed. Saving and refreshing palette.");
-                        this.saveAndRefreshPalette(photos);
-                    }
-                };
-                reader.onerror = () => {
-                    console.error("Error reading file.");
-                    processedCount++;
-                    if (processedCount === filesToProcess.length) {
-                        this.saveAndRefreshPalette(photos);
-                    }
-                };
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = (error) => reject(error);
                 reader.readAsDataURL(file);
-            } else {
-                 console.warn("A non-image file was selected and will be ignored.");
-                 processedCount++;
-                 if (processedCount === filesToProcess.length) {
-                    this.saveAndRefreshPalette(photos);
-                 }
-            }
-        });
+            });
+        };
+
+        try {
+            console.log(`Processing ${filesToProcess.length} file(s)...`);
+            // Wait for ALL files to be read into memory before proceeding
+            const newPhotoDataUrls = await Promise.all(filesToProcess.map(readFileAsDataURL));
+            
+            // Now that all files are read, we can safely update the photos array
+            const updatedPhotos = photos.concat(newPhotoDataUrls);
+            
+            console.log("All files processed successfully. Saving and refreshing palette.");
+            this.saveAndRefreshPalette(updatedPhotos);
+
+        } catch (error) {
+            console.error("An error occurred while reading files:", error);
+            alert("There was an error processing one or more photos. Please try again.");
+        }
     }
 
     deletePhoto(index) {
@@ -180,20 +172,17 @@ export class PhotoManager {
         this.saveAndRefreshPalette(photos);
     }
     
-    // --- MODIFIED: This function is now the single source of truth for saving and re-rendering ---
+    // This is now the single source of truth for saving and re-rendering
     saveAndRefreshPalette(updatedPhotosArray) {
         if (!this.activeRoomElement) return;
 
         console.log(`Saving ${updatedPhotosArray.length} photos for room ${this.activeRoomElement.id}`);
         
-        // 1. Get all photos from storage
         const allPhotos = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '{}');
-        // 2. Update the array for the current room
         allPhotos[this.activeRoomElement.id] = updatedPhotosArray;
-        // 3. Save the entire collection back to storage
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(allPhotos));
 
-        // 4. Re-render the palette from the new source of truth
+        // Re-render the palette from the new source of truth
         this.openPhotoPaletteFor(this.activeRoomElement);
     }
     

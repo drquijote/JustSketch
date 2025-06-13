@@ -1,5 +1,5 @@
 git add .
-git commit -m "Your next changes"
+git commit -m "now with OPTION to saves sketches to device"
 git push origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
 
 
@@ -7,7 +7,7 @@ git push origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
 
 
 
-git pull origin deployment-test
+git pull origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
 git log -1
 
 

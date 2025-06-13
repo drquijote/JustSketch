@@ -2,6 +2,7 @@
 
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
+import { db } from './db.js'; // NEW: Import the Dexie database instance.
 
 export class SaveManager {
     constructor() {
@@ -9,15 +10,17 @@ export class SaveManager {
         this.sketchNameInput = document.getElementById('sketchNameInput');
         this.confirmSaveBtn = document.getElementById('confirmSaveBtn');
         this.cancelSaveBtn = document.getElementById('cancelSaveBtn');
-        this.STORAGE_KEY = 'savedSketches';
+        // NOTE: this.STORAGE_KEY is no longer used but is kept to avoid breaking anything that might reference it.
+        this.STORAGE_KEY = 'savedSketches'; 
     }
 
     init() {
-        console.log('SaveManager initialized.');
+        console.log('SaveManager initialized for IndexedDB.');
         if (this.cancelSaveBtn) {
             this.cancelSaveBtn.addEventListener('click', () => this.hideSaveModal());
         }
         if (this.confirmSaveBtn) {
+            // The handler now needs to be async, so we wrap it.
             this.confirmSaveBtn.addEventListener('click', () => this.handleConfirmSave());
         }
     }
@@ -25,11 +28,12 @@ export class SaveManager {
     /**
      * This is the main function called by the UI's "Save" button. 
      * It decides whether to save instantly or ask for a name.
+     * CHANGED: This function is now async.
      */
-    promptOrSave() {
+    async promptOrSave() {
         if (AppState.currentSketchId) {
             // If a sketch is already loaded, save directly (overwrite)
-            this._performOverwrite();
+            await this._performOverwrite();
         } else {
             // If it's a new sketch, prompt for a name. This is the "Save As" flow.
             this.promptForNewName();
@@ -38,6 +42,7 @@ export class SaveManager {
 
     /**
      * This is the main function for the "Save As..." button. It always prompts for a name.
+     * NOTE: This function did not need changes as it only deals with UI.
      */
     promptForNewName() {
         console.log('Prompting for a new sketch name (Save As)...');
@@ -50,16 +55,15 @@ export class SaveManager {
 
     /**
      * Handles the click on the modal's "Save" button.
+     * CHANGED: This function is now async to await the save operation.
      */
-    handleConfirmSave() {
+    async handleConfirmSave() {
         const sketchName = this.sketchNameInput.value.trim();
         if (!sketchName) {
             alert('Please enter a name for the sketch.');
             return;
         }
-        // This function always creates a new entry, which is correct
-        // for both an initial save and a "Save As" operation.
-        this._performSaveAs(sketchName);
+        await this._performSaveAs(sketchName);
     }
 
     hideSaveModal() {
@@ -67,68 +71,64 @@ export class SaveManager {
     }
 
     /**
-     * Saves a sketch under a specific name. This creates a new entry in localStorage.
+     * REFACTORED: Saves a sketch under a specific name to IndexedDB.
      */
-    _performSaveAs(sketchName) {
-        console.log(`Saving sketch as "${sketchName}"`);
+    async _performSaveAs(sketchName) {
+        console.log(`Saving sketch as "${sketchName}" to IndexedDB`);
         try {
             const snapshot = AppState.getStateSnapshot();
-            const savedSketchesJSON = localStorage.getItem(this.STORAGE_KEY);
-            const allSketches = savedSketchesJSON ? JSON.parse(savedSketchesJSON) : {};
-
+            
             const newSketchEntry = {
-                id: `sketch_${Date.now()}`,
+                // The 'id' property is now omitted; IndexedDB will auto-generate it.
                 name: sketchName,
                 savedAt: new Date().toISOString(),
                 data: snapshot
             };
 
-            // Use the sketch name as the key in the main sketches object.
-            allSketches[sketchName] = newSketchEntry;
-            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(allSketches));
+            // Use Dexie's put() method to add the new sketch.
+            // It returns the ID of the newly created record.
+            const id = await db.sketches.put(newSketchEntry);
             
             // Update the app's state to reflect the newly saved sketch.
-            AppState.currentSketchId = newSketchEntry.id;
+            AppState.currentSketchId = id;
             AppState.currentSketchName = newSketchEntry.name;
 
             this.hideSaveModal();
             alert(`Sketch "${sketchName}" saved successfully!`);
 
         } catch (error) {
-            console.error('Failed to save sketch:', error);
-            alert('An error occurred while saving.');
+            console.error('Failed to save sketch to IndexedDB:', error);
+            // Provide a more helpful error if the name is a duplicate
+            if (error.name === 'ConstraintError') {
+                alert('A sketch with this name already exists. Please choose a different name.');
+            } else {
+                alert('An error occurred while saving.');
+            }
         }
     }
     
     /**
-     * Instantly overwrites the currently loaded sketch without prompting.
+     * REFACTORED: Instantly overwrites the currently loaded sketch in IndexedDB.
      */
-    _performOverwrite() {
-        const sketchName = AppState.currentSketchName;
-        if (!sketchName) {
+    async _performOverwrite() {
+        const sketchId = AppState.currentSketchId;
+        if (!sketchId) {
             console.error('Cannot overwrite: No sketch is currently loaded.');
-            // If something is wrong, fall back to the "Save As" dialog
             this.promptForNewName();
             return;
         }
 
-        console.log(`Overwriting sketch: "${sketchName}"`);
+        console.log(`Overwriting sketch ID: "${sketchId}"`);
         try {
             const snapshot = AppState.getStateSnapshot();
-            const savedSketchesJSON = localStorage.getItem(this.STORAGE_KEY);
-            const allSketches = JSON.parse(savedSketchesJSON || '{}');
 
-            if (allSketches[sketchName]) {
-                // Update the data for the existing entry
-                allSketches[sketchName].data = snapshot;
-                allSketches[sketchName].savedAt = new Date().toISOString();
+            // Use Dexie's update() method to modify the record by its primary key.
+            await db.sketches.update(sketchId, {
+                data: snapshot,
+                savedAt: new Date().toISOString()
+            });
 
-                localStorage.setItem(this.STORAGE_KEY, JSON.stringify(allSketches));
-                alert(`Sketch "${sketchName}" updated successfully!`);
-            } else {
-                console.error(`Could not find sketch named "${sketchName}" to overwrite. Forcing "Save As"...`);
-                this.promptForNewName();
-            }
+            alert(`Sketch "${AppState.currentSketchName}" updated successfully!`);
         } catch (error) {
             console.error('Failed to overwrite sketch:', error);
             alert('An error occurred while saving.');
@@ -136,37 +136,35 @@ export class SaveManager {
     }
     
     /**
-     * Loads a sketch from localStorage based on a URL parameter.
+     * REFACTORED: Loads a sketch from IndexedDB based on a URL parameter.
      */
-    loadSketchFromURL() {
+    async loadSketchFromURL() {
         const urlParams = new URLSearchParams(window.location.search);
-        const sketchIdToLoad = urlParams.get('loadSketch');
+        // The ID from the URL will be a string, so we need to convert it to a number.
+        const sketchIdToLoad = parseInt(urlParams.get('loadSketch'), 10);
 
         if (!sketchIdToLoad) return;
 
-        const savedSketchesJSON = localStorage.getItem(this.STORAGE_KEY);
-        const allSketches = savedSketchesJSON ? JSON.parse(savedSketchesJSON) : {};
+        try {
+            // Use Dexie's get() method for a direct and efficient lookup by primary key.
+            const sketchToLoad = await db.sketches.get(sketchIdToLoad);
 
-        let sketchToLoad = null;
-        for (const name in allSketches) {
-            if (allSketches[name].id === sketchIdToLoad) {
-                sketchToLoad = allSketches[name];
-                break;
+            if (sketchToLoad) {
+                console.log(`Loading sketch: "${sketchToLoad.name}"`);
+                AppState.restoreStateSnapshot(sketchToLoad.data);
+                
+                // Update app state to know which sketch is loaded
+                AppState.currentSketchId = sketchToLoad.id;
+                AppState.currentSketchName = sketchToLoad.name;
+
+                CanvasManager.redraw();
+                AppState.emit('app:sketchLoaded');
+            } else {
+                alert(`Error: Could not find sketch with ID: ${sketchIdToLoad}`);
             }
-        }
-
-        if (sketchToLoad) {
-            console.log(`Loading sketch: "${sketchToLoad.name}"`);
-            AppState.restoreStateSnapshot(sketchToLoad.data);
-            
-            // Update app state to know which sketch is loaded
-            AppState.currentSketchId = sketchToLoad.id;
-            AppState.currentSketchName = sketchToLoad.name;
-
-            CanvasManager.redraw();
-            AppState.emit('app:sketchLoaded');
-        } else {
-            alert(`Error: Could not find sketch with ID: ${sketchIdToLoad}`);
+        } catch (error) {
+            console.error('Failed to load sketch from DB:', error);
+            alert('An error occurred while loading the sketch.');
         }
     }
 }

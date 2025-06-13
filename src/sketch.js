@@ -83,8 +83,35 @@ function initSketchModule() {
 
 // In sketch.js, update the redrawPlacedElements function to handle area labels
 
- // In sketch.js, update the redrawPlacedElements function to handle area labels
+ 
+// This is the complete placeElement function, updated to add a unique ID to rooms.
+function placeElement(x, y) {
+    if (!selectedElement) return;
 
+    const elemWidth = selectedElement.type === 'icon' ? 45 : Math.max(58, selectedElement.content.length * 8 + 8);
+    const elemHeight = selectedElement.type === 'icon' ? 45 : 16;
+
+    const newElement = {
+        id: selectedElement.type === 'room' ? crypto.randomUUID() : Date.now(),
+        type: selectedElement.type,
+        content: selectedElement.content,
+        styling: selectedElement.styling,
+        alt: selectedElement.alt,
+        x: x - elemWidth / 2,
+        y: y - elemHeight / 2,
+        width: elemWidth,
+        height: elemHeight,
+        rotation: 0
+    };
+
+    AppState.placedElements.push(newElement);
+    selectedElement = null;
+    hideCustomCursor();
+    CanvasManager.redraw();
+    CanvasManager.saveAction();
+}
+
+// This is the complete redrawPlacedElements function. The red border and camera icon logic has been removed.
 function redrawPlacedElements() {
     // Save the current context state
     ctx.save();
@@ -145,49 +172,32 @@ function redrawPlacedElements() {
                 ctx.stroke();
             }
         } else if (element.type === 'area_label') {
-            // *** NEW: Render area labels ***
             ctx.save();
-            
-            // Get linked polygon for updated area calculation
             const linkedPolygon = AppState.drawnPolygons.find(p => p.id === element.linkedPolygonId);
-            
             if (linkedPolygon) {
-                // Update the area text in case it changed
                 element.areaData.sqftText = `${linkedPolygon.area.toFixed(1)} sq ft`;
                 element.areaData.areaText = linkedPolygon.label;
             }
-            
-            // Draw area name (bold)
             ctx.fillStyle = element.styling.color || '#000';
             ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(element.areaData.areaText, element.x + element.width/2, element.y + element.height/2 - 8);
-            
-            // Draw square footage (normal weight)
             ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
             ctx.fillText(element.areaData.sqftText, element.x + element.width/2, element.y + element.height/2 + 8);
-            
-            // Draw delete button in edit mode
             if (isEditMode && element !== editingElement) {
                 const deleteSize = 20;
                 const deleteX = element.x + element.width + 5;
                 const deleteY = element.y - 2;
-                
-                // Draw red circle background
                 ctx.fillStyle = '#e74c3c';
                 ctx.beginPath();
                 ctx.arc(deleteX + deleteSize/2, deleteY + deleteSize/2, deleteSize/2, 0, Math.PI * 2);
                 ctx.fill();
-                
-                // Draw white border around delete button
                 ctx.strokeStyle = 'white';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.arc(deleteX + deleteSize/2, deleteY + deleteSize/2, deleteSize/2, 0, Math.PI * 2);
                 ctx.stroke();
-                
-                // Draw white X
                 ctx.strokeStyle = 'white';
                 ctx.lineWidth = 3;
                 ctx.lineCap = 'round';
@@ -201,22 +211,10 @@ function redrawPlacedElements() {
                 ctx.lineTo(centerX - offset, centerY + offset);
                 ctx.stroke();
             }
-            
-            // Visual feedback for dragging in normal mode
-            if (!isEditMode) {
-               // ctx.strokeStyle = 'rgba(52, 152, 219, 0.3)';
-                //ctx.lineWidth = 1;
-               // ctx.setLineDash([4, 4]);
-               //// ctx.strokeRect(element.x - 2, element.y - 2, element.width + 4, element.height + 4);
-               // ctx.setLineDash([]);
-            }
-            
             ctx.restore();
         } else if (element.type === 'icon') {
-            // Draw icon with rotation (existing icon code)
             const drawRotatedIcon = (img) => {
                 ctx.save();
-                
                 if (element.rotation) {
                     const centerX = element.x + element.width / 2;
                     const centerY = element.y + element.height / 2;
@@ -224,13 +222,10 @@ function redrawPlacedElements() {
                     ctx.rotate(element.rotation);
                     ctx.translate(-centerX, -centerY);
                 }
-                
                 ctx.drawImage(img, element.x, element.y, element.width, element.height);
                 ctx.restore();
-                
                 drawIconEditHandles(element);
             };
-            
             if (!imageCache[element.content]) {
                 const img = new Image();
                 img.onload = () => {
@@ -244,11 +239,10 @@ function redrawPlacedElements() {
         }
     });
     
-    // Restore the context state
     ctx.restore();
-    
     updateLegend();
 }
+
 
 // UPDATED: setupPaletteListeners function to include slider controls
 function setupPaletteListeners() {
@@ -1163,35 +1157,8 @@ function getEventPos(e) {
  
 
 // In sketch.js, replace the existing placeElement function with this one
+ 
 
-function placeElement(x, y) {
-    if (!selectedElement) return;
-
-    const textWidth = selectedElement.type === 'room' ? Math.max(58, selectedElement.content.length * 8 + 8) : 45;
-    const elemWidth = selectedElement.type === 'icon' ? 45 : textWidth;
-    const elemHeight = selectedElement.type === 'icon' ? 45 : 16;
-
-    const newElement = {
-        id: Date.now(),
-        type: selectedElement.type,
-        content: selectedElement.content,
-        styling: selectedElement.styling,
-        alt: selectedElement.alt,
-        // CHANGED: Center the element on the cursor coordinates
-        x: x - elemWidth / 2,
-        y: y - elemHeight / 2,
-        width: elemWidth,
-        height: elemHeight,
-        rotation: 0 // Initialize rotation for all elements
-    };
-
-    AppState.placedElements.push(newElement);
-    selectedElement = null;
-    hideCustomCursor();
-    CanvasManager.redraw();
-    CanvasManager.saveAction();
-    console.log('DEBUG: Element placed:', newElement);
-}
 
  
 

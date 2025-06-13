@@ -1,3 +1,4 @@
+// src/state.js - FINAL VERSION
 
 export const AppState = {
   // Canvas & Viewport (will be populated by canvas.js)
@@ -8,6 +9,9 @@ export const AppState = {
   // Current interaction mode
   currentMode: 'placement', // 'placement', 'drawing', 'edit', 'photo'
   
+  // --- NEW: To track the active room for the photo feature ---
+  activePhotoRoomId: null,
+
   // Selection and interaction state
   selectedElement: null,
   isDragging: false,
@@ -62,7 +66,6 @@ export const AppState = {
         currentPolygonCounter: this.currentPolygonCounter,
         permanentHelperPoints: JSON.parse(JSON.stringify(this.permanentHelperPoints || [])),
         viewportTransform: JSON.parse(JSON.stringify(this.viewportTransform)),
-        // Also save the current sketch info in the snapshot
         currentSketchId: this.currentSketchId,
         currentSketchName: this.currentSketchName
     };
@@ -96,7 +99,6 @@ export const AppState = {
         this.viewportTransform = JSON.parse(JSON.stringify(snapshot.viewportTransform));
     }
 
-    // Restore the current sketch info
     this.currentSketchId = snapshot.currentSketchId || null;
     this.currentSketchName = snapshot.currentSketchName || null;
 

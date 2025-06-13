@@ -1,4 +1,4 @@
-// src/photo.js - Corrected for iPhone camera capture
+// src/photo.js - Correct version with robust file handling for mobile
 
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
@@ -19,7 +19,7 @@ export class PhotoManager {
         AppState.on('canvas:redraw:ui', () => this.drawActiveRoomHighlight());
         const viewport = document.getElementById('canvasViewport');
         viewport.addEventListener('touchend', this.handleCanvasTouch, { passive: false });
-        console.log("PhotoManager Initialized with mobile camera fix.");
+        console.log("PhotoManager Initialized with robust mobile camera fix.");
     }
 
     drawActiveRoomHighlight() {
@@ -82,8 +82,6 @@ export class PhotoManager {
     createUploaderElement() {
         const uploaderContainer = document.createElement('div');
         uploaderContainer.className = 'palette-uploader-container';
-
-        // --- Button 1: Upload from Library ---
         const uploadButton = document.createElement('div');
         uploadButton.className = 'palette-upload-button';
         uploadButton.innerHTML = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>Library</span>`;
@@ -94,19 +92,16 @@ export class PhotoManager {
         uploadButton.appendChild(fileInput);
         uploadButton.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (e) => this.handleFileSelect(e.target.files));
-
-        // --- Button 2: Take Photo with Camera ---
         const cameraButton = document.createElement('div');
         cameraButton.className = 'palette-upload-button';
         cameraButton.innerHTML = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg><span>Camera</span>`;
         const cameraInput = document.createElement('input');
         cameraInput.type = 'file';
         cameraInput.accept = 'image/*';
-        cameraInput.capture = 'environment'; // This is the key for mobile camera
+        cameraInput.capture = 'environment';
         cameraButton.appendChild(cameraInput);
         cameraButton.addEventListener('click', () => cameraInput.click());
         cameraInput.addEventListener('change', (e) => this.handleFileSelect(e.target.files));
-
         uploaderContainer.appendChild(uploadButton);
         uploaderContainer.appendChild(cameraButton);
         return uploaderContainer;
@@ -125,41 +120,80 @@ export class PhotoManager {
         return thumb;
     }
 
+    // --- MODIFIED: This function is now more robust ---
     handleFileSelect(files) {
-        if (!files || !this.activeRoomElement) return;
-        let photos = this.loadPhotosFromStorage(this.activeRoomElement.id) || [];
-        const remaining = 5 - photos.length;
-        if (files.length > remaining) alert(`You can only add ${remaining} more photos.`);
+        if (!files || files.length === 0 || !this.activeRoomElement) {
+            console.log("File selection cancelled or no active room.");
+            return;
+        }
+
+        console.log(`Processing ${files.length} file(s).`);
         
-        let filesToProcess = Array.from(files).slice(0, remaining);
+        let photos = this.loadPhotosFromStorage(this.activeRoomElement.id) || [];
+        const originalPhotoCount = photos.length;
+        const remainingSlots = 5 - originalPhotoCount;
+
+        if (files.length > remainingSlots) {
+            alert(`You can only add ${remainingSlots} more photo(s). Only the first ${remainingSlots} will be added.`);
+        }
+        
+        let filesToProcess = Array.from(files).slice(0, remainingSlots);
         if (filesToProcess.length === 0) return;
+
+        let processedCount = 0;
         
         filesToProcess.forEach(file => {
-            if (file.type.startsWith('image/')) {
+            if (file.type && file.type.startsWith('image/')) {
                 const reader = new FileReader();
                 reader.onload = (e) => {
+                    // Add the new photo to our temporary array
                     photos.push(e.target.result);
-                    // Save and refresh only after the last file is processed
-                    if (photos.length === (this.loadPhotosFromStorage(this.activeRoomElement.id) || []).length + filesToProcess.length) {
-                         this.saveAndRefreshPalette(photos);
+                    processedCount++;
+                    // Once all selected files have been read by the FileReader
+                    if (processedCount === filesToProcess.length) {
+                        console.log("All files processed. Saving and refreshing palette.");
+                        this.saveAndRefreshPalette(photos);
+                    }
+                };
+                reader.onerror = () => {
+                    console.error("Error reading file.");
+                    processedCount++;
+                    if (processedCount === filesToProcess.length) {
+                        this.saveAndRefreshPalette(photos);
                     }
                 };
                 reader.readAsDataURL(file);
+            } else {
+                 console.warn("A non-image file was selected and will be ignored.");
+                 processedCount++;
+                 if (processedCount === filesToProcess.length) {
+                    this.saveAndRefreshPalette(photos);
+                 }
             }
         });
     }
 
     deletePhoto(index) {
+        if (!this.activeRoomElement) return;
         let photos = this.loadPhotosFromStorage(this.activeRoomElement.id) || [];
         photos.splice(index, 1);
         this.saveAndRefreshPalette(photos);
     }
     
-    saveAndRefreshPalette(photos) {
+    // --- MODIFIED: This function is now the single source of truth for saving and re-rendering ---
+    saveAndRefreshPalette(updatedPhotosArray) {
         if (!this.activeRoomElement) return;
+
+        console.log(`Saving ${updatedPhotosArray.length} photos for room ${this.activeRoomElement.id}`);
+        
+        // 1. Get all photos from storage
         const allPhotos = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '{}');
-        allPhotos[this.activeRoomElement.id] = photos;
+        // 2. Update the array for the current room
+        allPhotos[this.activeRoomElement.id] = updatedPhotosArray;
+        // 3. Save the entire collection back to storage
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(allPhotos));
+
+        // 4. Re-render the palette from the new source of truth
         this.openPhotoPaletteFor(this.activeRoomElement);
     }
     

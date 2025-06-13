@@ -932,3 +932,344 @@ body {
 .delete-btn {
     background-color: #e74c3c; /* Red */
 }
+
+.mode-indicator.photos-mode {
+    background-color: #8e44ad; /* A distinct purple color */
+}
+
+/* Add this to force the Photos button to match the others */
+#photosBtn {
+  /* You may need to adjust this color to perfectly match your theme */
+  background-color: #A8D8F0; 
+  border: 1px solid #a9c7f5;
+}
+
+/* === Add to the end of src/style.css === */
+
+/* Container for the photo palette UI */
+.photos-palette {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* Container for the photo thumbnails */
+.photo-thumbnail-container {
+    flex-grow: 1;
+    padding: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-content: flex-start;
+    overflow-y: auto;
+}
+
+/* Wrapper for each thumbnail and its delete button */
+.photo-thumbnail-wrapper {
+    position: relative;
+    width: 130px;
+    height: 130px;
+}
+
+.photo-thumbnail-wrapper img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+}
+
+/* Delete button on the thumbnail */
+.thumbnail-delete-btn {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 24px;
+    height: 24px;
+    background-color: #e74c3c;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1;
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* Container for the Library/Camera buttons */
+.photo-controls {
+    display: flex;
+    gap: 10px;
+    padding: 10px;
+    border-top: 1px solid #ddd;
+    background-color: #f8f9fa;
+}
+
+.photo-btn {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background-color: white;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.photo-btn:hover {
+    background-color: #f0f0f0;
+}
+
+.photo-btn img {
+    width: 32px;
+    height: 32px;
+}
+
+.photo-btn span {
+    font-size: 12px;
+    font-weight: 500;
+    color: #555;
+}
+
+/* === REPLACE the old photo palette CSS with this block === */
+
+/* Main horizontal container for the new palette layout */
+.photos-palette-horizontal {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch; /* Make all items the same height */
+    height: 100%;
+    width: 100%;
+    background-color: #f8f9fa;
+    border-top: 1px solid #ddd;
+}
+
+/* Container for the vertical room/icon label */
+.photo-palette-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+    background-color: #e9ecef;
+    border-right: 1px solid #ddd;
+    color: #495057;
+    font-weight: 500;
+    font-size: 14px;
+    writing-mode: vertical-rl; /* Make text vertical */
+    transform: rotate(180deg);   /* Orient text correctly */
+    white-space: nowrap;
+}
+
+/* Container for the horizontally scrolling thumbnails */
+.photo-thumbnail-container {
+    flex-grow: 1; /* Allow this section to take up available space */
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    overflow-x: auto; /* Enable horizontal scrolling */
+    overflow-y: hidden;
+    flex-wrap: nowrap; /* Prevent wrapping to a new line */
+}
+
+/* Wrapper for each thumbnail (smaller size) */
+.photo-thumbnail-wrapper {
+    position: relative;
+    width: 110px;  /* CHANGED */
+    height: 110px; /* CHANGED */
+    flex-shrink: 0; /* Prevent thumbnails from shrinking */
+}
+
+.photo-thumbnail-wrapper img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+}
+
+/* Delete button on the thumbnail */
+.thumbnail-delete-btn {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 24px;
+    height: 24px;
+    background-color: #e74c3c;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1;
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* Container for the Library/Camera buttons */
+.photo-controls {
+    display: flex;
+    align-items: stretch; /* Make buttons fill height */
+    gap: 10px;
+    padding: 10px;
+    border-left: 1px solid #ddd;
+}
+
+.photo-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background-color: white;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    width: 80px; /* Give buttons a fixed width */
+}
+
+.photo-btn:hover {
+    background-color: #f0f0f0;
+}
+
+.photo-btn img {
+    width: 32px;
+    height: 32px;
+}
+
+.photo-btn span {
+    font-size: 12px;
+    font-weight: 500;
+    color: #555;
+}
+
+/* === REPLACE the old photo palette CSS with this new compact version === */
+
+/* Main horizontal container for the new palette layout */
+.photos-palette-horizontal {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    height: 100%;
+    width: 100%;
+    background-color: #f8f9fa;
+    border-top: 1px solid #ddd;
+}
+
+/* Container for the vertical room/icon label */
+.photo-palette-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px; /* Reduced horizontal padding */
+    background-color: #e9ecef;
+    border-right: 1px solid #ddd;
+    color: #495057;
+    font-weight: 500;
+    font-size: 13px; /* Slightly smaller font */
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    white-space: nowrap;
+}
+
+/* Container for the horizontally scrolling thumbnails */
+.photo-thumbnail-container {
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px; /* Reduced gap */
+    padding: 5px 8px; /* Reduced vertical and horizontal padding */
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+}
+
+/* Wrapper for each thumbnail (smaller size) */
+.photo-thumbnail-wrapper {
+    position: relative;
+    width: 80px;  /* CHANGED */
+    height: 80px; /* CHANGED */
+    flex-shrink: 0;
+}
+
+.photo-thumbnail-wrapper img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+}
+
+/* Delete button on the thumbnail */
+.thumbnail-delete-btn {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 22px; /* Smaller delete button */
+    height: 22px;/* Smaller delete button */
+    background-color: #e74c3c;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px; /* Smaller X */
+    font-weight: bold;
+    line-height: 1;
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* Container for the Library/Camera buttons */
+.photo-controls {
+    display: flex;
+    align-items: stretch;
+    gap: 8px; /* Reduced gap */
+    padding: 5px 8px; /* Reduced padding */
+    border-left: 1px solid #ddd;
+}
+
+.photo-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px; /* Reduced gap */
+    padding: 5px; /* Reduced padding */
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background-color: white;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    width: 65px; /* Narrower buttons */
+}
+
+.photo-btn:hover {
+    background-color: #f0f0f0;
+}
+
+.photo-btn img {
+    width: 28px; /* Smaller icons */
+    height: 28px;/* Smaller icons */
+}
+
+.photo-btn span {
+    font-size: 11px; /* Smaller text */
+    font-weight: 500;
+    color: #555;
+}
+

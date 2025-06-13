@@ -7,7 +7,8 @@ import { HelperPointManager } from './helpers.js';
 import { AreaManager } from './areaManager.js';
 import { SplitterManager } from './splitter.js';
 import { PreviewManager } from './previewManager.js';
-import { SaveManager } from './saveManager.js'; 
+import { SaveManager } from './saveManager.js';
+import { PhotoManager } from './photos.js'; 
 
 // Import existing sketch.js functions
 import { 
@@ -36,6 +37,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const saveManager = new SaveManager();
     saveManager.init();
+    const photoManager = new PhotoManager(); // <-- ADD THIS LINE
+    photoManager.init();  
     
     console.log("App loaded - initializing modular architecture");
 
@@ -78,9 +81,17 @@ function initializeAppControls(previewManager, saveManager) {
     paletteButtons.forEach(button => {
         button.addEventListener('click', (e) => {
             const paletteId = e.target.getAttribute('data-palette');
-            if ((paletteId === 'roomsPalette' || paletteId === 'iconsPalette') && AppState.currentMode === 'drawing') {
+            
+            // --- MODIFIED to handle the new photosPalette button ---
+            if (paletteId === 'photosPalette') {
+                // If the photos button is clicked, switch to the dedicated photos mode.
+                switchToPhotosMode();
+            } else if ((paletteId === 'roomsPalette' || paletteId === 'iconsPalette') && AppState.currentMode === 'drawing') {
+                // This existing logic ensures that clicking Rooms/Icons exits drawing mode.
                 switchToPlacementMode();
             }
+            // --- END OF MODIFICATION ---
+
             showpallets(paletteId);
             paletteButtons.forEach(btn => btn.classList.remove('active'));
             e.target.classList.add('active');
@@ -157,6 +168,40 @@ function initializeAppControls(previewManager, saveManager) {
 }
 
 // --- Mode Switching Logic ---
+
+/**
+ * NEW: Function to handle switching to the dedicated Photos mode.
+ */
+function switchToPhotosMode() {
+    console.log('Switching to photos mode');
+    
+    // Deactivate drawing/editing listeners from other modes if they are active
+    deactivateSketchListeners(); 
+    
+    // Set the global app state
+    AppState.currentMode = 'photos';
+    
+    // Ensure the main action buttons are reset to their default state
+    const startBtn = document.getElementById('startBtn');
+    if (startBtn) {
+        startBtn.textContent = 'Start';
+        startBtn.classList.remove('active');
+    }
+    document.getElementById('editBtn').classList.remove('active');
+
+    // Update the mode indicator text and apply our new style
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'PHOTOS';
+    modeIndicator.classList.remove('drawing-mode', 'edit-mode'); // Remove other mode styles
+    modeIndicator.classList.add('photos-mode'); // Add our new style
+
+    // Emit an event so other modules could react if needed in the future
+    AppState.emit('mode:changed', { mode: 'photos' });
+
+    // Redraw the canvas to clear any temporary visuals from other modes
+    CanvasManager.redraw();
+}
+
 function switchToPlacementMode() {
     console.log('Switching to placement mode from:', AppState.currentMode);
     activateSketchListeners();
@@ -167,8 +212,10 @@ function switchToPlacementMode() {
         startBtn.classList.remove('active');
     }
     document.getElementById('editBtn').classList.remove('active');
-    document.getElementById('modeIndicator').textContent = 'READY';
-    document.getElementById('modeIndicator').classList.remove('drawing-mode', 'edit-mode');
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'READY';
+    // MODIFIED: Added 'photos-mode' to the list of classes to remove
+    modeIndicator.classList.remove('drawing-mode', 'edit-mode', 'photos-mode');
     AppState.emit('mode:changed', { mode: 'placement' });
     AppState.emit('mode:editToggled', { isEditMode: false });
     CanvasManager.redraw();
@@ -183,9 +230,11 @@ function switchToDrawingMode() {
         startBtn.classList.add('active');
     }
     document.getElementById('editBtn').classList.remove('active');
-    document.getElementById('modeIndicator').textContent = 'DRAWING';
-    document.getElementById('modeIndicator').classList.remove('edit-mode');
-    document.getElementById('modeIndicator').classList.add('drawing-mode');
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'DRAWING';
+    // MODIFIED: Added 'photos-mode' to the list of classes to remove
+    modeIndicator.classList.remove('edit-mode', 'photos-mode');
+    modeIndicator.classList.add('drawing-mode');
     document.querySelectorAll('.one-of-bottom-pallets').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('[data-palette]').forEach(btn => btn.classList.remove('active'));
     const numbersBtn = document.getElementById('numbersBtn');
@@ -209,9 +258,11 @@ function switchToEditMode() {
         startBtn.classList.remove('active');
     }
     document.getElementById('editBtn').classList.add('active');
-    document.getElementById('modeIndicator').textContent = 'EDITING';
-    document.getElementById('modeIndicator').classList.remove('drawing-mode');
-    document.getElementById('modeIndicator').classList.add('edit-mode');
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'EDITING';
+    // MODIFIED: Added 'photos-mode' to the list of classes to remove
+    modeIndicator.classList.remove('drawing-mode', 'photos-mode');
+    modeIndicator.classList.add('edit-mode');
     const drawPalette = document.getElementById('drawPalette');
     if (drawPalette && !drawPalette.classList.contains('hidden')) {
         drawPalette.classList.add('hidden');

@@ -5,7 +5,7 @@ export const AppState = {
   canvas: null,
   ctx: null,
   viewportTransform: { x: 0, y: 0, scale: 1 },
-  
+  activePhotoElement: null,
   // Current interaction mode
   currentMode: 'placement', // 'placement', 'drawing', 'edit'
   

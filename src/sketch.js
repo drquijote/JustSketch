@@ -89,6 +89,24 @@ function redrawPlacedElements() {
     ctx.save();
     
     AppState.placedElements.forEach((element, index) => {
+
+        // --- ADD THIS BLOCK AT THE START OF THE LOOP ---
+        // --- MODIFIED: This block now ONLY highlights the active element ---
+        if (AppState.currentMode === 'photos') {
+            // ONLY draw a highlight for the currently active element
+            if (AppState.activePhotoElement && AppState.activePhotoElement.id === element.id) {
+                ctx.save();
+                ctx.strokeStyle = '#8e44ad'; // A vibrant purple for the selected item
+                ctx.lineWidth = 3;
+                ctx.strokeRect(element.x - 2, element.y - 2, element.width + 4, element.height + 4);
+                ctx.restore();
+            }
+            // The 'else' block that drew highlights on non-active elements has been removed.
+        }
+        // --- END OF MODIFICATION ---
+
+
+
         if (element.type === 'room') {
             const styling = element.styling;
             ctx.fillStyle = styling.backgroundColor || styling;

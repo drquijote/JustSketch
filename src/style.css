@@ -1057,3 +1057,95 @@ body {
             background-color: #e0f0ff;
             border-color: #3498db;
         }
+
+        
+        /* --- NEW STYLES for the Photo Palette Workflow --- */
+        #photoPalette {
+            padding: 10px;
+            background-color: #f0f2f5;
+            border-top: 2px solid #3498db;
+            overflow-x: auto;
+            height: 180px;
+            display: flex;
+            align-items: center;
+        }
+        .photo-palette-wrapper {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            padding: 0 10px;
+        }
+        .photo-palette-wrapper h3 {
+            margin: 0;
+            white-space: nowrap;
+            color: #333;
+            font-size: 1.1em;
+            font-weight: 600;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            border-right: 1px solid #ccc;
+            padding-right: 10px;
+        }
+        .gallery-thumbnail-inline {
+            position: relative;
+            flex-shrink: 0;
+            width: 120px;
+            height: 90px;
+        }
+        .gallery-thumbnail-inline img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 2px solid #ccc;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+        }
+        .gallery-thumbnail-inline button {
+            position: absolute;
+            top: -10px; right: -10px;
+            width: 24px; height: 24px;
+            border-radius: 50%; border: 2px solid white;
+            background-color: #e74c3c; color: white;
+            font-weight: bold; cursor: pointer;
+            line-height: 20px;
+            text-align: center;
+        }
+        
+        /* --- NEW: Styles for the two-button uploader --- */
+        .palette-uploader-container {
+            display: flex;
+            gap: 15px;
+            flex-shrink: 0;
+        }
+        .palette-upload-button {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            width: 110px; 
+            height: 90px;
+            cursor: pointer;
+            background-color: #f9f9f9;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            color: #555;
+            font-size: 0.9em;
+            position: relative; /* For the hidden input */
+        }
+        .palette-upload-button:hover {
+            background-color: #e0f0ff;
+            border-color: #3498db;
+            color: #3498db;
+        }
+        .palette-upload-button svg {
+            stroke: #555;
+            transition: all 0.2s ease;
+        }
+        .palette-upload-button:hover svg {
+            stroke: #3498db;
+        }
+        .palette-upload-button input[type="file"] {
+            display: none;
+        }

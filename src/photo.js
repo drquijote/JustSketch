@@ -108,7 +108,8 @@ export class PhotoManager {
         wrapper.className = 'photo-palette-wrapper';
 
         const header = document.createElement('h3');
-        header.textContent = `Photos for: ${roomElement.content}`;
+        // --- MODIFIED: Removed "Photos for:" prefix ---
+        header.textContent = roomElement.content;
         wrapper.appendChild(header);
         
         photosForCurrentRoom.forEach((photoDataUrl, index) => {
@@ -213,12 +214,10 @@ export class PhotoManager {
         CanvasManager.redraw();
     }
 
-    // --- MODIFIED: This now handles both mouse and touch events ---
     getCanvasCoordinates(e) {
         const viewport = document.getElementById('canvasViewport');
         const rect = viewport.getBoundingClientRect();
         
-        // Use `changedTouches` if it exists (for touchend), otherwise use the direct event properties.
         const touch = e.changedTouches ? e.changedTouches[0] : e;
 
         return {

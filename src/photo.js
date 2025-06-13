@@ -1,4 +1,4 @@
-// src/photo.js - Correct version with self-contained highlight logic
+// src/photo.js - Correct version with mobile touch support
 
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
@@ -12,6 +12,8 @@ export class PhotoManager {
         this.STORAGE_KEY = 'roomPhotos';
 
         this.handleCanvasClick = this.handleCanvasClick.bind(this);
+        // Bind the new touch handler
+        this.handleCanvasTouch = this.handleCanvasTouch.bind(this);
     }
 
     init() {
@@ -25,12 +27,17 @@ export class PhotoManager {
         // Listen for the UI redraw event to draw our highlight
         AppState.on('canvas:redraw:ui', () => this.drawActiveRoomHighlight());
         
-        console.log("PhotoManager Initialized with highlight logic.");
+        // --- NEW: Add a dedicated touch listener for mobile devices ---
+        const viewport = document.getElementById('canvasViewport');
+        // We use 'touchend' as it's the closest equivalent to a 'click'.
+        // { passive: false } allows us to call preventDefault if needed.
+        viewport.addEventListener('touchend', this.handleCanvasTouch, { passive: false });
+
+        console.log("PhotoManager Initialized with highlight and mobile touch logic.");
     }
     
     // This function draws the highlight on the canvas
     drawActiveRoomHighlight() {
-        // Only draw if we are in photo mode and a room is active
         if (AppState.currentMode !== 'photo' || !this.activeRoomElement) {
             return;
         }
@@ -50,26 +57,45 @@ export class PhotoManager {
         ctx.restore();
     }
 
+    // --- NEW: Handler specifically for touch events ---
+    handleCanvasTouch(e) {
+        if (AppState.currentMode !== 'photo') return;
+        
+        // The core logic is now in a shared function.
+        const wasHandled = this.processInteraction(e);
+
+        // If our handler successfully selected a room, we call preventDefault.
+        // This stops the browser from also firing a "ghost" click event,
+        // and can prevent other listeners (like for panning) from interfering.
+        if (wasHandled) {
+            e.preventDefault();
+        }
+    }
+
+    // This is the original handler for desktop clicks (called by main.js)
     handleCanvasClick(e) {
         if (AppState.currentMode !== 'photo') return;
+        this.processInteraction(e);
+    }
 
+    // --- NEW: Shared logic for processing clicks and touches ---
+    processInteraction(e) {
         const pos = this.getCanvasCoordinates(e);
         const clickedRoom = this.getClickedRoom(pos.x, pos.y);
 
         if (clickedRoom) {
             // If the same room is clicked again, do nothing.
-            if (this.activeRoomElement?.id === clickedRoom.id) return;
+            if (this.activeRoomElement?.id === clickedRoom.id) return false;
             
-            // Set the new active room and open the palette for it
             this.activeRoomElement = clickedRoom;
             this.openPhotoPaletteFor(clickedRoom);
+            CanvasManager.redraw();
+            return true; // Return true to indicate we handled the event
         } else {
-            // If clicking on the canvas background, close the palette
             this.closePhotoPalette();
+            CanvasManager.redraw();
+            return false; // Return false, we didn't handle it
         }
-        
-        // Trigger a redraw to show/hide the highlight
-        CanvasManager.redraw();
     }
 
     openPhotoPaletteFor(roomElement) {
@@ -187,12 +213,17 @@ export class PhotoManager {
         CanvasManager.redraw();
     }
 
+    // --- MODIFIED: This now handles both mouse and touch events ---
     getCanvasCoordinates(e) {
         const viewport = document.getElementById('canvasViewport');
         const rect = viewport.getBoundingClientRect();
+        
+        // Use `changedTouches` if it exists (for touchend), otherwise use the direct event properties.
+        const touch = e.changedTouches ? e.changedTouches[0] : e;
+
         return {
-            x: (e.clientX - rect.left) - AppState.viewportTransform.x,
-            y: (e.clientY - rect.top) - AppState.viewportTransform.y
+            x: (touch.clientX - rect.left) - AppState.viewportTransform.x,
+            y: (touch.clientY - rect.top) - AppState.viewportTransform.y
         };
     }
 

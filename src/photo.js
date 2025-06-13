@@ -1,4 +1,4 @@
-// src/photo.js - Correct version with robust file handling for mobile
+// src/photo.js - Correct version with robust file handling and image resizing for mobile
 
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
@@ -120,49 +120,88 @@ export class PhotoManager {
         return thumb;
     }
 
-    // --- MODIFIED: This function now uses async/await and Promise.all for reliability ---
+    // --- MODIFIED: This is the new, robust file handler with image resizing ---
     async handleFileSelect(files) {
-        if (!files || files.length === 0 || !this.activeRoomElement) {
-            console.log("File selection cancelled or no active room.");
-            return;
-        }
+        if (!files || files.length === 0 || !this.activeRoomElement) return;
 
         let photos = this.loadPhotosFromStorage(this.activeRoomElement.id) || [];
         const remainingSlots = 5 - photos.length;
-
         if (files.length > remainingSlots) {
-            alert(`You can only add ${remainingSlots} more photo(s). Only the first ${remainingSlots} will be added.`);
+            alert(`You can only add ${remainingSlots} more photo(s).`);
         }
         
         const filesToProcess = Array.from(files).slice(0, remainingSlots);
         if (filesToProcess.length === 0) return;
 
-        // Creates a promise that resolves with the file's data URL
-        const readFileAsDataURL = (file) => {
+        // This function resizes an image file and returns a Data URL
+        const processImageFile = (file) => {
             return new Promise((resolve, reject) => {
-                // We no longer check file.type, as it's unreliable on iOS for camera captures
                 const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = (error) => reject(error);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        
+                        // Set a max dimension for the images to save memory
+                        const MAX_DIMENSION = 1920;
+                        let { width, height } = img;
+                        
+                        if (width > height) {
+                            if (width > MAX_DIMENSION) {
+                                height *= MAX_DIMENSION / width;
+                                width = MAX_DIMENSION;
+                            }
+                        } else {
+                            if (height > MAX_DIMENSION) {
+                                width *= MAX_DIMENSION / height;
+                                height = MAX_DIMENSION;
+                            }
+                        }
+                        
+                        canvas.width = width;
+                        canvas.height = height;
+                        
+                        // Draw the resized image to the canvas
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // Get the resized image as a JPEG Data URL
+                        resolve(canvas.toDataURL('image/jpeg', 0.85)); // 85% quality
+                    };
+                    img.onerror = reject;
+                    img.src = event.target.result;
+                };
+                reader.onerror = reject;
                 reader.readAsDataURL(file);
             });
         };
 
         try {
-            console.log(`Processing ${filesToProcess.length} file(s)...`);
-            // Wait for ALL files to be read into memory before proceeding
-            const newPhotoDataUrls = await Promise.all(filesToProcess.map(readFileAsDataURL));
+            // Show a simple loading indicator
+            this.showLoadingState();
+
+            // Process all files in parallel
+            const newPhotoDataUrls = await Promise.all(filesToProcess.map(processImageFile));
             
-            // Now that all files are read, we can safely update the photos array
             const updatedPhotos = photos.concat(newPhotoDataUrls);
             
-            console.log("All files processed successfully. Saving and refreshing palette.");
+            // Save the newly processed photos and refresh the UI
             this.saveAndRefreshPalette(updatedPhotos);
 
         } catch (error) {
-            console.error("An error occurred while reading files:", error);
+            console.error("An error occurred while processing images:", error);
             alert("There was an error processing one or more photos. Please try again.");
+            // Refresh the palette to its previous state in case of error
+            this.openPhotoPaletteFor(this.activeRoomElement);
         }
+    }
+    
+    showLoadingState() {
+        this.photoPalette.innerHTML = `
+            <div class="photo-palette-wrapper" style="justify-content: center; width: 100%;">
+                <h3>Processing photos...</h3>
+            </div>
+        `;
     }
 
     deletePhoto(index) {
@@ -172,17 +211,13 @@ export class PhotoManager {
         this.saveAndRefreshPalette(photos);
     }
     
-    // This is now the single source of truth for saving and re-rendering
     saveAndRefreshPalette(updatedPhotosArray) {
         if (!this.activeRoomElement) return;
-
-        console.log(`Saving ${updatedPhotosArray.length} photos for room ${this.activeRoomElement.id}`);
         
         const allPhotos = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '{}');
         allPhotos[this.activeRoomElement.id] = updatedPhotosArray;
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(allPhotos));
 
-        // Re-render the palette from the new source of truth
         this.openPhotoPaletteFor(this.activeRoomElement);
     }
     
@@ -190,6 +225,7 @@ export class PhotoManager {
         this.photoPalette.classList.add('hidden');
         this.photoPalette.innerHTML = '';
         this.activeRoomElement = null;
+        CanvasManager.redraw();
     }
 
     getCanvasCoordinates(e) {

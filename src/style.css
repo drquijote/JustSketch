@@ -900,3 +900,35 @@ body {
     color: #3498db;           /* Makes the dot character blue */
 }
 
+/* === ADD THE FOLLOWING AT THE END OF src/style.css === */
+
+/* Base style for all buttons in the sketch list */
+.list-btn {
+    text-decoration: none;
+    color: white;
+    padding: 8px 15px;
+    border-radius: 5px;
+    font-size: 14px;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+.list-btn:hover {
+    opacity: 0.85;
+}
+
+/* Specific color for the load button */
+.load-btn {
+    background-color: #007bff;
+}
+
+/* Specific color for the new export button */
+.export-btn {
+    background-color: #28a745; /* Green */
+}
+
+/* Specific color for the delete button */
+.delete-btn {
+    background-color: #e74c3c; /* Red */
+}

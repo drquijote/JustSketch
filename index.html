@@ -205,6 +205,53 @@
             document.getElementById('routerHome').style.display = 'block';
             displaySavedSketches();
         });
+        
+        /**
+         * NEW: Finds a sketch in localStorage and triggers its download as a JSON file.
+         * @param {string} sketchName The name of the sketch to export.
+         */
+        function exportSketch(sketchName) {
+            const STORAGE_KEY = 'savedSketches';
+            const savedSketchesJSON = localStorage.getItem(STORAGE_KEY);
+            const allSketches = savedSketchesJSON ? JSON.parse(savedSketchesJSON) : {};
+
+            const sketchEntry = allSketches[sketchName];
+
+            if (!sketchEntry) {
+                alert(`Error: Could not find sketch "${sketchName}" to export.`);
+                return;
+            }
+
+            // Package the data for compatibility with the main app's import feature.
+            const fileData = {
+                version: '1.0',
+                createdAt: sketchEntry.savedAt,
+                data: sketchEntry.data // The actual snapshot of the sketch
+            };
+
+            const fileName = `${sketchName}.json`;
+            
+            triggerFileDownload(fileData, fileName);
+        }
+
+        /**
+         * NEW HELPER: Takes a JavaScript object and a filename, and triggers a 
+         * browser download.
+         */
+        function triggerFileDownload(dataObject, fileName) {
+            const jsonString = JSON.stringify(dataObject, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
 
         /**
          * New function to handle sketch deletion with confirmation.
@@ -259,8 +306,9 @@
                                     <div style="font-size: 12px; color: #777;">Saved: ${savedDate}</div>
                                 </div>
                                 <div style="display: flex; gap: 10px; align-items: center;">
-                                    <a href="#" onclick="loadApp('${loadUrl}'); return false;" style="text-decoration: none; background: #007bff; color: white; padding: 8px 15px; border-radius: 5px; font-size: 14px;">Load</a>
-                                    <button onclick="deleteSketch('${sketchName}')" style="background: #e74c3c; color: white; border: none; padding: 8px 15px; border-radius: 5px; font-size: 14px; cursor: pointer;">Delete</button>
+                                    <a href="#" onclick="loadApp('${loadUrl}'); return false;" class="list-btn load-btn">Load</a>
+                                    <button onclick="exportSketch('${sketchName}')" class="list-btn export-btn">Save to Device</button>
+                                    <button onclick="deleteSketch('${sketchName}')" class="list-btn delete-btn">Delete</button>
                                 </div>
                             </li>`;
                 }

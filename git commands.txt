@@ -1,0 +1,14 @@
+git add .
+git commit -m "Your next changes"
+git push origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
+
+
+
+
+
+
+git pull origin deployment-test
+git log -1
+
+
+

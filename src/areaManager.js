@@ -1183,74 +1183,84 @@ deleteCurrentCycle() {
     }
 
     // Replace the entire drawCompletedAreas function in areaManager.js with this:
-    drawCompletedAreas() {
-        const { ctx } = AppState;
-        if (!ctx || AppState.drawnPolygons.length === 0) return;
+        drawCompletedAreas() {
+            const { ctx } = AppState;
+            if (!ctx || AppState.drawnPolygons.length === 0) return;
 
-        // First, identify all shared edges so we don't draw labels on them
-        const sharedEdges = this.findAllSharedEdges();
+            // First, identify all shared edges so we don't draw labels on them
+            const sharedEdges = this.findAllSharedEdges();
 
-        AppState.drawnPolygons.forEach((poly) => {
-            ctx.save();
-            
-            // Always use solid borders for areas
-            ctx.strokeStyle = '#555';
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash([]); // Ensure solid line
-            
-            // Fill colors based on area type
-            if (poly.glaType === 1) ctx.fillStyle = 'rgba(144, 238, 144, 0.4)';
-            else if (poly.glaType === 0) ctx.fillStyle = 'rgba(180, 180, 180, 0.6)';
-            else ctx.fillStyle = 'rgba(220, 220, 220, 0.3)';
-            
-            ctx.beginPath();
-            ctx.moveTo(poly.path[0].x, poly.path[0].y);
-            for (let i = 1; i < poly.path.length; i++) {
-                ctx.lineTo(poly.path[i].x, poly.path[i].y);
-            }
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
+            AppState.drawnPolygons.forEach((poly) => {
+                ctx.save();
+                
+                // Always use solid borders for areas
+                ctx.strokeStyle = '#555';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([]); // Ensure solid line
+                
+                // Fill colors based on area type - MODIFIED to handle ADU specially
+                if (poly.glaType === 1) {
+                    // GLA areas - green
+                    ctx.fillStyle = 'rgba(144, 238, 144, 0.4)';
+                } else if (poly.type === 'ADU') {
+                    // ADU areas - light green (different from GLA green)
+                    ctx.fillStyle = 'rgba(173, 255, 173, 0.5)';
+                } else if (poly.glaType === 0) {
+                    // Other non-GLA areas - gray
+                    ctx.fillStyle = 'rgba(180, 180, 180, 0.6)';
+                } else {
+                    // Excluded areas - light gray
+                    ctx.fillStyle = 'rgba(220, 220, 220, 0.3)';
+                }
+                
+                ctx.beginPath();
+                ctx.moveTo(poly.path[0].x, poly.path[0].y);
+                for (let i = 1; i < poly.path.length; i++) {
+                    ctx.lineTo(poly.path[i].x, poly.path[i].y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
 
-            // *** NEW: In edit mode, highlight edges that can be deleted ***
-            if (this.isEditModeActive) {
+                // *** NEW: In edit mode, highlight edges that can be deleted ***
+                if (this.isEditModeActive) {
+                    for (let i = 0; i < poly.path.length; i++) {
+                        const p1 = poly.path[i];
+                        const p2 = poly.path[(i + 1) % poly.path.length];
+                        
+                        // Draw a slightly thicker, colored overlay on each edge to show it's clickable
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(231, 76, 60, 0.7)'; // Red overlay
+                        ctx.lineWidth = 4;
+                        ctx.setLineDash([8, 4]); // Dashed line to indicate clickable
+                        ctx.beginPath();
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    // *** NEW: Draw pencil icon for area editing ***
+                    this.drawAreaEditPencil(ctx, poly);
+                }
+
+                // Draw edge length labels, skip shared edges, minimum 3 feet
                 for (let i = 0; i < poly.path.length; i++) {
                     const p1 = poly.path[i];
                     const p2 = poly.path[(i + 1) % poly.path.length];
                     
-                    // Draw a slightly thicker, colored overlay on each edge to show it's clickable
-                    ctx.save();
-                    ctx.strokeStyle = 'rgba(231, 76, 60, 0.7)'; // Red overlay
-                    ctx.lineWidth = 4;
-                    ctx.setLineDash([8, 4]); // Dashed line to indicate clickable
-                    ctx.beginPath();
-                    ctx.moveTo(p1.x, p1.y);
-                    ctx.lineTo(p2.x, p2.y);
-                    ctx.stroke();
-                    ctx.restore();
+                    // Calculate edge key for shared edge detection
+                    const edgeKey = this.getEdgeKey(poly.id, i, (i + 1) % poly.path.length);
+                    const isSharedEdge = sharedEdges && sharedEdges.has(edgeKey);
+                    
+                    if (!isSharedEdge) {
+                        this.drawExternalLabel(ctx, p1, p2, poly.centroid);
+                    }
                 }
-
-                // *** NEW: Draw pencil icon for area editing ***
-                this.drawAreaEditPencil(ctx, poly);
-            }
-
-            // Draw edge length labels, skip shared edges, minimum 3 feet
-            for (let i = 0; i < poly.path.length; i++) {
-                const p1 = poly.path[i];
-                const p2 = poly.path[(i + 1) % poly.path.length];
                 
-                // Calculate edge key for shared edge detection
-                const edgeKey = this.getEdgeKey(poly.id, i, (i + 1) % poly.path.length);
-                const isSharedEdge = sharedEdges && sharedEdges.has(edgeKey);
-                
-                if (!isSharedEdge) {
-                    this.drawExternalLabel(ctx, p1, p2, poly.centroid);
-                }
-            }
-            
-            ctx.restore();
-        });
-    }
+                ctx.restore();
+            });
+        }
 
     // *** HELPER FUNCTIONS FOR EDGE LABELS ***
 

@@ -857,10 +857,8 @@ body {
 
 
 /*
- * Simple restyle for the directional pad:
- * 1. Make the pad's white container transparent.
- * 2. Make the blue button backgrounds transparent.
- * 3. Change the arrow color from white to blue.
+ * UPDATED: Change directional pad arrows to white text on blue backgrounds
+ * This replaces the previous transparent background styling
  */
 
 /* Makes the container box behind the buttons disappear */
@@ -871,33 +869,21 @@ body {
 
 /* Targets all directional buttons (but not the center one) */
 #directionalPad .dir-btn {
-    background: transparent;  /* Removes the blue square background */
-    color: #3498db;           /* Makes the arrow character blue */
-    font-weight: bold;        /* Makes the arrow character a bit thicker */
+    background: #3498db;        /* Blue background */
+    color: white;               /* White arrow text */
+    font-weight: bold;          /* Makes the arrow character a bit thicker */
 }
 
-/* Provides subtle feedback when a button is pressed */
+/* Provides feedback when a button is pressed */
 #directionalPad .dir-btn:active {
-    background: rgba(52, 152, 219, 0.15); /* A very light, transparent blue flash */
-    color: #2980b9;                       /* A slightly darker blue on press */
+    background: #2980b9;        /* Darker blue on press */
+    color: white;               /* Keep arrows white */
 }
 
 /* IMPORTANT: This rule ensures the red center button is not affected */
 #directionalPad .dir-btn.center {
     background: #e74c3c; /* Keeps the original red background */
     color: white;        /* Keeps the original white dot */
-}
-
-
-
-
-/*
- * Changes the center button of the directional pad to a blue dot
- * on a transparent background.
- */
-#directionalPad .dir-btn.center {
-    background: transparent;  /* Removes the red background */
-    color: #3498db;           /* Makes the dot character blue */
 }
 
 /* === ADD THE FOLLOWING AT THE END OF src/style.css === */
@@ -1272,4 +1258,3 @@ body {
     font-weight: 500;
     color: #555;
 }
-

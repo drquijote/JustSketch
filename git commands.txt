@@ -1,5 +1,5 @@
 git add .
-git commit -m "now with OPTION to saves sketches to device"
+git commit -m "lets fix the arrows, prefer solid background"
 git push origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
 
 
@@ -12,3 +12,10 @@ git log -1
 
 
 
+
+on the direction pad, can we change the arrow color to white and teh background Color of each arrow to blue the same blue from the input field
+
+1) please do not change anything else that I'm not asking for right now. Do not delete any other functions. I don't wanna mess up any of my prior work.
+2) for revised functions, please give me the entire function. Don't give me pieces of it and asked me to put different blocks within the inside of the function. It's much easier for me to just replace functions if the file is small just give me the full file.
+3) if the Code responsible for what I'm asking is not here ask me for it. I'll attach more files my other file files.
+4) give me clear and easy steps on how to make the implementation that you suggest.

@@ -131,7 +131,7 @@ function redrawPlacedElements() {
             // Draw delete button (red X) in edit mode - BIGGER and OUTSIDE to the right
             if (isEditMode && element !== editingElement) {
                 const deleteSize = 20;
-                const deleteX = element.x + element.width + 5;
+                const deleteX = element.x + element.width + 2;
                 const deleteY = element.y - 2;
                 
                 // Draw red circle background
@@ -188,7 +188,7 @@ function redrawPlacedElements() {
             // Draw delete button in edit mode
             if (isEditMode && element !== editingElement) {
                 const deleteSize = 20;
-                const deleteX = element.x + element.width + 5;
+                const deleteX = element.x + element.width + 2;
                 const deleteY = element.y - 2;
                 
                 // Draw red circle background
@@ -1912,7 +1912,7 @@ function getElementAt(x, y) {
         // In edit mode, check if clicking on delete button for room and area_label elements
         if (isEditMode && (element.type === 'room' || element.type === 'area_label')) {
             const deleteSize = 20;
-            const deleteX = element.x + element.width + 5;
+            const deleteX = element.x + element.width + 2;
             const deleteY = element.y - 2;
             
             // Check if click is within delete button area (circular hit detection)

@@ -1,5 +1,5 @@
 git add .
-git commit -m "lets fix the arrows, prefer solid background"
+git commit -m "next lets fix too many purple dots"
 git push origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
 
 
@@ -11,9 +11,7 @@ git pull origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
 git log -1
 
 
-
-
-on the direction pad, can we change the arrow color to white and teh background Color of each arrow to blue the same blue from the input field
+Can we add another mode for the app? I think so far we have four modes drawing mode, edit mode, ready mode and photo mode. Can we split up the EDIT mode into two different EDIT mode, edit button labels and icon labels and edit areas so that they are completely different from each other because I'm having trouble when I try to click on the button to edit it it tries to click on the line. I think that I tried to delete that line. Do you understand and the way we would do it is with the same button we would toggle it so it will toggle to three different states you click the added button once and it edit the set the mode to edit the labels you click it again and it set it to EDIT areas in that case it'll make all of the nearly transparent so that the user can just focus on editing areas meaning moving them around or editing any one of the lines and then you click it again and it goes back to ready my total shuffle from the three remotes ready edit labels, EDIT areas and then back to ready and back and so on and so forth do you understand what I mean and have the name on the button change reflect in which sta this way it'll make the editing more simple because right now I think the logic is difficult to distinguish between editing labels and editing areas. What do you think?
 
 1) please do not change anything else that I'm not asking for right now. Do not delete any other functions. I don't wanna mess up any of my prior work.
 2) for revised functions, please give me the entire function. Don't give me pieces of it and asked me to put different blocks within the inside of the function. It's much easier for me to just replace functions if the file is small just give me the full file.

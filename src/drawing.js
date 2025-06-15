@@ -1602,7 +1602,7 @@ handleMouseMove(e) {
     
     if (!this.isActive) return;
 
-    // Get the correct canvas coordinates for the click/touch, accounting for pan/transform
+    // *** FIXED: Get the correct canvas coordinates consistently ***
     const viewport = document.getElementById('canvasViewport');
     const viewportRect = viewport.getBoundingClientRect();
     const canvasX = (e.clientX - viewportRect.left) - AppState.viewportTransform.x;
@@ -1612,7 +1612,7 @@ handleMouseMove(e) {
     // --- Rule 1: Placing the first vertex of a new shape ---
     if (this.waitingForFirstVertex) {
         this.placeFirstVertex(canvasX, canvasY);
-        return; // Action handled
+        return true; // Action handled
     }
 
     // --- Priority #1: Clicking a vertex on the CURRENT path (to close or backtrack) ---
@@ -1624,7 +1624,7 @@ handleMouseMove(e) {
         } else {
             this.continueFromVertex(clickedVertexIndex);
         }
-        return; // Action handled
+        return true; // Action handled
     }
 
     // --- Priority #2: Clicking a helper point (for snapping) ---
@@ -1632,7 +1632,7 @@ handleMouseMove(e) {
     if (clickedHelper) {
         console.log('🟣 Helper point clicked for snapping');
         this.addHelperAsVertex(clickedHelper);
-        return; // Action handled
+        return true; // Action handled
     }
     
     // --- Priority #3: Clicking on existing polygon vertices for splitting ---
@@ -1640,7 +1640,7 @@ handleMouseMove(e) {
     if (clickedPolygonVertex) {
         console.log('🔪 SPLIT: Clicked on completed polygon vertex');
         this.addPolygonVertexToPath(clickedPolygonVertex);
-        return; // Action handled
+        return true; // Action handled
     }
 
     // If we reach here, the click was in empty space - allow it to bubble up for panning
@@ -1648,27 +1648,23 @@ handleMouseMove(e) {
     return false; // Let other systems handle this
 }
 
-handleCanvasClick(e) {
+ handleCanvasClick(e) {
     if (!this.isActive) return;
     
     // *** IMPORTANT: Don't prevent default here - let panning work ***
     
-    // Get the canvas element's bounding rect
-    const canvas = AppState.canvas;
-    const rect = canvas.getBoundingClientRect();
+    // *** FIXED: Use viewport-based coordinates consistently ***
+    const viewport = document.getElementById('canvasViewport');
+    const rect = viewport.getBoundingClientRect();
     
-    // Calculate the scale factor between display size and actual canvas size
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    
-    // Convert click coordinates to canvas space
-    const canvasX = (e.clientX - rect.left) * scaleX;
-    const canvasY = (e.clientY - rect.top) * scaleY;
+    // Convert click coordinates to canvas world coordinates
+    const canvasX = (e.clientX - rect.left) - AppState.viewportTransform.x;
+    const canvasY = (e.clientY - rect.top) - AppState.viewportTransform.y;
     
     // Create a synthetic event with canvas coordinates
     const canvasEvent = {
-      clientX: canvasX / scaleX + rect.left,
-      clientY: canvasY / scaleY + rect.top
+      clientX: e.clientX,
+      clientY: e.clientY
     };
     
     // Try to handle the interaction
@@ -1690,22 +1686,18 @@ handleCanvasTouch(e) {
       // Use the first touch point
       const touch = e.changedTouches[0];
       
-      // Get the canvas element's bounding rect
-      const canvas = AppState.canvas;
-      const rect = canvas.getBoundingClientRect();
+      // *** FIXED: Use the same coordinate system as handleCanvasClick ***
+      const viewport = document.getElementById('canvasViewport');
+      const rect = viewport.getBoundingClientRect();
       
-      // Calculate the scale factor between display size and actual canvas size
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
+      // Convert touch coordinates to canvas world coordinates
+      const canvasX = (touch.clientX - rect.left) - AppState.viewportTransform.x;
+      const canvasY = (touch.clientY - rect.top) - AppState.viewportTransform.y;
       
-      // Convert touch coordinates to canvas space
-      const canvasX = (touch.clientX - rect.left) * scaleX;
-      const canvasY = (touch.clientY - rect.top) * scaleY;
-      
-      // Create a synthetic event with canvas coordinates
+      // Create a synthetic event with the correct coordinates
       const canvasEvent = {
-        clientX: canvasX / scaleX + rect.left,
-        clientY: canvasY / scaleY + rect.top
+        clientX: touch.clientX,
+        clientY: touch.clientY
       };
       
       // Try to handle the interaction

@@ -277,43 +277,105 @@ export class AreaManager {
         console.log('🔗 HELPER DEBUG: Total permanent helper points:', AppState.permanentHelperPoints.length);
     }
 
-    handleCanvasTouchMove(e) {
-        const touch = e.touches[0];
-        if (!touch) return;
-        const pos = CanvasManager.screenToCanvas(touch.clientX, touch.clientY);
+ 
 
-        // Only handle dragging if we're in edit mode and actively dragging an area
-        if (this.isEditModeActive && this.isDraggingArea && this.draggedGroup) {
-            // Prevent other event handlers from interfering
-            try {
-                if (e.preventDefault) e.preventDefault();
-                if (e.stopPropagation) e.stopPropagation();
-                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-            } catch (error) {
-                console.warn('Event method not available:', error.message);
-            }
+ // In areaManager.js, replace the existing handleCanvasTouchStart function
+handleCanvasTouchStart(e) {
+    // Only allow area dragging, edge deletion, and pencil clicks in 'areas' sub-mode.
+    if (AppState.currentMode !== 'edit' || AppState.editSubMode !== 'areas') return false;
 
-            const dx = pos.x - this.dragStartPoint.x;
-            const dy = pos.y - this.dragStartPoint.y;
+    // Use a mouse or single touch event
+    const touch = e.touches ? e.touches[0] : e;
+    if (!touch) return;
 
-            this.moveDragGroup(dx, dy);
-            this.dragStartPoint = pos; // Update position for the next movement delta
+    const pos = CanvasManager.screenToCanvas(touch.clientX, touch.clientY);
+    this.dragStartPoint = pos;
+
+    // Priority 0: Check for pencil clicks (to edit properties)
+    const pencilHandled = this.handlePencilClick(pos.x, pos.y);
+    if (pencilHandled) {
+        try {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        } catch (error) { console.warn('Event method not available:', error.message); }
+        return true; // Handled
+    }
+
+    // Priority 1: Check for edge deletion
+    const clickedEdge = this.findClickedEdge(pos);
+    if (clickedEdge) {
+        this.deleteEdgeAndStartDrawing(clickedEdge);
+        try {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        } catch (error) { console.warn('Event method not available:', error.message); }
+        return true; // Handled
+    }
+
+    // Priority 2: Check if clicking on an area to start dragging
+    let areaAtPoint = null;
+    for (const poly of AppState.drawnPolygons) {
+        if (AreaHelpers.isPointInPolygon(pos, poly.path)) {
+            areaAtPoint = poly;
+            break;
         }
     }
 
-    handleCanvasTouchEnd(e) {
-        if (this.isDraggingArea) {
-            // Stop the event to prevent any unwanted final actions from other listeners
-            try {
-                if (e.preventDefault) e.preventDefault();
-                if (e.stopPropagation) e.stopPropagation();
-                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-            } catch (error) {
-                console.warn('Event method not available:', error.message);
-            }
-            this.endAreaDrag();
-        }
+    if (areaAtPoint) {
+        console.log("Edit mode: Starting area drag IMMEDIATELY");
+        this.prepareDragGroup(areaAtPoint, pos);
+        this.isDraggingArea = true; // This flag starts the drag operation
+        try {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        } catch (error) { console.warn('Event method not available:', error.message); }
+        return true; // Handled
     }
+
+    return false; // Let other systems (like panning) handle the event
+}
+// In areaManager.js, replace the existing handleCanvasTouchMove function
+handleCanvasTouchMove(e) {
+    const touch = e.touches ? e.touches[0] : e;
+    if (!touch) return;
+    const pos = CanvasManager.screenToCanvas(touch.clientX, touch.clientY);
+
+    // Only handle dragging if we're in edit mode and actively dragging an area
+    if (this.isEditModeActive && this.isDraggingArea && this.draggedGroup) {
+        // Prevent other event handlers from interfering
+        try {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        } catch (error) {
+            console.warn('Event method not available:', error.message);
+        }
+
+        const dx = pos.x - this.dragStartPoint.x;
+        const dy = pos.y - this.dragStartPoint.y;
+
+        this.moveDragGroup(dx, dy);
+        this.dragStartPoint = pos; // Update position for the next movement delta
+    }
+}
+
+// In areaManager.js, replace the existing handleCanvasTouchEnd function
+handleCanvasTouchEnd(e) {
+    if (this.isDraggingArea) {
+        // Stop the event to prevent any unwanted final actions from other listeners
+        try {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        } catch (error) {
+            console.warn('Event method not available:', error.message);
+        }
+        this.endAreaDrag();
+    }
+}
 
     prepareDragGroup(polygon, clickPosition) {
         const elementsToDrag = AppState.placedElements.filter(el => {
@@ -1109,64 +1171,7 @@ deleteCurrentCycle() {
  
 
  // In areaManager.js, replace the entire handleCanvasTouchStart function with this one.
-handleCanvasTouchStart(e) {
-    // MODIFIED: Only allow area dragging, edge deletion, and pencil clicks in 'areas' sub-mode.
-    if (AppState.currentMode !== 'edit' || AppState.editSubMode !== 'areas') return false;
-    
-    if (e.touches.length !== 1) return;
-    
-    const touch = e.touches[0];
-    const pos = CanvasManager.screenToCanvas(touch.clientX, touch.clientY);
-    this.dragStartPoint = pos;
-
-    // Priority 0: Check for pencil clicks
-    const pencilHandled = this.handlePencilClick(pos.x, pos.y);
-    if (pencilHandled) {
-        console.log("Edit mode: Pencil clicked for area editing");
-        try {
-            if (e.preventDefault) e.preventDefault();
-            if (e.stopPropagation) e.stopPropagation();
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-        } catch (error) { console.warn('Event method not available:', error.message); }
-        return true; // Handled
-    }
-
-    // Priority 1: Check for edge deletion
-    const clickedEdge = this.findClickedEdge(pos);
-    if (clickedEdge) {
-        console.log("Edit mode: Edge clicked for deletion");
-        this.deleteEdgeAndStartDrawing(clickedEdge);
-        try {
-            if (e.preventDefault) e.preventDefault();
-            if (e.stopPropagation) e.stopPropagation();
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-        } catch (error) { console.warn('Event method not available:', error.message); }
-        return true; // Handled
-    }
-
-    // Priority 2: Check if clicking on an area for dragging
-    let areaAtPoint = null;
-    for (const poly of AppState.drawnPolygons) {
-        if (AreaHelpers.isPointInPolygon(pos, poly.path)) {
-            areaAtPoint = poly;
-            break;
-        }
-    }
-    
-    if (areaAtPoint) {
-        console.log("Edit mode: Starting area drag IMMEDIATELY");
-        this.prepareDragGroup(areaAtPoint, pos);
-        this.isDraggingArea = true;
-        try {
-            if (e.preventDefault) e.preventDefault();
-            if (e.stopPropagation) e.stopPropagation();
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-        } catch (error) { console.warn('Event method not available:', error.message); }
-        return true; // Handled
-    }
-    
-    return false; // Let other systems handle the event
-}
+ 
 
 // In areaManager.js, replace the entire drawCompletedAreas function with this one.
 drawCompletedAreas() {

@@ -362,6 +362,9 @@ handleCanvasTouchMove(e) {
     }
 }
 
+
+
+
 // In areaManager.js, replace the existing handleCanvasTouchEnd function
 handleCanvasTouchEnd(e) {
     if (this.isDraggingArea) {

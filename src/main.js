@@ -1,4 +1,3 @@
-
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
 import { DrawingManager } from './drawing.js';
@@ -17,6 +16,37 @@ import {
   activateSketchListeners,
   deactivateSketchListeners
 } from './sketch.js';
+
+/**
+ * Draws a grid pattern across the entire canvas.
+ * This ensures the visual background matches the canvas's full dimensions.
+ */
+function drawGrid() {
+    const { ctx, canvas } = AppState;
+    if (!ctx || !canvas) return;
+
+    const gridSize = 40; // The spacing of the grid lines in pixels
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = '#dcdcdc'; // A light gray for the grid lines
+    ctx.lineWidth = 1;
+
+    // Draw vertical lines across the entire canvas width
+    for (let x = 0; x <= canvas.width; x += gridSize) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+    }
+
+    // Draw horizontal lines across the entire canvas height
+    for (let y = 0; y <= canvas.height; y += gridSize) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+    }
+
+    ctx.stroke();
+    ctx.restore();
+}
 
 // Global functions for HTML onclick handlers
 window.showpallets = showpallets;
@@ -40,9 +70,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const canvas = document.getElementById('drawingCanvas');
     CanvasManager.init(canvas);
+    
+    // Connects the new grid function to the drawing process.
+    AppState.on('canvas:redraw:background', drawGrid);
 
     // Initialize all the managers
-    new DrawingManager();
+    const drawingManager = new DrawingManager();
+    window.drawingManager = drawingManager; // Make it globally accessible if needed
+
     const areaManager = new AreaManager();
     areaManager.init();
     

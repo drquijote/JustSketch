@@ -3,17 +3,40 @@ import { AppState } from './state.js';
 import { HelperPointManager } from './helpers.js';
 
 export class CanvasManager {
+  // In canvas.js, replace the entire init function with this one.
+
+ // In canvas.js, replace the entire init function with this one.
+
   static init(canvasElement) {
     console.log('CanvasManager: Initializing canvas');
     AppState.canvas = canvasElement;
     AppState.ctx = canvasElement.getContext('2d');
     
-    // Set canvas size
-    AppState.canvas.width = window.innerWidth * 2;
-    AppState.canvas.height = window.innerHeight * 2;
+    // MODIFIED: Set a fixed canvas size of 10,000 x 10,000 pixels
+    // for a consistently large drawing area on all devices.
+    AppState.canvas.width = 10000;
+    AppState.canvas.height = 10000;
     
-    console.log('CanvasManager: Canvas initialized with size:', AppState.canvas.width, 'x', AppState.canvas.height);
+    console.log('CanvasManager: Canvas initialized with fixed size:', AppState.canvas.width, 'x', AppState.canvas.height);
+
+    // This logic remains the same. It sets the initial viewport to the 
+    // center of the new large canvas for any new sketch.
+    const viewport = document.getElementById('canvasViewport');
+    if (viewport) {
+        const viewportWidth = viewport.clientWidth;
+        const viewportHeight = viewport.clientHeight;
+
+        // This transform pans the canvas so its center aligns with the viewport's center.
+        AppState.viewportTransform.x = -(AppState.canvas.width / 2) + (viewportWidth / 2);
+        AppState.viewportTransform.y = -(AppState.canvas.height / 2) + (viewportHeight / 2);
+        
+        // Apply the initial transform to the canvas container element.
+        this.updateViewportTransform();
+        console.log('CanvasManager: Initial viewport centered on canvas at:', AppState.viewportTransform);
+    }
   }
+
+
   
   // In canvas.js, replace the redraw function with this version that ensures proper layer order
 

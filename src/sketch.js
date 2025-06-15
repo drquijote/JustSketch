@@ -584,6 +584,18 @@ function hideCustomCursor() {
     }
     canvas.style.cursor = 'default';
     document.removeEventListener('mousemove', updateCustomCursor);
+
+    // MODIFIED: Restore the last visible palette after placing an element.
+    // This makes placing multiple items of the same type much quicker.
+    if (lastVisiblePalette) {
+        const paletteToShow = document.getElementById(lastVisiblePalette);
+        if (paletteToShow) {
+            console.log(`Restoring palette: ${lastVisiblePalette}`);
+            paletteToShow.classList.remove('hidden');
+        }
+        // Clear the variable so it doesn't accidentally show a palette later.
+        lastVisiblePalette = null;
+    }
 }
 
 function updateLegend() {

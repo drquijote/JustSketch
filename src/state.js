@@ -1,4 +1,3 @@
-// src/state.js - FINAL VERSION
 
 export const AppState = {
   // Canvas & Viewport (will be populated by canvas.js)
@@ -6,8 +5,10 @@ export const AppState = {
   ctx: null,
   viewportTransform: { x: 0, y: 0, scale: 1 },
   activePhotoElement: null,
+  
   // Current interaction mode
-  currentMode: 'placement', // 'placement', 'drawing', 'edit'
+  currentMode: 'placement', // 'placement', 'drawing', 'edit', 'photos'
+  editSubMode: null, // NEW: null, 'labels', 'areas'
   
   // Selection and interaction state
   selectedElement: null,
@@ -63,6 +64,7 @@ export const AppState = {
         currentPolygonCounter: this.currentPolygonCounter,
         permanentHelperPoints: JSON.parse(JSON.stringify(this.permanentHelperPoints || [])),
         viewportTransform: JSON.parse(JSON.stringify(this.viewportTransform)),
+        editSubMode: this.editSubMode, // NEW
         // Also save the current sketch info in the snapshot
         currentSketchId: this.currentSketchId,
         currentSketchName: this.currentSketchName
@@ -79,6 +81,7 @@ export const AppState = {
       currentPolygonCounter: 0,
       permanentHelperPoints: [],
       viewportTransform: { x: 0, y: 0, scale: 1 },
+      editSubMode: null, // NEW
       currentSketchId: null,
       currentSketchName: null
     };
@@ -92,6 +95,7 @@ export const AppState = {
     this.currentPolygonPoints = JSON.parse(JSON.stringify(snapshot.currentPolygonPoints || []));
     this.currentPolygonCounter = snapshot.currentPolygonCounter || 0;
     this.permanentHelperPoints = JSON.parse(JSON.stringify(snapshot.permanentHelperPoints || []));
+    this.editSubMode = snapshot.editSubMode || null; // NEW
     
     if (snapshot.viewportTransform) {
         this.viewportTransform = JSON.parse(JSON.stringify(snapshot.viewportTransform));

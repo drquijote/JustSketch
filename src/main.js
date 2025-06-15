@@ -1,4 +1,3 @@
-// src/main.js - FINAL CORRECTED VERSION WITH MUTUALLY EXCLUSIVE MODES
 
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
@@ -15,7 +14,6 @@ import {
   showpallets, 
   initSketchModule,
   toggleLegend, 
-  toggleEditMode,
   activateSketchListeners,
   deactivateSketchListeners
 } from './sketch.js';
@@ -23,7 +21,6 @@ import {
 // Global functions for HTML onclick handlers
 window.showpallets = showpallets;
 window.toggleLegend = toggleLegend;
-window.toggleEditMode = toggleEditMode;
 
 // Mode switching functions
 window.switchToPlacementMode = switchToPlacementMode;
@@ -31,13 +28,12 @@ window.switchToDrawingMode = switchToDrawingMode;
 
 // --- Main Application Setup ---
 document.addEventListener('DOMContentLoaded', () => {
-
     const splitterManager = new SplitterManager();
     splitterManager.init();
 
     const saveManager = new SaveManager();
     saveManager.init();
-    const photoManager = new PhotoManager(); // <-- ADD THIS LINE
+    const photoManager = new PhotoManager();
     photoManager.init();  
     
     console.log("App loaded - initializing modular architecture");
@@ -68,13 +64,6 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log("App initialization complete");
 });
 
-
-/**
- * Sets up all the primary UI event listeners for the application buttons.
- * This should be the ONLY version of this function in the file.
- * @param {PreviewManager} previewManager - The instance of the preview manager.
- * @param {SaveManager} saveManager - The instance of the save manager.
- */
 function initializeAppControls(previewManager, saveManager) {
     // Palette button handlers
     const paletteButtons = document.querySelectorAll('[data-palette]');
@@ -82,15 +71,11 @@ function initializeAppControls(previewManager, saveManager) {
         button.addEventListener('click', (e) => {
             const paletteId = e.target.getAttribute('data-palette');
             
-            // --- MODIFIED: All palette buttons now switch to Ready mode and are mutually exclusive ---
             if (paletteId === 'photosPalette') {
-                // Photos button switches to Photos mode
                 switchToPhotosMode();
             } else {
-                // Rooms and Icons buttons always switch to Ready mode for placing elements
                 switchToPlacementMode();
             }
-            // --- END OF MODIFICATION ---
 
             showpallets(paletteId);
             paletteButtons.forEach(btn => btn.classList.remove('active'));
@@ -102,16 +87,8 @@ function initializeAppControls(previewManager, saveManager) {
     AppState.on('app:exitDrawingMode', switchToPlacementMode);
     AppState.on('app:switchToDrawingMode', switchToDrawingMode);
 
-    // Control handlers - MODIFIED: Edit button now has proper toggle behavior
-    document.getElementById('editBtn').addEventListener('click', () => {
-        if (AppState.currentMode === 'edit') {
-            // If already in edit mode, switch to ready mode
-            switchToPlacementMode();
-        } else {
-            // If in any other mode, switch to edit mode
-            switchToEditMode();
-        }
-    });
+    // MODIFIED: Edit button now cycles through three states
+    document.getElementById('editBtn').addEventListener('click', cycleEditMode);
     
     document.getElementById('legendToggleBtn').addEventListener('click', toggleLegend);
     const undoBtn = document.getElementById('undo');
@@ -119,15 +96,13 @@ function initializeAppControls(previewManager, saveManager) {
     if (undoBtn) undoBtn.addEventListener('click', (e) => { e.preventDefault(); CanvasManager.undo(); });
     if (redoBtn) redoBtn.addEventListener('click', (e) => { e.preventDefault(); CanvasManager.redo(); });
 
-    // Drawing mode button handler - MODIFIED: Proper toggle behavior with other modes
+    // Drawing mode button handler
     const startBtn = document.getElementById('startBtn');
     if (startBtn) {
         startBtn.addEventListener('click', () => {
             if (AppState.currentMode === 'drawing') {
-                // If already in drawing mode, switch to ready mode
                 switchToPlacementMode();
             } else {
-                // If in any other mode, switch to drawing mode
                 switchToDrawingMode();
             }
         });
@@ -139,7 +114,6 @@ function initializeAppControls(previewManager, saveManager) {
     const fileInput = document.getElementById('importFile');
     const allFinishButtons = Array.from(document.querySelectorAll('.control-btn.finish-btn'));
     const importBtn = allFinishButtons.find(btn => btn.textContent.trim() === 'Import');
-    const saveAsBtn = document.getElementById('saveAsBtn');
 
     if (exportBtn && exportMenu) {
         exportBtn.addEventListener('click', () => exportMenu.classList.toggle('hidden'));
@@ -181,34 +155,78 @@ function initializeAppControls(previewManager, saveManager) {
     }
 }
 
-// --- Mode Switching Logic - UPDATED FOR MUTUALLY EXCLUSIVE BEHAVIOR ---
+// --- NEW: Three-State Edit Mode Cycling Logic ---
 
-/**
- * UPDATED: Function to handle switching to the dedicated Photos mode.
- */
+function cycleEditMode() {
+    // Sequence: READY -> EDIT LABELS -> EDIT AREAS -> READY
+    if (AppState.currentMode !== 'edit') {
+        switchToEditLabelsMode();
+    } else {
+        if (AppState.editSubMode === 'labels') {
+            switchToEditAreasMode();
+        } else { // From 'areas' or any other weird state, go back to ready.
+            switchToPlacementMode();
+        }
+    }
+}
+
+function switchToEditLabelsMode() {
+    console.log('Switching to Edit Labels mode');
+    activateSketchListeners(); 
+    AppState.currentMode = 'edit';
+    AppState.editSubMode = 'labels'; 
+
+    resetAllModeButtons();
+    const editBtn = document.getElementById('editBtn');
+    editBtn.classList.add('active');
+    editBtn.textContent = 'Edit Areas';
+
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'EDIT LABELS';
+    modeIndicator.className = 'mode-indicator edit-mode';
+
+    AppState.emit('mode:changed', { mode: 'edit', subMode: 'labels' });
+    AppState.emit('mode:editToggled', { isEditMode: true });
+    CanvasManager.redraw();
+}
+
+function switchToEditAreasMode() {
+    console.log('Switching to Edit Areas mode');
+    activateSketchListeners();
+    AppState.currentMode = 'edit';
+    AppState.editSubMode = 'areas';
+
+    resetAllModeButtons();
+    const editBtn = document.getElementById('editBtn');
+    editBtn.classList.add('active');
+    editBtn.textContent = 'Done';
+
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'EDIT AREAS';
+    modeIndicator.className = 'mode-indicator edit-mode';
+
+    AppState.emit('mode:changed', { mode: 'edit', subMode: 'areas' });
+    AppState.emit('mode:editToggled', { isEditMode: true });
+    setTimeout(() => console.log('💡 EDIT AREAS: Click on areas to drag them, or click on edges to delete them!'), 100);
+    CanvasManager.redraw();
+}
+
+
+// --- Standard Mode Switching Functions (Modified) ---
+
 function switchToPhotosMode() {
     console.log('Switching to photos mode from:', AppState.currentMode);
-    
-    // Deactivate drawing/editing listeners from other modes if they are active
     deactivateSketchListeners(); 
-    
-    // Set the global app state
     AppState.currentMode = 'photos';
-    
-    // UPDATED: Reset ALL mode buttons to ensure mutual exclusivity
+    AppState.editSubMode = null;
     resetAllModeButtons();
     
-    // Update the mode indicator text and apply our new style
     const modeIndicator = document.getElementById('modeIndicator');
     modeIndicator.textContent = 'PHOTOS';
-    modeIndicator.classList.remove('drawing-mode', 'edit-mode'); // Remove other mode styles
-    modeIndicator.classList.add('photos-mode'); // Add our new style
+    modeIndicator.className = 'mode-indicator photos-mode'; 
 
-    // Emit an event so other modules could react if needed in the future
     AppState.emit('mode:changed', { mode: 'photos' });
     AppState.emit('mode:editToggled', { isEditMode: false });
-
-    // Redraw the canvas to clear any temporary visuals from other modes
     CanvasManager.redraw();
 }
 
@@ -216,13 +234,12 @@ function switchToPlacementMode() {
     console.log('Switching to placement mode (READY) from:', AppState.currentMode);
     activateSketchListeners();
     AppState.currentMode = 'placement';
-    
-    // UPDATED: Reset ALL mode buttons to ensure mutual exclusivity
+    AppState.editSubMode = null; // Reset sub-mode
     resetAllModeButtons();
     
     const modeIndicator = document.getElementById('modeIndicator');
     modeIndicator.textContent = 'READY';
-    modeIndicator.classList.remove('drawing-mode', 'edit-mode', 'photos-mode');
+    modeIndicator.className = 'mode-indicator';
     
     AppState.emit('mode:changed', { mode: 'placement' });
     AppState.emit('mode:editToggled', { isEditMode: false });
@@ -232,8 +249,8 @@ function switchToPlacementMode() {
 function switchToDrawingMode() {
     console.log('Switching to drawing mode from:', AppState.currentMode);
     AppState.currentMode = 'drawing';
+    AppState.editSubMode = null;
     
-    // UPDATED: Reset ALL mode buttons first, then set drawing mode button
     resetAllModeButtons();
     const startBtn = document.getElementById('startBtn');
     if (startBtn) {
@@ -243,10 +260,8 @@ function switchToDrawingMode() {
     
     const modeIndicator = document.getElementById('modeIndicator');
     modeIndicator.textContent = 'DRAWING';
-    modeIndicator.classList.remove('edit-mode', 'photos-mode');
-    modeIndicator.classList.add('drawing-mode');
+    modeIndicator.className = 'mode-indicator drawing-mode';
     
-    // Show drawing palette and hide others
     document.querySelectorAll('.one-of-bottom-pallets').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('[data-palette]').forEach(btn => btn.classList.remove('active'));
     const numbersBtn = document.getElementById('numbersBtn');
@@ -261,53 +276,18 @@ function switchToDrawingMode() {
     CanvasManager.redraw();
 }
 
-function switchToEditMode() {
-    console.log('Switching to edit mode from:', AppState.currentMode);
-    activateSketchListeners();
-    AppState.currentMode = 'edit';
-    
-    // UPDATED: Reset ALL mode buttons first, then set edit mode button
-    resetAllModeButtons();
-    document.getElementById('editBtn').classList.add('active');
-    
-    const modeIndicator = document.getElementById('modeIndicator');
-    modeIndicator.textContent = 'EDITING';
-    modeIndicator.classList.remove('drawing-mode', 'photos-mode');
-    modeIndicator.classList.add('edit-mode');
-    
-    // Hide drawing palette if it's showing
-    const drawPalette = document.getElementById('drawPalette');
-    if (drawPalette && !drawPalette.classList.contains('hidden')) {
-        drawPalette.classList.add('hidden');
-        document.getElementById('numbersBtn')?.classList.remove('active');
-    }
-    
-    AppState.emit('mode:changed', { mode: 'edit' });
-    AppState.emit('mode:editToggled', { isEditMode: true });
-    setTimeout(() => console.log('💡 EDIT MODE: Click on areas to drag them, or click on edges to delete them!'), 100);
-    CanvasManager.redraw();
-}
-
-/**
- * NEW: Helper function to reset all mode buttons to their default state
- * This ensures mutual exclusivity between all modes
- */
 function resetAllModeButtons() {
-    // Reset Start button
     const startBtn = document.getElementById('startBtn');
     if (startBtn) {
         startBtn.textContent = 'Start';
         startBtn.classList.remove('active');
     }
     
-    // Reset Edit button
     const editBtn = document.getElementById('editBtn');
     if (editBtn) {
+        editBtn.textContent = 'Edit'; // Reset text
         editBtn.classList.remove('active');
     }
-    
-    // Note: Photos button doesn't have an active state in the UI, 
-    // but its mode is tracked by AppState.currentMode
 }
 
 // --- Utility Functions ---
@@ -365,5 +345,3 @@ function importSketchFromJSON(file) {
     reader.onerror = () => alert('An error occurred while trying to read the file.');
     reader.readAsText(file);
 }
-
-window.switchToEditMode = switchToEditMode;

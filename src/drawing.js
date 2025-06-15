@@ -2622,8 +2622,8 @@ drawPolygons() {
         angleBtn.style.backgroundColor = '';
       }
       cornerArrows.forEach(arrow => {
-        //arrow.style.backgroundColor = blueColor;
-        arrow.style.backgroundColor = "transparent";
+        arrow.style.backgroundColor = blueColor;
+        //arrow.style.backgroundColor = "transparent";
 
       });
     }

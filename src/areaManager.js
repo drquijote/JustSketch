@@ -104,83 +104,7 @@ export class AreaManager {
     }
 
     // --- Area Dragging Logic ---
-
-    // Enhanced handleCanvasTouchStart with pencil click detection
-    handleCanvasTouchStart(e) {
-        // Only allow area dragging, edge deletion, and pencil clicks in edit mode
-        if (!this.isEditModeActive || AppState.currentMode !== 'edit') return;
-        if (e.touches.length !== 1) return;
-        
-        const touch = e.touches[0];
-        const pos = CanvasManager.screenToCanvas(touch.clientX, touch.clientY);
-        this.dragStartPoint = pos;
-
-        // *** PRIORITY 0: Check for pencil clicks first (highest priority) ***
-        const pencilHandled = this.handlePencilClick(pos.x, pos.y);
-        if (pencilHandled) {
-            console.log("Edit mode: Pencil clicked for area editing");
-            
-            // Prevent other systems from handling this event
-            try {
-                if (e.preventDefault) e.preventDefault();
-                if (e.stopPropagation) e.stopPropagation();
-                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-            } catch (error) {
-                console.warn('Event method not available:', error.message);
-            }
-            
-            return true; // Handled
-        }
-
-        // *** PRIORITY 1: Check for edge deletion (second highest priority) ***
-        const clickedEdge = this.findClickedEdge(pos);
-        if (clickedEdge) {
-            console.log("Edit mode: Edge clicked for deletion");
-            this.deleteEdgeAndStartDrawing(clickedEdge);
-            
-            // Prevent other systems from handling this event
-            try {
-                if (e.preventDefault) e.preventDefault();
-                if (e.stopPropagation) e.stopPropagation();
-                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-            } catch (error) {
-                console.warn('Event method not available:', error.message);
-            }
-            
-            return true; // Handled
-        }
-
-        // *** PRIORITY 2: Check if clicking on an area for dragging ***
-        let areaAtPoint = null;
-        for (const poly of AppState.drawnPolygons) {
-            if (AreaHelpers.isPointInPolygon(pos, poly.path)) {
-                areaAtPoint = poly;
-                break;
-            }
-        }
-        
-        if (areaAtPoint) {
-            console.log("Edit mode: Starting area drag IMMEDIATELY (no long press)");
-            this.prepareDragGroup(areaAtPoint, pos);
-            this.isDraggingArea = true;
-            
-            // Prevent other systems from handling this event
-            try {
-                if (e.preventDefault) e.preventDefault();
-                if (e.stopPropagation) e.stopPropagation();
-                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-            } catch (error) {
-                console.warn('Event method not available:', error.message);
-            }
-            
-            // Return true to indicate we handled this event
-            return true;
-        }
-        
-        // Return false to let other systems handle the event
-        return false;
-    }
-
+ 
     // *** NEW: Find clicked edge ***
     findClickedEdge(pos) {
         const clickRadius = 15; // Distance from edge to register a click
@@ -1182,85 +1106,140 @@ deleteCurrentCycle() {
         console.log('Bedrooms:', bedrooms, 'Bathrooms:', bathrooms);
     }
 
-    // Replace the entire drawCompletedAreas function in areaManager.js with this:
-        drawCompletedAreas() {
-            const { ctx } = AppState;
-            if (!ctx || AppState.drawnPolygons.length === 0) return;
+ 
 
-            // First, identify all shared edges so we don't draw labels on them
-            const sharedEdges = this.findAllSharedEdges();
+ // In areaManager.js, replace the entire handleCanvasTouchStart function with this one.
+handleCanvasTouchStart(e) {
+    // MODIFIED: Only allow area dragging, edge deletion, and pencil clicks in 'areas' sub-mode.
+    if (AppState.currentMode !== 'edit' || AppState.editSubMode !== 'areas') return false;
+    
+    if (e.touches.length !== 1) return;
+    
+    const touch = e.touches[0];
+    const pos = CanvasManager.screenToCanvas(touch.clientX, touch.clientY);
+    this.dragStartPoint = pos;
 
-            AppState.drawnPolygons.forEach((poly) => {
-                ctx.save();
-                
-                // Always use solid borders for areas
-                ctx.strokeStyle = '#555';
-                ctx.lineWidth = 1.5;
-                ctx.setLineDash([]); // Ensure solid line
-                
-                // Fill colors based on area type - MODIFIED to handle ADU specially
-                if (poly.glaType === 1) {
-                    // GLA areas - green
-                    ctx.fillStyle = 'rgba(144, 238, 144, 0.4)';
-                } else if (poly.type === 'ADU') {
-                    // ADU areas - light green (different from GLA green)
-                    ctx.fillStyle = 'rgba(173, 255, 173, 0.5)';
-                } else if (poly.glaType === 0) {
-                    // Other non-GLA areas - gray
-                    ctx.fillStyle = 'rgba(180, 180, 180, 0.6)';
-                } else {
-                    // Excluded areas - light gray
-                    ctx.fillStyle = 'rgba(220, 220, 220, 0.3)';
-                }
-                
-                ctx.beginPath();
-                ctx.moveTo(poly.path[0].x, poly.path[0].y);
-                for (let i = 1; i < poly.path.length; i++) {
-                    ctx.lineTo(poly.path[i].x, poly.path[i].y);
-                }
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
+    // Priority 0: Check for pencil clicks
+    const pencilHandled = this.handlePencilClick(pos.x, pos.y);
+    if (pencilHandled) {
+        console.log("Edit mode: Pencil clicked for area editing");
+        try {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        } catch (error) { console.warn('Event method not available:', error.message); }
+        return true; // Handled
+    }
 
-                // *** NEW: In edit mode, highlight edges that can be deleted ***
-                if (this.isEditModeActive) {
-                    for (let i = 0; i < poly.path.length; i++) {
-                        const p1 = poly.path[i];
-                        const p2 = poly.path[(i + 1) % poly.path.length];
-                        
-                        // Draw a slightly thicker, colored overlay on each edge to show it's clickable
-                        ctx.save();
-                        ctx.strokeStyle = 'rgba(231, 76, 60, 0.7)'; // Red overlay
-                        ctx.lineWidth = 4;
-                        ctx.setLineDash([8, 4]); // Dashed line to indicate clickable
-                        ctx.beginPath();
-                        ctx.moveTo(p1.x, p1.y);
-                        ctx.lineTo(p2.x, p2.y);
-                        ctx.stroke();
-                        ctx.restore();
-                    }
+    // Priority 1: Check for edge deletion
+    const clickedEdge = this.findClickedEdge(pos);
+    if (clickedEdge) {
+        console.log("Edit mode: Edge clicked for deletion");
+        this.deleteEdgeAndStartDrawing(clickedEdge);
+        try {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        } catch (error) { console.warn('Event method not available:', error.message); }
+        return true; // Handled
+    }
 
-                    // *** NEW: Draw pencil icon for area editing ***
-                    this.drawAreaEditPencil(ctx, poly);
-                }
-
-                // Draw edge length labels, skip shared edges, minimum 3 feet
-                for (let i = 0; i < poly.path.length; i++) {
-                    const p1 = poly.path[i];
-                    const p2 = poly.path[(i + 1) % poly.path.length];
-                    
-                    // Calculate edge key for shared edge detection
-                    const edgeKey = this.getEdgeKey(poly.id, i, (i + 1) % poly.path.length);
-                    const isSharedEdge = sharedEdges && sharedEdges.has(edgeKey);
-                    
-                    if (!isSharedEdge) {
-                        this.drawExternalLabel(ctx, p1, p2, poly.centroid);
-                    }
-                }
-                
-                ctx.restore();
-            });
+    // Priority 2: Check if clicking on an area for dragging
+    let areaAtPoint = null;
+    for (const poly of AppState.drawnPolygons) {
+        if (AreaHelpers.isPointInPolygon(pos, poly.path)) {
+            areaAtPoint = poly;
+            break;
         }
+    }
+    
+    if (areaAtPoint) {
+        console.log("Edit mode: Starting area drag IMMEDIATELY");
+        this.prepareDragGroup(areaAtPoint, pos);
+        this.isDraggingArea = true;
+        try {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        } catch (error) { console.warn('Event method not available:', error.message); }
+        return true; // Handled
+    }
+    
+    return false; // Let other systems handle the event
+}
+
+// In areaManager.js, replace the entire drawCompletedAreas function with this one.
+drawCompletedAreas() {
+    const { ctx } = AppState;
+    if (!ctx || AppState.drawnPolygons.length === 0) return;
+
+    const sharedEdges = this.findAllSharedEdges();
+
+    AppState.drawnPolygons.forEach((poly) => {
+        ctx.save();
+        
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([]);
+        
+        // NEW: Adjust fill opacity based on the edit sub-mode
+        let fillOpacity = 0.4;
+        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'labels') {
+            fillOpacity = 0.1; // Make areas transparent when editing labels
+        }
+        
+        // Fill colors based on area type with the new opacity
+        if (poly.glaType === 1) {
+            ctx.fillStyle = `rgba(144, 238, 144, ${fillOpacity})`;
+        } else if (poly.type === 'ADU') {
+            ctx.fillStyle = `rgba(173, 255, 173, ${fillOpacity + 0.1})`;
+        } else if (poly.glaType === 0) {
+            ctx.fillStyle = `rgba(180, 180, 180, ${fillOpacity + 0.2})`;
+        } else {
+            ctx.fillStyle = `rgba(220, 220, 220, ${fillOpacity - 0.1})`;
+        }
+        
+        ctx.beginPath();
+        ctx.moveTo(poly.path[0].x, poly.path[0].y);
+        for (let i = 1; i < poly.path.length; i++) {
+            ctx.lineTo(poly.path[i].x, poly.path[i].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // MODIFIED: Only show area edit handles (red lines, pencil) in 'areas' sub-mode
+        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
+            for (let i = 0; i < poly.path.length; i++) {
+                const p1 = poly.path[i];
+                const p2 = poly.path[(i + 1) % poly.path.length];
+                
+                ctx.save();
+                ctx.strokeStyle = 'rgba(231, 76, 60, 0.7)';
+                ctx.lineWidth = 4;
+                ctx.setLineDash([8, 4]);
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+                ctx.restore();
+            }
+            this.drawAreaEditPencil(ctx, poly);
+        }
+
+        // Draw edge length labels (always visible)
+        for (let i = 0; i < poly.path.length; i++) {
+            const p1 = poly.path[i];
+            const p2 = poly.path[(i + 1) % poly.path.length];
+            const edgeKey = this.getEdgeKey(poly.id, i, (i + 1) % poly.path.length);
+            if (!sharedEdges.has(edgeKey)) {
+                this.drawExternalLabel(ctx, p1, p2, poly.centroid);
+            }
+        }
+        
+        ctx.restore();
+    });
+}
 
     // *** HELPER FUNCTIONS FOR EDGE LABELS ***
 

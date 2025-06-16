@@ -3,32 +3,32 @@ import { CanvasManager } from './canvas.js';
 import { AreaHelpers } from './helpers.js';
 
 export class AreaManager {
-     // REPLACE the constructor
-constructor() {
-    this.activePathForModal = null;
-    this.PIXELS_PER_FOOT = 8;
-    
-    // Properties for area dragging
-    this.dragStartPoint = { x: 0, y: 0 };
-    this.draggedGroup = null;
-    this.isDraggingArea = false;
-    this.isEditModeActive = false;
-    
-    // Properties for polygon property editing
-    this.pencilClickAreas = new Map();
-    this.editingPolygon = null;
+    // REPLACE the constructor
+    constructor() {
+        this.activePathForModal = null;
+        this.PIXELS_PER_FOOT = 8;
+        
+        // Properties for area dragging
+        this.dragStartPoint = { x: 0, y: 0 };
+        this.draggedGroup = null;
+        this.isDraggingArea = false;
+        this.isEditModeActive = false;
+        
+        // Properties for polygon property editing
+        this.pencilClickAreas = new Map();
+        this.editingPolygon = null;
 
-    // --- NEW PROPERTIES FOR LINE EDITING ---
-    this.activeLineEdit = null; // Stores info on the line selected for movement
-    this.lineIconClickAreas = new Map(); // Stores locations of edit/delete icons on lines
-    this.boundHandleLineMove = this.handleLineMove.bind(this); // Pre-bind the listener function
-}
+        // --- NEW PROPERTIES FOR LINE EDITING ---
+        this.activeLineEdit = null; // Stores info on the line selected for movement
+        this.lineIconClickAreas = new Map(); // Stores locations of edit/delete icons on lines
+        this.boundHandleLineMove = this.handleLineMove.bind(this); // Pre-bind the listener function
+    }
 
     // Replace the entire init function in areaManager.js with this:
 
     // in areaManager.js
 
-// Add these two new functions inside the AreaManager class
+    // Add these two new functions inside the AreaManager class
  
  
 
@@ -277,261 +277,265 @@ constructor() {
 
 
  
- handleCanvasTouchStart(e) {
-    // Check if we're in edit mode with areas submode
-    if (AppState.currentMode !== 'edit' || AppState.editSubMode !== 'areas') return false;
+    handleCanvasTouchStart(e) {
+        // Check if we're in edit mode
+        if (AppState.currentMode !== 'edit') return false;
 
-    const touch = e.touches ? e.touches[0] : e;
-    if (!touch) return;
+        const touch = e.touches ? e.touches[0] : e;
+        if (!touch) return;
 
-    const pos = CanvasManager.screenToCanvas(touch.clientX, touch.clientY);
-    
-    // Priority 1: Check for a click on a line's edit/delete icon (available in ANY edit submode)
-    const iconClick = this.findClickedLineIcon(pos);
-    if (iconClick) {
-        if (iconClick.action === 'delete') {
-            this.deleteEdgeAndStartDrawing(iconClick.edgeInfo);
-        } else if (iconClick.action === 'edit') {
-            this.toggleActiveLineEdit(iconClick.edgeInfo);
-        }
-        try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } catch (err) {}
-        return true;
-    }
-
-    // All the following actions are only available in 'areas' submode
-    // (Line icons, pencil clicks, and area dragging)
-
-    // Priority 2: Check for a click on an Area Edit icon (for properties)
-    const pencilHandled = this.handlePencilClick(pos.x, pos.y);
-    if (pencilHandled) {
-        try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } catch (err) {}
-        return true;
-    }
-    
-    // Priority 3: Check if clicking on an area to start dragging
-    let areaAtPoint = null;
-    for (const poly of AppState.drawnPolygons) {
-        if (AreaHelpers.isPointInPolygon(pos, poly.path)) {
-            areaAtPoint = poly;
-            break;
-        }
-    }
-
-    if (areaAtPoint) {
-        this.prepareDragGroup(areaAtPoint, pos);
-        this.isDraggingArea = true;
-        try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } catch (err) {}
-        return true;
-    }
-
-    return false;
-}
-
-
-// In areaManager.js, replace the existing handleCanvasTouchMove function
-handleCanvasTouchMove(e) {
-    const touch = e.touches ? e.touches[0] : e;
-    if (!touch) return;
-    const pos = CanvasManager.screenToCanvas(touch.clientX, touch.clientY);
-
-    // Only handle dragging if we're in edit mode and actively dragging an area
-    if (this.isEditModeActive && this.isDraggingArea && this.draggedGroup) {
-        // Prevent other event handlers from interfering
-        try {
-            if (e.preventDefault) e.preventDefault();
-            if (e.stopPropagation) e.stopPropagation();
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-        } catch (error) {
-            console.warn('Event method not available:', error.message);
-        }
-
-        const dx = pos.x - this.dragStartPoint.x;
-        const dy = pos.y - this.dragStartPoint.y;
-
-        this.moveDragGroup(dx, dy);
-        this.dragStartPoint = pos; // Update position for the next movement delta
-    }
-}
-
-
-// REPLACE this function in areaManager.js
-handleEditModeToggle(event) {
-    this.isEditModeActive = event.detail.isEditMode && event.detail.subMode === 'areas';
-    console.log('AreaManager: Edit Areas mode is now', this.isEditModeActive ? 'ACTIVE' : 'INACTIVE');
-    
-    // Setup directional pad listener whenever in ANY edit mode
-    if (event.detail.isEditMode) {
-        this.setupDirectionalPadListener();
-    } else {
-        this.removeDirectionalPadListener();
-        this.activeLineEdit = null; // Clear active line when exiting edit mode
-    }
-
-    if (!event.detail.isEditMode && this.isDraggingArea) {
-        this.endAreaDrag();
-    }
-}
-
-// REPLACE this function in areaManager.js
-toggleActiveLineEdit(edgeInfo) {
-    // If the clicked line is already active, deactivate it
-    if (this.activeLineEdit && this.activeLineEdit.polygon.id === edgeInfo.polygon.id && this.activeLineEdit.edgeStartIndex === edgeInfo.edgeStartIndex) {
-        this.activeLineEdit = null;
-        console.log('Deactivated line editing.');
-    } else {
-        // Otherwise, make this line the active one
-        this.activeLineEdit = edgeInfo;
-        console.log('Activated line for editing:', edgeInfo);
-        // Ensure directional pad is set up when a line is selected
-        this.setupDirectionalPadListener();
-    }
-    CanvasManager.redraw();
-}
-
-// REPLACE this function in areaManager.js
-handleLineMove(e) {
-    if (!this.activeLineEdit) {
-        console.log('No active line to move');
-        return; // Only act if a line is selected
-    }
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    const button = e.currentTarget; // Use currentTarget instead of target
-    const moveAmount = 0.5 * this.PIXELS_PER_FOOT; // Move by 1/2 foot
-    let dx = 0, dy = 0;
-
-    // Check for direction classes
-    if (button.classList.contains('right')) { 
-        dx = moveAmount; 
-    } else if (button.classList.contains('left')) { 
-        dx = -moveAmount; 
-    } else if (button.classList.contains('up')) { 
-        dy = -moveAmount; 
-    } else if (button.classList.contains('down')) { 
-        dy = moveAmount; 
-    } else if (button.classList.contains('up-right')) { 
-        dx = moveAmount; 
-        dy = -moveAmount; 
-    } else if (button.classList.contains('up-left')) { 
-        dx = -moveAmount; 
-        dy = -moveAmount; 
-    } else if (button.classList.contains('down-right')) { 
-        dx = moveAmount; 
-        dy = moveAmount; 
-    } else if (button.classList.contains('down-left')) { 
-        dx = -moveAmount; 
-        dy = moveAmount; 
-    } else { 
-        console.log('Not a direction button');
-        return; // Not a direction button
-    }
-
-    // Get the vertices of the active line
-    const poly = this.activeLineEdit.polygon;
-    const v1_index = this.activeLineEdit.edgeStartIndex;
-    const v2_index = this.activeLineEdit.edgeEndIndex;
-    const vertex1 = poly.path[v1_index];
-    const vertex2 = poly.path[v2_index];
-    
-    console.log(`Moving line ${vertex1.name}-${vertex2.name} by (${dx}, ${dy})`);
-
-    // Find and move all vertices that share the same coordinates
-    // This ensures connected polygons are updated together
-    AppState.drawnPolygons.forEach(p => {
-        p.path.forEach(v => {
-            if ((Math.abs(v.x - vertex1.x) < 0.1 && Math.abs(v.y - vertex1.y) < 0.1) || 
-                (Math.abs(v.x - vertex2.x) < 0.1 && Math.abs(v.y - vertex2.y) < 0.1)) {
-                v.x += dx;
-                v.y += dy;
+        const pos = CanvasManager.screenToCanvas(touch.clientX, touch.clientY);
+        
+        // Priority 1: Check for a click on a line's edit/delete icon (ONLY in lines submode)
+        if (AppState.editSubMode === 'lines') {
+            const iconClick = this.findClickedLineIcon(pos);
+            if (iconClick) {
+                if (iconClick.action === 'delete') {
+                    this.deleteEdgeAndStartDrawing(iconClick.edgeInfo);
+                } else if (iconClick.action === 'edit') {
+                    this.toggleActiveLineEdit(iconClick.edgeInfo);
+                }
+                try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } catch (err) {}
+                return true;
             }
+        }
+
+        // Priority 2: Check for actions specific to areas submode
+        if (AppState.editSubMode === 'areas') {
+            // Check for a click on an Area Edit icon (for properties)
+            const pencilHandled = this.handlePencilClick(pos.x, pos.y);
+            if (pencilHandled) {
+                try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } catch (err) {}
+                return true;
+            }
+            
+            // Check if clicking on an area to start dragging (normal drag, no long press)
+            let areaAtPoint = null;
+            for (const poly of AppState.drawnPolygons) {
+                if (AreaHelpers.isPointInPolygon(pos, poly.path)) {
+                    areaAtPoint = poly;
+                    break;
+                }
+            }
+
+            if (areaAtPoint) {
+                this.prepareDragGroup(areaAtPoint, pos);
+                this.isDraggingArea = true;
+                try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } catch (err) {}
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+
+    // In areaManager.js, replace the existing handleCanvasTouchMove function
+    handleCanvasTouchMove(e) {
+        const touch = e.touches ? e.touches[0] : e;
+        if (!touch) return;
+        const pos = CanvasManager.screenToCanvas(touch.clientX, touch.clientY);
+
+        // Only handle dragging if we're in edit areas mode and actively dragging an area
+        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas' && this.isDraggingArea && this.draggedGroup) {
+            // Prevent other event handlers from interfering
+            try {
+                if (e.preventDefault) e.preventDefault();
+                if (e.stopPropagation) e.stopPropagation();
+                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            } catch (error) {
+                console.warn('Event method not available:', error.message);
+            }
+
+            const dx = pos.x - this.dragStartPoint.x;
+            const dy = pos.y - this.dragStartPoint.y;
+
+            this.moveDragGroup(dx, dy);
+            this.dragStartPoint = pos; // Update position for the next movement delta
+        }
+    }
+
+
+    // REPLACE this function in areaManager.js
+    handleEditModeToggle(event) {
+        const wasEditingLines = this.isEditModeActive && AppState.editSubMode === 'lines';
+        
+        this.isEditModeActive = event.detail.isEditMode;
+        console.log('AreaManager: Edit mode is now', this.isEditModeActive ? 'ACTIVE' : 'INACTIVE', 'Submode:', event.detail.subMode);
+        
+        // Setup directional pad listener only in lines mode
+        if (event.detail.isEditMode && event.detail.subMode === 'lines') {
+            this.setupDirectionalPadListener();
+        } else if (wasEditingLines) {
+            this.removeDirectionalPadListener();
+            this.activeLineEdit = null; // Clear active line when leaving lines mode
+        }
+
+        if (!event.detail.isEditMode && this.isDraggingArea) {
+            this.endAreaDrag();
+        }
+    }
+
+    // REPLACE this function in areaManager.js
+    toggleActiveLineEdit(edgeInfo) {
+        // If the clicked line is already active, deactivate it
+        if (this.activeLineEdit && this.activeLineEdit.polygon.id === edgeInfo.polygon.id && this.activeLineEdit.edgeStartIndex === edgeInfo.edgeStartIndex) {
+            this.activeLineEdit = null;
+            console.log('Deactivated line editing.');
+        } else {
+            // Otherwise, make this line the active one
+            this.activeLineEdit = edgeInfo;
+            console.log('Activated line for editing:', edgeInfo);
+            // Ensure directional pad is set up when a line is selected
+            this.setupDirectionalPadListener();
+        }
+        CanvasManager.redraw();
+    }
+
+    // REPLACE this function in areaManager.js
+    handleLineMove(e) {
+        if (!this.activeLineEdit) {
+            console.log('No active line to move');
+            return; // Only act if a line is selected
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const button = e.currentTarget; // Use currentTarget instead of target
+        const moveAmount = 0.5 * this.PIXELS_PER_FOOT; // Move by 1/2 foot
+        let dx = 0, dy = 0;
+
+        // Check for direction classes
+        if (button.classList.contains('right')) { 
+            dx = moveAmount; 
+        } else if (button.classList.contains('left')) { 
+            dx = -moveAmount; 
+        } else if (button.classList.contains('up')) { 
+            dy = -moveAmount; 
+        } else if (button.classList.contains('down')) { 
+            dy = moveAmount; 
+        } else if (button.classList.contains('up-right')) { 
+            dx = moveAmount; 
+            dy = -moveAmount; 
+        } else if (button.classList.contains('up-left')) { 
+            dx = -moveAmount; 
+            dy = -moveAmount; 
+        } else if (button.classList.contains('down-right')) { 
+            dx = moveAmount; 
+            dy = moveAmount; 
+        } else if (button.classList.contains('down-left')) { 
+            dx = -moveAmount; 
+            dy = moveAmount; 
+        } else { 
+            console.log('Not a direction button');
+            return; // Not a direction button
+        }
+
+        // Get the vertices of the active line
+        const poly = this.activeLineEdit.polygon;
+        const v1_index = this.activeLineEdit.edgeStartIndex;
+        const v2_index = this.activeLineEdit.edgeEndIndex;
+        const vertex1 = poly.path[v1_index];
+        const vertex2 = poly.path[v2_index];
+        
+        console.log(`Moving line ${vertex1.name}-${vertex2.name} by (${dx}, ${dy})`);
+
+        // Find and move all vertices that share the same coordinates
+        // This ensures connected polygons are updated together
+        AppState.drawnPolygons.forEach(p => {
+            p.path.forEach(v => {
+                if ((Math.abs(v.x - vertex1.x) < 0.1 && Math.abs(v.y - vertex1.y) < 0.1) || 
+                    (Math.abs(v.x - vertex2.x) < 0.1 && Math.abs(v.y - vertex2.y) < 0.1)) {
+                    v.x += dx;
+                    v.y += dy;
+                }
+            });
+            // Recalculate metrics for every affected polygon
+            this.recalculatePolygonMetrics(p);
         });
-        // Recalculate metrics for every affected polygon
-        this.recalculatePolygonMetrics(p);
-    });
 
-    this.updateLegendCalculations();
-    CanvasManager.saveAction();
-    CanvasManager.redraw();
-}
+        this.updateLegendCalculations();
+        CanvasManager.saveAction();
+        CanvasManager.redraw();
+    }
 
-// REPLACE this function in areaManager.js
-setupDirectionalPadListener() {
-    console.log('AreaManager: Setting up directional pad listeners.');
-    const directionButtons = document.querySelectorAll('.dir-btn');
-    
-    // Remove existing listeners first to avoid duplicates
-    directionButtons.forEach(button => {
-        button.removeEventListener('click', this.boundHandleLineMove);
-    });
-    
-    // Add fresh listeners
-    directionButtons.forEach(button => {
-        button.addEventListener('click', this.boundHandleLineMove);
-    });
-}
+    // REPLACE this function in areaManager.js
+    setupDirectionalPadListener() {
+        console.log('AreaManager: Setting up directional pad listeners.');
+        const directionButtons = document.querySelectorAll('.dir-btn');
+        
+        // Remove existing listeners first to avoid duplicates
+        directionButtons.forEach(button => {
+            button.removeEventListener('click', this.boundHandleLineMove);
+        });
+        
+        // Add fresh listeners
+        directionButtons.forEach(button => {
+            button.addEventListener('click', this.boundHandleLineMove);
+        });
+    }
  
 
-/**
- * Removes listeners from the directional pad.
- */
-removeDirectionalPadListener() {
-    console.log('AreaManager: Removing directional pad listeners.');
-    const directionButtons = document.querySelectorAll('.dir-btn');
-    directionButtons.forEach(button => {
-        button.removeEventListener('click', this.boundHandleLineMove);
-    });
-}
+    /**
+     * Removes listeners from the directional pad.
+     */
+    removeDirectionalPadListener() {
+        console.log('AreaManager: Removing directional pad listeners.');
+        const directionButtons = document.querySelectorAll('.dir-btn');
+        directionButtons.forEach(button => {
+            button.removeEventListener('click', this.boundHandleLineMove);
+        });
+    }
 
  
 
-/**
- * Recalculates the area and centroid of a given polygon.
- * @param {object} polygon - The polygon to update.
- */
-recalculatePolygonMetrics(polygon) {
-    const areaSqPixels = AreaHelpers.calculatePolygonArea(polygon.path);
-    polygon.area = areaSqPixels / (this.PIXELS_PER_FOOT * this.PIXELS_PER_FOOT);
-    polygon.centroid = AreaHelpers.calculateCentroid(polygon.path);
-}
+    /**
+     * Recalculates the area and centroid of a given polygon.
+     * @param {object} polygon - The polygon to update.
+     */
+    recalculatePolygonMetrics(polygon) {
+        const areaSqPixels = AreaHelpers.calculatePolygonArea(polygon.path);
+        polygon.area = areaSqPixels / (this.PIXELS_PER_FOOT * this.PIXELS_PER_FOOT);
+        polygon.centroid = AreaHelpers.calculateCentroid(polygon.path);
+    }
 
 
  
 
-/**
- * Finds which line icon (edit/delete) was clicked.
- * @param {object} pos - The {x, y} click position.
- * @returns {object|null} Info about the icon and its action, or null.
- */
-findClickedLineIcon(pos) {
-    if (!this.lineIconClickAreas) return null;
+    /**
+     * Finds which line icon (edit/delete) was clicked.
+     * @param {object} pos - The {x, y} click position.
+     * @returns {object|null} Info about the icon and its action, or null.
+     */
+    findClickedLineIcon(pos) {
+        if (!this.lineIconClickAreas) return null;
 
-    for (const clickArea of this.lineIconClickAreas.values()) {
-        if (pos.x >= clickArea.x && pos.x <= clickArea.x + clickArea.width &&
-            pos.y >= clickArea.y && pos.y <= clickArea.y + clickArea.height) {
-            return clickArea;
+        for (const clickArea of this.lineIconClickAreas.values()) {
+            if (pos.x >= clickArea.x && pos.x <= clickArea.x + clickArea.width &&
+                pos.y >= clickArea.y && pos.y <= clickArea.y + clickArea.height) {
+                return clickArea;
+            }
+        }
+        return null;
+    }
+
+
+
+    // In areaManager.js, replace the existing handleCanvasTouchEnd function
+    handleCanvasTouchEnd(e) {
+        if (this.isDraggingArea) {
+            // Stop the event to prevent any unwanted final actions from other listeners
+            try {
+                if (e.preventDefault) e.preventDefault();
+                if (e.stopPropagation) e.stopPropagation();
+                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            } catch (error) {
+                console.warn('Event method not available:', error.message);
+            }
+            this.endAreaDrag();
         }
     }
-    return null;
-}
-
-
-
-// In areaManager.js, replace the existing handleCanvasTouchEnd function
-handleCanvasTouchEnd(e) {
-    if (this.isDraggingArea) {
-        // Stop the event to prevent any unwanted final actions from other listeners
-        try {
-            if (e.preventDefault) e.preventDefault();
-            if (e.stopPropagation) e.stopPropagation();
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-        } catch (error) {
-            console.warn('Event method not available:', error.message);
-        }
-        this.endAreaDrag();
-    }
-}
 
     prepareDragGroup(polygon, clickPosition) {
         const elementsToDrag = AppState.placedElements.filter(el => {
@@ -602,7 +606,7 @@ handleCanvasTouchEnd(e) {
 
     // *** NEW: Handle pencil clicks ***
     handlePencilClick(clickX, clickY) {
-        if (!this.isEditModeActive || !this.pencilClickAreas) return false;
+        if (!this.isEditModeActive || AppState.editSubMode !== 'areas' || !this.pencilClickAreas) return false;
         
         // Check if click is within any pencil area
         for (const [polygonId, clickArea] of this.pencilClickAreas) {
@@ -620,240 +624,240 @@ handleCanvasTouchEnd(e) {
     }
 
  
-/**
- * [NEW] UNIFIED DELETE FUNCTION
- * This single function correctly handles deleting both new (unsaved) and existing polygons.
- * It determines what to delete based on the current state of the application.
- */
-handleDeleteArea() {
-    console.log('🗑️ Handling delete request...');
-    
-    const modal = document.getElementById('polygonModal');
-    modal.classList.add('hidden');
+    /**
+     * [NEW] UNIFIED DELETE FUNCTION
+     * This single function correctly handles deleting both new (unsaved) and existing polygons.
+     * It determines what to delete based on the current state of the application.
+     */
+    handleDeleteArea() {
+        console.log('🗑️ Handling delete request...');
+        
+        const modal = document.getElementById('polygonModal');
+        modal.classList.add('hidden');
 
-    if (this.editingPolygon) {
-        // --- CASE 1: Deleting an EXISTING, saved polygon ---
-        console.log('🗑️ Deleting existing polygon:', this.editingPolygon.label);
+        if (this.editingPolygon) {
+            // --- CASE 1: Deleting an EXISTING, saved polygon ---
+            console.log('🗑️ Deleting existing polygon:', this.editingPolygon.label);
 
-        // Find and remove the polygon from the main array of drawn polygons
-        const polyIndex = AppState.drawnPolygons.findIndex(p => p.id === this.editingPolygon.id);
-        if (polyIndex > -1) {
-            AppState.drawnPolygons.splice(polyIndex, 1);
-            console.log('🗑️ Removed polygon from drawnPolygons.');
+            // Find and remove the polygon from the main array of drawn polygons
+            const polyIndex = AppState.drawnPolygons.findIndex(p => p.id === this.editingPolygon.id);
+            if (polyIndex > -1) {
+                AppState.drawnPolygons.splice(polyIndex, 1);
+                console.log('🗑️ Removed polygon from drawnPolygons.');
+            } else {
+                console.warn('🗑️ Could not find polygon in drawnPolygons to delete.');
+            }
+
+            // Find and remove the associated area label from the placed elements
+            const labelIndex = AppState.placedElements.findIndex(el => el.type === 'area_label' && el.linkedPolygonId === this.editingPolygon.id);
+            if (labelIndex > -1) {
+                AppState.placedElements.splice(labelIndex, 1);
+                console.log('🗑️ Removed associated area label element.');
+            }
+
+        } else if (this.activePathForModal) {
+            // --- CASE 2: Deleting a NEWLY DRAWN, unsaved polygon ---
+            console.log('🗑️ Canceling the creation of a new polygon.');
+
+            // For a new polygon, we just need to clear the current drawing path.
+            AppState.currentPolygonPoints = [];
+            AppState.currentPolygonCounter = 0;
+            
+            // This ensures the drawing manager is reset properly.
+            if (window.drawingManager) {
+                window.drawingManager.waitingForFirstVertex = true;
+            }
+            AppState.emit('app:exitDrawingMode');
+            
         } else {
-            console.warn('🗑️ Could not find polygon in drawnPolygons to delete.');
+            console.warn('🗑️ Delete called, but no active polygon or new path was found.');
+            return; // Nothing to do.
         }
 
-        // Find and remove the associated area label from the placed elements
-        const labelIndex = AppState.placedElements.findIndex(el => el.type === 'area_label' && el.linkedPolygonId === this.editingPolygon.id);
-        if (labelIndex > -1) {
-            AppState.placedElements.splice(labelIndex, 1);
-            console.log('🗑️ Removed associated area label element.');
-        }
-
-    } else if (this.activePathForModal) {
-        // --- CASE 2: Deleting a NEWLY DRAWN, unsaved polygon ---
-        console.log('🗑️ Canceling the creation of a new polygon.');
-
-        // For a new polygon, we just need to clear the current drawing path.
-        AppState.currentPolygonPoints = [];
-        AppState.currentPolygonCounter = 0;
+        // --- COMMON CLEANUP ---
+        // Reset state variables
+        this.activePathForModal = null;
+        this.editingPolygon = null;
         
-        // This ensures the drawing manager is reset properly.
-        if (window.drawingManager) {
-            window.drawingManager.waitingForFirstVertex = true;
-        }
-        AppState.emit('app:exitDrawingMode');
+        // Update the legend, save the state for undo/redo, and redraw the canvas
+        this.updateLegendCalculations();
+        CanvasManager.saveAction();
+        CanvasManager.redraw();
         
-    } else {
-        console.warn('🗑️ Delete called, but no active polygon or new path was found.');
-        return; // Nothing to do.
+        console.log('✅ Deletion process complete.');
     }
-
-    // --- COMMON CLEANUP ---
-    // Reset state variables
-    this.activePathForModal = null;
-    this.editingPolygon = null;
-    
-    // Update the legend, save the state for undo/redo, and redraw the canvas
-    this.updateLegendCalculations();
-    CanvasManager.saveAction();
-    CanvasManager.redraw();
-    
-    console.log('✅ Deletion process complete.');
-}
 
  
 
- /**
- * [NEW] UNIFIED DELETE FUNCTION
- * This single function correctly handles deleting both new (unsaved) and existing polygons.
- * It determines what to delete based on the current state of the application.
- */
-handleDeleteArea() {
-    console.log('🗑️ Handling delete request...');
-    
-    const modal = document.getElementById('polygonModal');
-    modal.classList.add('hidden');
+    /**
+     * [NEW] UNIFIED DELETE FUNCTION
+     * This single function correctly handles deleting both new (unsaved) and existing polygons.
+     * It determines what to delete based on the current state of the application.
+     */
+    handleDeleteArea() {
+        console.log('🗑️ Handling delete request...');
+        
+        const modal = document.getElementById('polygonModal');
+        modal.classList.add('hidden');
 
-    if (this.editingPolygon) {
-        // --- CASE 1: Deleting an EXISTING, saved polygon ---
-        console.log('🗑️ Deleting existing polygon:', this.editingPolygon.label);
+        if (this.editingPolygon) {
+            // --- CASE 1: Deleting an EXISTING, saved polygon ---
+            console.log('🗑️ Deleting existing polygon:', this.editingPolygon.label);
 
-        // [MODIFIED] Find and remove all elements (icons, room labels) inside the polygon
-        const polygonPath = this.editingPolygon.path;
-        const elementsToRemoveIndices = [];
-        AppState.placedElements.forEach((element, index) => {
-            // Don't check the area label of the polygon itself, as we handle that separately.
-            if (element.type === 'area_label' && element.linkedPolygonId === this.editingPolygon.id) {
-                return;
+            // [MODIFIED] Find and remove all elements (icons, room labels) inside the polygon
+            const polygonPath = this.editingPolygon.path;
+            const elementsToRemoveIndices = [];
+            AppState.placedElements.forEach((element, index) => {
+                // Don't check the area label of the polygon itself, as we handle that separately.
+                if (element.type === 'area_label' && element.linkedPolygonId === this.editingPolygon.id) {
+                    return;
+                }
+                
+                // Get the center of the element to check for containment.
+                const elementCenter = {
+                    x: element.x + (element.width / 2),
+                    y: element.y + (element.height / 2)
+                };
+                
+                // Use AreaHelpers to check if the element's center is inside the polygon's path.
+                if (AreaHelpers.isPointInPolygon(elementCenter, polygonPath)) {
+                    console.log(`🗑️ Found interior element to delete: "${element.content || element.alt}"`);
+                    elementsToRemoveIndices.push(index);
+                }
+            });
+
+            // Remove the identified elements in reverse order to avoid index shifting issues.
+            for (let i = elementsToRemoveIndices.length - 1; i >= 0; i--) {
+                AppState.placedElements.splice(elementsToRemoveIndices[i], 1);
             }
-            
-            // Get the center of the element to check for containment.
-            const elementCenter = {
-                x: element.x + (element.width / 2),
-                y: element.y + (element.height / 2)
-            };
-            
-            // Use AreaHelpers to check if the element's center is inside the polygon's path.
-            if (AreaHelpers.isPointInPolygon(elementCenter, polygonPath)) {
-                console.log(`🗑️ Found interior element to delete: "${element.content || element.alt}"`);
-                elementsToRemoveIndices.push(index);
+            console.log(`🗑️ Deleted ${elementsToRemoveIndices.length} interior elements.`);
+            // [END MODIFICATION]
+
+            // Find and remove the polygon from the main array of drawn polygons
+            const polyIndex = AppState.drawnPolygons.findIndex(p => p.id === this.editingPolygon.id);
+            if (polyIndex > -1) {
+                AppState.drawnPolygons.splice(polyIndex, 1);
+                console.log('🗑️ Removed polygon from drawnPolygons.');
+            } else {
+                console.warn('🗑️ Could not find polygon in drawnPolygons to delete.');
             }
-        });
 
-        // Remove the identified elements in reverse order to avoid index shifting issues.
-        for (let i = elementsToRemoveIndices.length - 1; i >= 0; i--) {
-            AppState.placedElements.splice(elementsToRemoveIndices[i], 1);
-        }
-        console.log(`🗑️ Deleted ${elementsToRemoveIndices.length} interior elements.`);
-        // [END MODIFICATION]
+            // Find and remove the associated area label from the placed elements
+            const labelIndex = AppState.placedElements.findIndex(el => el.type === 'area_label' && el.linkedPolygonId === this.editingPolygon.id);
+            if (labelIndex > -1) {
+                AppState.placedElements.splice(labelIndex, 1);
+                console.log('🗑️ Removed associated area label element.');
+            }
 
-        // Find and remove the polygon from the main array of drawn polygons
-        const polyIndex = AppState.drawnPolygons.findIndex(p => p.id === this.editingPolygon.id);
-        if (polyIndex > -1) {
-            AppState.drawnPolygons.splice(polyIndex, 1);
-            console.log('🗑️ Removed polygon from drawnPolygons.');
+        } else if (this.activePathForModal) {
+            // --- CASE 2: Deleting a NEWLY DRAWN, unsaved polygon ---
+            console.log('🗑️ Canceling the creation of a new polygon.');
+
+            // For a new polygon, we just need to clear the current drawing path.
+            AppState.currentPolygonPoints = [];
+            AppState.currentPolygonCounter = 0;
+            
+            // This ensures the drawing manager is reset properly.
+            if (window.drawingManager) {
+                window.drawingManager.waitingForFirstVertex = true;
+            }
+            AppState.emit('app:exitDrawingMode');
+            
         } else {
-            console.warn('🗑️ Could not find polygon in drawnPolygons to delete.');
+            console.warn('🗑️ Delete called, but no active polygon or new path was found.');
+            return; // Nothing to do.
         }
 
-        // Find and remove the associated area label from the placed elements
-        const labelIndex = AppState.placedElements.findIndex(el => el.type === 'area_label' && el.linkedPolygonId === this.editingPolygon.id);
-        if (labelIndex > -1) {
-            AppState.placedElements.splice(labelIndex, 1);
-            console.log('🗑️ Removed associated area label element.');
-        }
-
-    } else if (this.activePathForModal) {
-        // --- CASE 2: Deleting a NEWLY DRAWN, unsaved polygon ---
-        console.log('🗑️ Canceling the creation of a new polygon.');
-
-        // For a new polygon, we just need to clear the current drawing path.
-        AppState.currentPolygonPoints = [];
-        AppState.currentPolygonCounter = 0;
+        // --- COMMON CLEANUP ---
+        // Reset state variables
+        this.activePathForModal = null;
+        this.editingPolygon = null;
         
-        // This ensures the drawing manager is reset properly.
-        if (window.drawingManager) {
-            window.drawingManager.waitingForFirstVertex = true;
-        }
-        AppState.emit('app:exitDrawingMode');
+        // Update the legend, save the state for undo/redo, and redraw the canvas
+        this.updateLegendCalculations();
+        CanvasManager.saveAction();
+        CanvasManager.redraw();
         
-    } else {
-        console.warn('🗑️ Delete called, but no active polygon or new path was found.');
-        return; // Nothing to do.
+        console.log('✅ Deletion process complete.');
     }
 
-    // --- COMMON CLEANUP ---
-    // Reset state variables
-    this.activePathForModal = null;
-    this.editingPolygon = null;
-    
-    // Update the legend, save the state for undo/redo, and redraw the canvas
-    this.updateLegendCalculations();
-    CanvasManager.saveAction();
-    CanvasManager.redraw();
-    
-    console.log('✅ Deletion process complete.');
-}
+    /**
+     * [REPLACE] UPDATED function to show the modal for a NEW polygon.
+     * It now directly sets the correct delete handler.
+     */
+    showAreaModal() {
+        const modal = document.getElementById('polygonModal');
+        const nameInput = document.getElementById('polygonName');
+        const typeSelect = document.getElementById('polygonType');
+        const saveBtn = modal.querySelector('.btn-primary');
+        const cancelBtn = modal.querySelector('.btn-secondary');
+        const deleteBtn = document.getElementById('deleteCycle'); // Get the delete button
 
-/**
- * [REPLACE] UPDATED function to show the modal for a NEW polygon.
- * It now directly sets the correct delete handler.
- */
-showAreaModal() {
-    const modal = document.getElementById('polygonModal');
-    const nameInput = document.getElementById('polygonName');
-    const typeSelect = document.getElementById('polygonType');
-    const saveBtn = modal.querySelector('.btn-primary');
-    const cancelBtn = modal.querySelector('.btn-secondary');
-    const deleteBtn = document.getElementById('deleteCycle'); // Get the delete button
-
-    // Generate a default name for the new area
-    const defaultType = typeSelect.options[0]?.value || 'living';
-    nameInput.value = AreaManager.generateAreaLabel(defaultType);
-    typeSelect.value = defaultType;
-    
-    // Update the name when the type changes
-    typeSelect.onchange = () => {
-        nameInput.value = AreaManager.generateAreaLabel(typeSelect.value);
-    };
-    
-    // Set button handlers for creating a new area
-    saveBtn.onclick = () => this.saveNewArea();
-    cancelBtn.onclick = () => this.hideAreaModal();
-    if (deleteBtn) {
-        // Set the handler to our new unified delete function
-        deleteBtn.onclick = () => this.handleDeleteArea();
+        // Generate a default name for the new area
+        const defaultType = typeSelect.options[0]?.value || 'living';
+        nameInput.value = AreaManager.generateAreaLabel(defaultType);
+        typeSelect.value = defaultType;
+        
+        // Update the name when the type changes
+        typeSelect.onchange = () => {
+            nameInput.value = AreaManager.generateAreaLabel(typeSelect.value);
+        };
+        
+        // Set button handlers for creating a new area
+        saveBtn.onclick = () => this.saveNewArea();
+        cancelBtn.onclick = () => this.hideAreaModal();
+        if (deleteBtn) {
+            // Set the handler to our new unified delete function
+            deleteBtn.onclick = () => this.handleDeleteArea();
+        }
+        
+        modal.classList.remove('hidden');
+        nameInput.focus();
+        setTimeout(() => nameInput.select(), 100);
     }
-    
-    modal.classList.remove('hidden');
-    nameInput.focus();
-    setTimeout(() => nameInput.select(), 100);
-}
 
-/**
- * [REPLACE] UPDATED function to edit an EXISTING polygon's properties.
- * It now correctly sets the delete handler when the modal is shown.
- */
-editPolygonProperties(polygon) {
-    console.log('✏️ PENCIL: Opening edit dialog for polygon:', polygon.label);
-    
-    // Set the polygon being edited so our functions know the context
-    this.activePathForModal = polygon.path;
-    this.editingPolygon = polygon; // This is key for the delete function
-    
-    // Get modal elements
-    const modal = document.getElementById('polygonModal');
-    const nameInput = document.getElementById('polygonName');
-    const typeSelect = document.getElementById('polygonType');
-    const includeInGLACheckbox = document.getElementById('includeInGLA');
-    const saveBtn = modal.querySelector('.btn-primary');
-    const cancelBtn = modal.querySelector('.btn-secondary');
-    const deleteBtn = document.getElementById('deleteCycle'); // Get the delete button
+    /**
+     * [REPLACE] UPDATED function to edit an EXISTING polygon's properties.
+     * It now correctly sets the delete handler when the modal is shown.
+     */
+    editPolygonProperties(polygon) {
+        console.log('✏️ PENCIL: Opening edit dialog for polygon:', polygon.label);
+        
+        // Set the polygon being edited so our functions know the context
+        this.activePathForModal = polygon.path;
+        this.editingPolygon = polygon; // This is key for the delete function
+        
+        // Get modal elements
+        const modal = document.getElementById('polygonModal');
+        const nameInput = document.getElementById('polygonName');
+        const typeSelect = document.getElementById('polygonType');
+        const includeInGLACheckbox = document.getElementById('includeInGLA');
+        const saveBtn = modal.querySelector('.btn-primary');
+        const cancelBtn = modal.querySelector('.btn-secondary');
+        const deleteBtn = document.getElementById('deleteCycle'); // Get the delete button
 
-    // Pre-populate the modal with the polygon's current values
-    nameInput.value = polygon.label;
-    typeSelect.value = polygon.type || 'living';
-    if (includeInGLACheckbox) {
-        includeInGLACheckbox.checked = polygon.glaType === 1;
+        // Pre-populate the modal with the polygon's current values
+        nameInput.value = polygon.label;
+        typeSelect.value = polygon.type || 'living';
+        if (includeInGLACheckbox) {
+            includeInGLACheckbox.checked = polygon.glaType === 1;
+        }
+        
+        // Update button handlers for editing mode
+        saveBtn.onclick = () => this.saveEditedArea();
+        cancelBtn.onclick = () => this.cancelAreaEdit();
+        if (deleteBtn) {
+            // Set the handler to our new unified delete function
+            deleteBtn.onclick = () => this.handleDeleteArea();
+        }
+        
+        // Show the modal
+        modal.classList.remove('hidden');
+        nameInput.focus();
+        setTimeout(() => nameInput.select(), 100);
+        
+        console.log('✏️ PENCIL: Edit dialog opened for:', polygon.label);
     }
-    
-    // Update button handlers for editing mode
-    saveBtn.onclick = () => this.saveEditedArea();
-    cancelBtn.onclick = () => this.cancelAreaEdit();
-    if (deleteBtn) {
-        // Set the handler to our new unified delete function
-        deleteBtn.onclick = () => this.handleDeleteArea();
-    }
-    
-    // Show the modal
-    modal.classList.remove('hidden');
-    nameInput.focus();
-    setTimeout(() => nameInput.select(), 100);
-    
-    console.log('✏️ PENCIL: Edit dialog opened for:', polygon.label);
-}
     // *** NEW: Save edited area properties ***
     saveEditedArea() {
         if (!this.editingPolygon) return;
@@ -937,161 +941,161 @@ editPolygonProperties(polygon) {
 
  
 
-// *** NEW: Delete function (same as before) ***
-deleteCurrentCycle() {
-    if (!this.activePathForModal) {
-        console.warn('No active path to delete');
-        this.hideAreaModal();
-        return;
-    }
-
-    console.log('🗑️ DELETE: Deleting current cycle and contained elements');
-    
-    // Find all elements inside the polygon area
-    const elementsToDelete = [];
-    
-    AppState.placedElements.forEach((element, index) => {
-        // Calculate element center point
-        const elementCenter = {
-            x: element.x + (element.width / 2),
-            y: element.y + (element.height / 2)
-        };
-        
-        // Check if element center is inside the polygon
-        if (AreaHelpers.isPointInPolygon(elementCenter, this.activePathForModal)) {
-            console.log(`🗑️ DELETE: Found element "${element.content}" inside polygon`);
-            elementsToDelete.push(index);
+    // *** NEW: Delete function (same as before) ***
+    deleteCurrentCycle() {
+        if (!this.activePathForModal) {
+            console.warn('No active path to delete');
+            this.hideAreaModal();
+            return;
         }
-    });
-    
-    // Remove elements in reverse order to maintain correct indices
-    elementsToDelete.reverse().forEach(index => {
-        const deletedElement = AppState.placedElements.splice(index, 1)[0];
-        console.log(`🗑️ DELETE: Removed element "${deletedElement.content}"`);
-    });
-    
-    // *** CRITICAL: Clear the current drawing path properly ***
-    AppState.currentPolygonPoints = [];
-    AppState.currentPolygonCounter = 0;
-    
-    // *** CRITICAL: Clear the active path for modal to prevent confusion ***
-    this.activePathForModal = null;
-    
-    // *** CRITICAL: Reset helper points properly ***
-    HelperPointManager.updateHelperPoints();
-    
-    console.log(`🗑️ DELETE: Deleted cycle and ${elementsToDelete.length} contained elements`);
-    
-    // Hide modal
-    this.hideAreaModal();
-    
-    // *** CRITICAL: Save action BEFORE redrawing ***
-    CanvasManager.saveAction();
-    
-    // Redraw canvas
-    CanvasManager.redraw();
-    
-    // *** CRITICAL: Exit drawing mode properly ***
-    AppState.emit('app:exitDrawingMode');
-}
 
-// *** ENSURE: hideAreaModal is exactly as it was ***
-hideAreaModal() {
-    document.getElementById('polygonModal').classList.add('hidden');
-    this.activePathForModal = null;
-}
-
-// *** ENSURE: saveNewArea is exactly as it was ***
-saveNewArea() {
-    if (!this.activePathForModal) return;
-
-    const nameInput = document.getElementById('polygonName');
-    const typeSelect = document.getElementById('polygonType');
-    const selectedOption = typeSelect.options[typeSelect.selectedIndex];
-    const areaSqPixels = AreaHelpers.calculatePolygonArea(this.activePathForModal);
-    const areaSqFeet = areaSqPixels / (this.PIXELS_PER_FOOT * this.PIXELS_PER_FOOT);
-
-    const newPolygon = {
-        id: Date.now(),
-        path: this.activePathForModal,
-        label: nameInput.value,
-        type: typeSelect.value,
-        glaType: parseInt(selectedOption.getAttribute('data-gla'), 10),
-        area: areaSqFeet,
-        centroid: AreaHelpers.calculateCentroid(this.activePathForModal)
-    };
-
-    AppState.drawnPolygons.push(newPolygon);
-    
-    // *** NEW: Create draggable area label element ***
-    this.createAreaLabelElement(newPolygon);
-    
-    this.hideAreaModal();
-    this.updateLegendCalculations();
-    CanvasManager.saveAction();
-    CanvasManager.redraw();
-    AppState.emit('app:exitDrawingMode');
-}
-
-// *** NEW: Add this function to areaManager.js ***
-deleteCurrentCycle() {
-    if (!this.activePathForModal) {
-        console.warn('No active path to delete');
-        this.hideAreaModal();
-        return;
-    }
-
-    console.log('🗑️ DELETE: Deleting current cycle and contained elements');
-    
-    // Find all elements inside the polygon area
-    const elementsToDelete = [];
-    
-    AppState.placedElements.forEach((element, index) => {
-        // Calculate element center point
-        const elementCenter = {
-            x: element.x + (element.width / 2),
-            y: element.y + (element.height / 2)
-        };
+        console.log('🗑️ DELETE: Deleting current cycle and contained elements');
         
-        // Check if element center is inside the polygon
-        if (AreaHelpers.isPointInPolygon(elementCenter, this.activePathForModal)) {
-            console.log(`🗑️ DELETE: Found element "${element.content}" inside polygon`);
-            elementsToDelete.push(index);
-        }
-    });
-    
-    // Remove elements in reverse order to maintain correct indices
-    elementsToDelete.reverse().forEach(index => {
-        const deletedElement = AppState.placedElements.splice(index, 1)[0];
-        console.log(`🗑️ DELETE: Removed element "${deletedElement.content}"`);
-    });
-    
-    // Clear the current drawing path
-    AppState.currentPolygonPoints = [];
-    AppState.currentPolygonCounter = 0;
-    
-    // Reset drawing manager state
-    if (window.drawingManager) {
-        window.drawingManager.waitingForFirstVertex = true;
+        // Find all elements inside the polygon area
+        const elementsToDelete = [];
+        
+        AppState.placedElements.forEach((element, index) => {
+            // Calculate element center point
+            const elementCenter = {
+                x: element.x + (element.width / 2),
+                y: element.y + (element.height / 2)
+            };
+            
+            // Check if element center is inside the polygon
+            if (AreaHelpers.isPointInPolygon(elementCenter, this.activePathForModal)) {
+                console.log(`🗑️ DELETE: Found element "${element.content}" inside polygon`);
+                elementsToDelete.push(index);
+            }
+        });
+        
+        // Remove elements in reverse order to maintain correct indices
+        elementsToDelete.reverse().forEach(index => {
+            const deletedElement = AppState.placedElements.splice(index, 1)[0];
+            console.log(`🗑️ DELETE: Removed element "${deletedElement.content}"`);
+        });
+        
+        // *** CRITICAL: Clear the current drawing path properly ***
+        AppState.currentPolygonPoints = [];
+        AppState.currentPolygonCounter = 0;
+        
+        // *** CRITICAL: Clear the active path for modal to prevent confusion ***
+        this.activePathForModal = null;
+        
+        // *** CRITICAL: Reset helper points properly ***
+        HelperPointManager.updateHelperPoints();
+        
+        console.log(`🗑️ DELETE: Deleted cycle and ${elementsToDelete.length} contained elements`);
+        
+        // Hide modal
+        this.hideAreaModal();
+        
+        // *** CRITICAL: Save action BEFORE redrawing ***
+        CanvasManager.saveAction();
+        
+        // Redraw canvas
+        CanvasManager.redraw();
+        
+        // *** CRITICAL: Exit drawing mode properly ***
+        AppState.emit('app:exitDrawingMode');
     }
-    
-    // Update helper points
-    HelperPointManager.updateHelperPoints();
-    
-    console.log(`🗑️ DELETE: Deleted cycle and ${elementsToDelete.length} contained elements`);
-    
-    // Hide modal
-    this.hideAreaModal();
-    
-    // Save action for undo capability
-    CanvasManager.saveAction();
-    
-    // Redraw canvas
-    CanvasManager.redraw();
-    
-    // Exit drawing mode
-    AppState.emit('app:exitDrawingMode');
-}
+
+    // *** ENSURE: hideAreaModal is exactly as it was ***
+    hideAreaModal() {
+        document.getElementById('polygonModal').classList.add('hidden');
+        this.activePathForModal = null;
+    }
+
+    // *** ENSURE: saveNewArea is exactly as it was ***
+    saveNewArea() {
+        if (!this.activePathForModal) return;
+
+        const nameInput = document.getElementById('polygonName');
+        const typeSelect = document.getElementById('polygonType');
+        const selectedOption = typeSelect.options[typeSelect.selectedIndex];
+        const areaSqPixels = AreaHelpers.calculatePolygonArea(this.activePathForModal);
+        const areaSqFeet = areaSqPixels / (this.PIXELS_PER_FOOT * this.PIXELS_PER_FOOT);
+
+        const newPolygon = {
+            id: Date.now(),
+            path: this.activePathForModal,
+            label: nameInput.value,
+            type: typeSelect.value,
+            glaType: parseInt(selectedOption.getAttribute('data-gla'), 10),
+            area: areaSqFeet,
+            centroid: AreaHelpers.calculateCentroid(this.activePathForModal)
+        };
+
+        AppState.drawnPolygons.push(newPolygon);
+        
+        // *** NEW: Create draggable area label element ***
+        this.createAreaLabelElement(newPolygon);
+        
+        this.hideAreaModal();
+        this.updateLegendCalculations();
+        CanvasManager.saveAction();
+        CanvasManager.redraw();
+        AppState.emit('app:exitDrawingMode');
+    }
+
+    // *** NEW: Add this function to areaManager.js ***
+    deleteCurrentCycle() {
+        if (!this.activePathForModal) {
+            console.warn('No active path to delete');
+            this.hideAreaModal();
+            return;
+        }
+
+        console.log('🗑️ DELETE: Deleting current cycle and contained elements');
+        
+        // Find all elements inside the polygon area
+        const elementsToDelete = [];
+        
+        AppState.placedElements.forEach((element, index) => {
+            // Calculate element center point
+            const elementCenter = {
+                x: element.x + (element.width / 2),
+                y: element.y + (element.height / 2)
+            };
+            
+            // Check if element center is inside the polygon
+            if (AreaHelpers.isPointInPolygon(elementCenter, this.activePathForModal)) {
+                console.log(`🗑️ DELETE: Found element "${element.content}" inside polygon`);
+                elementsToDelete.push(index);
+            }
+        });
+        
+        // Remove elements in reverse order to maintain correct indices
+        elementsToDelete.reverse().forEach(index => {
+            const deletedElement = AppState.placedElements.splice(index, 1)[0];
+            console.log(`🗑️ DELETE: Removed element "${deletedElement.content}"`);
+        });
+        
+        // Clear the current drawing path
+        AppState.currentPolygonPoints = [];
+        AppState.currentPolygonCounter = 0;
+        
+        // Reset drawing manager state
+        if (window.drawingManager) {
+            window.drawingManager.waitingForFirstVertex = true;
+        }
+        
+        // Update helper points
+        HelperPointManager.updateHelperPoints();
+        
+        console.log(`🗑️ DELETE: Deleted cycle and ${elementsToDelete.length} contained elements`);
+        
+        // Hide modal
+        this.hideAreaModal();
+        
+        // Save action for undo capability
+        CanvasManager.saveAction();
+        
+        // Redraw canvas
+        CanvasManager.redraw();
+        
+        // Exit drawing mode
+        AppState.emit('app:exitDrawingMode');
+    }
 
     hideAreaModal() {
         document.getElementById('polygonModal').classList.add('hidden');
@@ -1272,138 +1276,140 @@ deleteCurrentCycle() {
 
  
 
- // In areaManager.js, replace the entire handleCanvasTouchStart function with this one.
- drawAreaEditIcon(ctx, polygon) {
-    const iconSize = 24;
-    
-    // Position the icon at the polygon's centroid (dead center)
-    const iconCenterX = polygon.centroid.x;
-    const iconCenterY = polygon.centroid.y;
-    
-    const iconX = iconCenterX - iconSize / 2;
-    const iconY = iconCenterY - iconSize / 2;
-
-    this.pencilClickAreas.set(polygon.id, {
-        x: iconX, y: iconY,
-        width: iconSize, height: iconSize,
-        polygon: polygon
-    });
-    
-    const editIcon = AppState.imageCache['public/edit.svg'];
-    if (editIcon) {
-        ctx.drawImage(editIcon, iconX, iconY, iconSize, iconSize);
-    } else {
-        // Fallback drawing
-        ctx.save();
-        ctx.fillStyle = 'rgba(52, 152, 219, 0.8)';
-        ctx.beginPath();
-        ctx.arc(iconCenterX, iconCenterY, iconSize / 2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-    }
-}
-
- drawCompletedAreas() {
-    const { ctx } = AppState;
-    if (!ctx || AppState.drawnPolygons.length === 0) return;
-
-    const sharedEdges = this.findAllSharedEdges();
-    this.lineIconClickAreas.clear(); // Clear old icon positions
-
-    AppState.drawnPolygons.forEach((poly) => {
-        ctx.save();
+    // In areaManager.js, replace the entire handleCanvasTouchStart function with this one.
+    drawAreaEditIcon(ctx, polygon) {
+        const iconSize = 24;
         
-        // Unchanged polygon fill and stroke logic...
-        ctx.strokeStyle = '#555';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([]);
-        let fillOpacity = 0.4;
-        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'labels') {
-            fillOpacity = 0.1;
+        // Position the icon at the polygon's centroid (dead center)
+        const iconCenterX = polygon.centroid.x;
+        const iconCenterY = polygon.centroid.y;
+        
+        const iconX = iconCenterX - iconSize / 2;
+        const iconY = iconCenterY - iconSize / 2;
+
+        this.pencilClickAreas.set(polygon.id, {
+            x: iconX, y: iconY,
+            width: iconSize, height: iconSize,
+            polygon: polygon
+        });
+        
+        const editIcon = AppState.imageCache['public/edit.svg'];
+        if (editIcon) {
+            ctx.drawImage(editIcon, iconX, iconY, iconSize, iconSize);
+        } else {
+            // Fallback drawing
+            ctx.save();
+            ctx.fillStyle = 'rgba(52, 152, 219, 0.8)';
+            ctx.beginPath();
+            ctx.arc(iconCenterX, iconCenterY, iconSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
         }
-        if (poly.glaType === 1) { ctx.fillStyle = `rgba(144, 238, 144, ${fillOpacity})`; }
-        else if (poly.type === 'ADU') { ctx.fillStyle = `rgba(173, 255, 173, ${fillOpacity + 0.1})`; }
-        else if (poly.glaType === 0) { ctx.fillStyle = `rgba(180, 180, 180, ${fillOpacity + 0.2})`; }
-        else { ctx.fillStyle = `rgba(220, 220, 220, ${fillOpacity - 0.1})`; }
-        
-        ctx.beginPath();
-        ctx.moveTo(poly.path[0].x, poly.path[0].y);
-        for (let i = 1; i < poly.path.length; i++) { ctx.lineTo(poly.path[i].x, poly.path[i].y); }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+    }
 
-        // --- FIXED: Show line icons ONLY in edit areas mode ---
-        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
-            // Draw the area edit icon in the center
-            this.drawAreaEditIcon(ctx, poly);
+    drawCompletedAreas() {
+        const { ctx } = AppState;
+        if (!ctx || AppState.drawnPolygons.length === 0) return;
 
-            const editIcon = AppState.imageCache['public/edit.svg'];
-            const deleteIcon = AppState.imageCache['public/delete.svg'];
-            const iconSize = 20;
+        const sharedEdges = this.findAllSharedEdges();
+        this.lineIconClickAreas.clear(); // Clear old icon positions
 
+        AppState.drawnPolygons.forEach((poly) => {
+            ctx.save();
+            
+            // Unchanged polygon fill and stroke logic...
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([]);
+            let fillOpacity = 0.4;
+            if (AppState.currentMode === 'edit' && AppState.editSubMode === 'labels') {
+                fillOpacity = 0.1;
+            }
+            if (poly.glaType === 1) { ctx.fillStyle = `rgba(144, 238, 144, ${fillOpacity})`; }
+            else if (poly.type === 'ADU') { ctx.fillStyle = `rgba(173, 255, 173, ${fillOpacity + 0.1})`; }
+            else if (poly.glaType === 0) { ctx.fillStyle = `rgba(180, 180, 180, ${fillOpacity + 0.2})`; }
+            else { ctx.fillStyle = `rgba(220, 220, 220, ${fillOpacity - 0.1})`; }
+            
+            ctx.beginPath();
+            ctx.moveTo(poly.path[0].x, poly.path[0].y);
+            for (let i = 1; i < poly.path.length; i++) { ctx.lineTo(poly.path[i].x, poly.path[i].y); }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Show area edit icon ONLY in edit areas mode
+            if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
+                this.drawAreaEditIcon(ctx, poly);
+            }
+
+            // Show line icons ONLY in edit lines mode
+            if (AppState.currentMode === 'edit' && AppState.editSubMode === 'lines') {
+                const editIcon = AppState.imageCache['public/edit.svg'];
+                const deleteIcon = AppState.imageCache['public/delete.svg'];
+                const iconSize = 20;
+
+                for (let i = 0; i < poly.path.length; i++) {
+                    const p1 = poly.path[i];
+                    const p2 = poly.path[(i + 1) % poly.path.length];
+                    
+                    // --- Highlight the active line ---
+                    if (this.activeLineEdit && this.activeLineEdit.polygon.id === poly.id && this.activeLineEdit.edgeStartIndex === i) {
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(52, 152, 219, 0.9)'; // Bright blue for active
+                        ctx.lineWidth = 6;
+                        ctx.lineCap = 'round';
+                        ctx.beginPath();
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    // Calculate 1/3 and 2/3 points on the line
+                    const editPointX = p1.x + (p2.x - p1.x) / 3;
+                    const editPointY = p1.y + (p2.y - p1.y) / 3;
+                    const deletePointX = p1.x + (p2.x - p1.x) * 2 / 3;
+                    const deletePointY = p1.y + (p2.y - p1.y) * 2 / 3;
+
+                    // Draw Edit Icon at 1/3 point
+                    if (editIcon) {
+                        ctx.drawImage(editIcon, editPointX - iconSize/2, editPointY - iconSize/2, iconSize, iconSize);
+                    }
+                    
+                    // Draw Delete Icon at 2/3 point
+                    if (deleteIcon) {
+                        ctx.drawImage(deleteIcon, deletePointX - iconSize/2, deletePointY - iconSize/2, iconSize, iconSize);
+                    }
+                    
+                    // Store click areas for both icons
+                    const editKey = `edit-${poly.id}-${i}`;
+                    const deleteKey = `delete-${poly.id}-${i}`;
+                    const edgeInfo = { polygon: poly, edgeStartIndex: i, edgeEndIndex: (i + 1) % poly.path.length };
+                    
+                    this.lineIconClickAreas.set(editKey, {
+                        x: editPointX - iconSize / 2, y: editPointY - iconSize / 2,
+                        width: iconSize, height: iconSize, action: 'edit', edgeInfo: edgeInfo
+                    });
+                    this.lineIconClickAreas.set(deleteKey, {
+                        x: deletePointX - iconSize / 2, y: deletePointY - iconSize / 2,
+                        width: iconSize, height: iconSize, action: 'delete', edgeInfo: edgeInfo
+                    });
+                }
+            }
+            
+            // Draw external wall length labels (unchanged)
             for (let i = 0; i < poly.path.length; i++) {
                 const p1 = poly.path[i];
                 const p2 = poly.path[(i + 1) % poly.path.length];
-                
-                // --- Highlight the active line ---
-                if (this.activeLineEdit && this.activeLineEdit.polygon.id === poly.id && this.activeLineEdit.edgeStartIndex === i) {
-                    ctx.save();
-                    ctx.strokeStyle = 'rgba(52, 152, 219, 0.9)'; // Bright blue for active
-                    ctx.lineWidth = 6;
-                    ctx.lineCap = 'round';
-                    ctx.beginPath();
-                    ctx.moveTo(p1.x, p1.y);
-                    ctx.lineTo(p2.x, p2.y);
-                    ctx.stroke();
-                    ctx.restore();
+                const edgeKey = this.getEdgeKey(poly.id, i, (i + 1) % poly.path.length);
+                if (!sharedEdges.has(edgeKey)) {
+                    this.drawExternalLabel(ctx, p1, p2, poly.centroid);
                 }
-
-                // Calculate 1/3 and 2/3 points on the line
-                const editPointX = p1.x + (p2.x - p1.x) / 3;
-                const editPointY = p1.y + (p2.y - p1.y) / 3;
-                const deletePointX = p1.x + (p2.x - p1.x) * 2 / 3;
-                const deletePointY = p1.y + (p2.y - p1.y) * 2 / 3;
-
-                // Draw Edit Icon at 1/3 point
-                if (editIcon) {
-                    ctx.drawImage(editIcon, editPointX - iconSize/2, editPointY - iconSize/2, iconSize, iconSize);
-                }
-                
-                // Draw Delete Icon at 2/3 point
-                if (deleteIcon) {
-                    ctx.drawImage(deleteIcon, deletePointX - iconSize/2, deletePointY - iconSize/2, iconSize, iconSize);
-                }
-                
-                // Store click areas for both icons
-                const editKey = `edit-${poly.id}-${i}`;
-                const deleteKey = `delete-${poly.id}-${i}`;
-                const edgeInfo = { polygon: poly, edgeStartIndex: i, edgeEndIndex: (i + 1) % poly.path.length };
-                
-                this.lineIconClickAreas.set(editKey, {
-                    x: editPointX - iconSize / 2, y: editPointY - iconSize / 2,
-                    width: iconSize, height: iconSize, action: 'edit', edgeInfo: edgeInfo
-                });
-                this.lineIconClickAreas.set(deleteKey, {
-                    x: deletePointX - iconSize / 2, y: deletePointY - iconSize / 2,
-                    width: iconSize, height: iconSize, action: 'delete', edgeInfo: edgeInfo
-                });
             }
-        }
-        
-        // Draw external wall length labels (unchanged)
-        for (let i = 0; i < poly.path.length; i++) {
-            const p1 = poly.path[i];
-            const p2 = poly.path[(i + 1) % poly.path.length];
-            const edgeKey = this.getEdgeKey(poly.id, i, (i + 1) % poly.path.length);
-            if (!sharedEdges.has(edgeKey)) {
-                this.drawExternalLabel(ctx, p1, p2, poly.centroid);
-            }
-        }
-        
-        ctx.restore();
-    });
-}
+            
+            ctx.restore();
+        });
+    }
     // *** HELPER FUNCTIONS FOR EDGE LABELS ***
 
     findAllSharedEdges() {
@@ -1463,7 +1469,10 @@ deleteCurrentCycle() {
         const dx = p2.x - p1.x;
         const dy = p2.y - p1.y;
         const lengthInPixels = Math.sqrt(dx * dx + dy * dy);
-        const lengthInFeet = lengthInPixels / PIXELS_PER_FOOT;
+
+
+
+const lengthInFeet = lengthInPixels / PIXELS_PER_FOOT;
         
         // *** REQUIREMENT: Only show labels for edges 3+ feet long ***
         if (lengthInFeet < 3) return;

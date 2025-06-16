@@ -221,14 +221,18 @@ function importSketchFromJSON(file) {
     }
 }
 
+
+
 // --- NEW: Three-State Edit Mode Cycling Logic ---
 
 function cycleEditMode() {
-    // Sequence: READY -> EDIT LABELS -> EDIT AREAS -> READY
+    // Sequence: READY -> EDIT LABELS -> EDIT LINES -> EDIT AREAS -> READY
     if (AppState.currentMode !== 'edit') {
         switchToEditLabelsMode();
     } else {
         if (AppState.editSubMode === 'labels') {
+            switchToEditLinesMode();  // NEW: Go to lines mode
+        } else if (AppState.editSubMode === 'lines') {  // NEW: From lines go to areas
             switchToEditAreasMode();
         } else { // From 'areas' or any other weird state, go back to ready.
             switchToPlacementMode();
@@ -245,14 +249,36 @@ function switchToEditLabelsMode() {
     resetAllModeButtons();
     const editBtn = document.getElementById('editBtn');
     editBtn.classList.add('active');
-    editBtn.textContent = 'Edit Areas';
+    editBtn.textContent = 'Edit Lines';  // UPDATED: Next mode is lines
 
     const modeIndicator = document.getElementById('modeIndicator');
     modeIndicator.textContent = 'EDIT LABELS';
     modeIndicator.className = 'mode-indicator edit-mode';
 
     AppState.emit('mode:changed', { mode: 'edit', subMode: 'labels' });
-    AppState.emit('mode:editToggled', { isEditMode: true });
+    AppState.emit('mode:editToggled', { isEditMode: true, subMode: 'labels' });
+    CanvasManager.redraw();
+}
+
+// NEW FUNCTION: Add this between switchToEditLabelsMode and switchToEditAreasMode
+function switchToEditLinesMode() {
+    console.log('Switching to Edit Lines mode');
+    activateSketchListeners();
+    AppState.currentMode = 'edit';
+    AppState.editSubMode = 'lines';
+
+    resetAllModeButtons();
+    const editBtn = document.getElementById('editBtn');
+    editBtn.classList.add('active');
+    editBtn.textContent = 'Edit Areas';  // Next mode is areas
+
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'EDIT LINES';
+    modeIndicator.className = 'mode-indicator edit-mode';
+
+    AppState.emit('mode:changed', { mode: 'edit', subMode: 'lines' });
+    AppState.emit('mode:editToggled', { isEditMode: true, subMode: 'lines' });
+    setTimeout(() => console.log('💡 EDIT LINES: Click on line icons to edit/delete edges. Use directional pad to move selected lines!'), 100);
     CanvasManager.redraw();
 }
 
@@ -272,10 +298,14 @@ function switchToEditAreasMode() {
     modeIndicator.className = 'mode-indicator edit-mode';
 
     AppState.emit('mode:changed', { mode: 'edit', subMode: 'areas' });
-    AppState.emit('mode:editToggled', { isEditMode: true });
-    setTimeout(() => console.log('💡 EDIT AREAS: Click on areas to drag them, or click on edges to delete them!'), 100);
+    AppState.emit('mode:editToggled', { isEditMode: true, subMode: 'areas' });  // UPDATED: Include subMode
+    setTimeout(() => console.log('💡 EDIT AREAS: Click and drag areas to move them, or click the pencil icon to edit properties!'), 100);
     CanvasManager.redraw();
 }
+
+ 
+
+ 
 
 // --- Standard Mode Switching Functions (Modified) ---
 
@@ -306,7 +336,7 @@ function switchToPhotosMode() {
     console.log('DEBUG: Mode switched. AppState.currentMode is now:', AppState.currentMode);
 }
 
-function switchToPlacementMode() {
+ function switchToPlacementMode() {
     console.log('Switching to placement mode (READY) from:', AppState.currentMode);
     activateSketchListeners();
     AppState.currentMode = 'placement';
@@ -318,9 +348,10 @@ function switchToPlacementMode() {
     modeIndicator.className = 'mode-indicator';
     
     AppState.emit('mode:changed', { mode: 'placement' });
-    AppState.emit('mode:editToggled', { isEditMode: false });
+    AppState.emit('mode:editToggled', { isEditMode: false, subMode: null });  // UPDATED: Include subMode
     CanvasManager.redraw();
 }
+ 
 
 function switchToDrawingMode() {
     console.log('Switching to drawing mode from:', AppState.currentMode);

@@ -207,30 +207,12 @@ _generatePreviewHTML(state) {
                             return key1 < key2 ? key1 + '|' + key2 : key2 + '|' + key1;
                         };
 
+                        // FIRST: Draw edge labels (lower z-index)
                         state.drawnPolygons.forEach(poly => {
-                            ctx.save();
-                            if (poly.type.startsWith('ADU') || poly.type.startsWith('UNIT')) {
-                                ctx.fillStyle = 'rgba(221, 215, 226, 0.7)';
-                            } else {
-                                ctx.fillStyle = poly.glaType === 1 ? 'rgba(144, 238, 144, 0.4)' : 'rgba(180, 180, 180, 0.6)';
-                            }
-                            ctx.strokeStyle = '#555';
-                            ctx.lineWidth = 1.5;
-                            ctx.beginPath();
-                            poly.path.forEach((p, i) => {
-                                const point = toPreviewCoords(p);
-                                if (i === 0) ctx.moveTo(point.x, point.y);
-                                else ctx.lineTo(point.x, point.y);
-                            });
-                            ctx.closePath();
-                            ctx.fill();
-                            ctx.stroke();
-                            ctx.restore();
-
                             poly.path.forEach((p1, i) => {
                                 const p2 = poly.path[(i + 1) % poly.path.length];
                                 
-                                // --- NEW: Check if the edge is shared and skip it if it is ---
+                                // --- Check if the edge is shared and skip it if it is ---
                                 const edgeKey = getEdgeKey(p1, p2);
                                 if (sharedEdges.has(edgeKey)) {
                                     return; // This is an interior wall, so skip drawing the label.
@@ -250,47 +232,84 @@ _generatePreviewHTML(state) {
                                 const canvasEdgeLength = Math.sqrt(canvasDx*canvasDx + canvasDy*canvasDy);
                                 if (canvasEdgeLength === 0) return;
                                 
-                                // Calculate perpendicular direction for label offset
+                                // IMPROVED: Better algorithm to position labels outside polygons
+                                // Calculate perpendicular direction
                                 const perpX = -canvasDy / canvasEdgeLength;
                                 const perpY = canvasDx / canvasEdgeLength;
                                 
-                                // Calculate centroid position
-                                const centroidPreview = toPreviewCoords(poly.centroid);
-                                const toCentroidX = centroidPreview.x - midX;
-                                const toCentroidY = centroidPreview.y - midY;
-                                const dotProduct = toCentroidX * perpX + toCentroidY * perpY;
+                                // Test both sides of the edge to find which is outside the polygon
+                                const testOffset = 20 * scale;
+                                const testX1 = midX + perpX * testOffset;
+                                const testY1 = midY + perpY * testOffset;
+                                const testX2 = midX - perpX * testOffset;
+                                const testY2 = midY - perpY * testOffset;
                                 
-                                // FIXED: Increased offset and ensure label is ALWAYS outside
-                                const offset = Math.max(30, 40 * scale); // Much larger offset
-                                const labelX = midX + (dotProduct > 0 ? -perpX * offset : perpX * offset);
-                                const labelY = midY + (dotProduct > 0 ? -perpY * offset : perpY * offset);
+                                // Simple point-in-polygon test for the current polygon
+                                const isInsidePolygon = (x, y, polygon) => {
+                                    const scaledPoly = polygon.path.map(p => toPreviewCoords(p));
+                                    let inside = false;
+                                    for (let i = 0, j = scaledPoly.length - 1; i < scaledPoly.length; j = i++) {
+                                        if (((scaledPoly[i].y > y) !== (scaledPoly[j].y > y)) &&
+                                            (x < (scaledPoly[j].x - scaledPoly[i].x) * (y - scaledPoly[i].y) / (scaledPoly[j].y - scaledPoly[i].y) + scaledPoly[i].x)) {
+                                            inside = !inside;
+                                        }
+                                    }
+                                    return inside;
+                                };
+                                
+                                // Choose the side that's outside the polygon
+                                let labelX, labelY;
+                                const side1Inside = isInsidePolygon(testX1, testY1, poly);
+                                const side2Inside = isInsidePolygon(testX2, testY2, poly);
+                                
+                                if (!side1Inside && side2Inside) {
+                                    // Use side 1 (positive perpendicular)
+                                    labelX = midX + perpX * (25 * scale);
+                                    labelY = midY + perpY * (25 * scale);
+                                } else if (side1Inside && !side2Inside) {
+                                    // Use side 2 (negative perpendicular)
+                                    labelX = midX - perpX * (25 * scale);
+                                    labelY = midY - perpY * (25 * scale);
+                                } else {
+                                    // Fallback: use centroid-based positioning but with smaller offset
+                                    const centroidPreview = toPreviewCoords(poly.centroid);
+                                    const toCentroidX = centroidPreview.x - midX;
+                                    const toCentroidY = centroidPreview.y - midY;
+                                    const dotProduct = toCentroidX * perpX + toCentroidY * perpY;
+                                    const offset = 25 * scale;
+                                    labelX = midX + (dotProduct > 0 ? -perpX * offset : perpX * offset);
+                                    labelY = midY + (dotProduct > 0 ? -perpY * offset : perpY * offset);
+                                }
+                                
+                                // Ensure label stays within canvas bounds
+                                labelX = Math.max(50, Math.min(canvas.width - 50, labelX));
+                                labelY = Math.max(20, Math.min(canvas.height - 20, labelY));
                                 
                                 ctx.save();
                                 ctx.translate(labelX, labelY);
-                                let angle = Math.atan2(canvasDy, canvasDx);
-                                if (angle < -Math.PI / 2 || angle > Math.PI / 2) {
-                                    angle += Math.PI;
-                                }
-                                ctx.rotate(angle);
+                                
+                                // No rotation - keep all text perfectly horizontal
+                                // ctx.rotate(0); // No rotation applied
+                                
                                 const text = \`\${lengthInFeet.toFixed(1)}'\`;
                                 
-                                // FIXED: Much larger font size for edge labels
-                                const fontSize = Math.max(12, 14 * scale);
+                                // Consistent, readable font size
+                                const fontSize = Math.max(10, 12 * Math.min(1, scale));
                                 ctx.font = \`bold \${fontSize}px Arial\`;
                                 ctx.textAlign = 'center';
                                 ctx.textBaseline = 'middle';
                                 const textMetrics = ctx.measureText(text);
                                 
-                                // White background with border for better visibility
-                                ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-                                ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
-                                ctx.lineWidth = 1;
-                                const padding = 6;
+                                // Clean white background with subtle border
+                                ctx.fillStyle = 'rgba(255, 255, 255, 0)';
+                                ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+                                ctx.lineWidth = 0.5;
+                                const padding = 4;
                                 const bgRect = {
                                     x: -textMetrics.width / 2 - padding,
-                                    y: -fontSize / 2 - padding/2,
+                                    y: -fontSize / 2 - 2,
                                     width: textMetrics.width + padding * 2,
-                                    height: fontSize + padding
+                                    height: fontSize + 4
                                 };
                                 ctx.fillRect(bgRect.x, bgRect.y, bgRect.width, bgRect.height);
                                 ctx.strokeRect(bgRect.x, bgRect.y, bgRect.width, bgRect.height);
@@ -300,6 +319,28 @@ _generatePreviewHTML(state) {
                                 ctx.fillText(text, 0, 0);
                                 ctx.restore();
                             });
+                        });
+
+                        // SECOND: Draw polygon areas (higher z-index, on top of labels)
+                        state.drawnPolygons.forEach(poly => {
+                            ctx.save();
+                            if (poly.type.startsWith('ADU') || poly.type.startsWith('UNIT')) {
+                                ctx.fillStyle = 'rgba(221, 215, 226, 0.7)';
+                            } else {
+                                ctx.fillStyle = poly.glaType === 1 ? 'rgba(144, 238, 144, 0.4)' : 'rgba(180, 180, 180, 0.6)';
+                            }
+                            ctx.strokeStyle = '#555';
+                            ctx.lineWidth = 1.5;
+                            ctx.beginPath();
+                            poly.path.forEach((p, i) => {
+                                const point = toPreviewCoords(p);
+                                if (i === 0) ctx.moveTo(point.x, point.y);
+                                else ctx.lineTo(point.x, point.y);
+                            });
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.stroke();
+                            ctx.restore();
                         });
 
                         state.placedElements.forEach(el => {

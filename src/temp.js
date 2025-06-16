@@ -1,17 +1,37 @@
-// In your main.js file
+// In src/drawing.js
 
-document.addEventListener('DOMContentLoaded', () => {
-    // ... other initialization code ...
+// REPLACE the existing handleCanvasClick function
+handleCanvasClick(e) {
+    if (!this.isActive) return;
+
+    // Use the now-corrected central function to get coordinates
+    const pos = CanvasManager.screenToCanvas(e.clientX, e.clientY);
     
-    const canvas = document.getElementById('drawingCanvas');
-    CanvasManager.init(canvas);
+    // Pass the correct coordinates to the interaction logic
+    const wasHandled = this.handleCanvasInteractionWithCoords(e, pos.x, pos.y);
+    
+    if (wasHandled) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+}
 
-    // **** ADD THIS LINE ****
-    // This connects your new grid function to the drawing process.
-    AppState.on('canvas:redraw:background', drawGrid);
-    // **** END OF ADDITION ****
+// REPLACE the existing handleCanvasTouch function
+handleCanvasTouch(e) {
+    if (!this.isActive) return;
 
-    // Initialize all the managers
-    new DrawingManager();
-    // ... rest of the function ...
-});
+    if (e.changedTouches && e.changedTouches.length > 0) {
+        const touch = e.changedTouches[0];
+
+        // Use the now-corrected central function to get coordinates
+        const pos = CanvasManager.screenToCanvas(touch.clientX, touch.clientY);
+        
+        // Pass the correct coordinates to the interaction logic
+        const wasHandled = this.handleCanvasInteractionWithCoords(e, pos.x, pos.y);
+        
+        if (wasHandled) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }
+}

@@ -21,7 +21,7 @@ import {
  * Draws a grid pattern across the entire canvas.
  * This ensures the visual background matches the canvas's full dimensions.
  */
-function drawGrid() {
+ function drawGrid() {
     const { ctx, canvas } = AppState;
     if (!ctx || !canvas) return;
 
@@ -32,16 +32,20 @@ function drawGrid() {
     ctx.strokeStyle = '#dcdcdc'; // A light gray for the grid lines
     ctx.lineWidth = 1;
 
+    // Use the actual canvas dimensions (which are now adaptive)
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
+
     // Draw vertical lines across the entire canvas width
-    for (let x = 0; x <= canvas.width; x += gridSize) {
+    for (let x = 0; x <= canvasWidth; x += gridSize) {
         ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvas.height);
+        ctx.lineTo(x, canvasHeight);
     }
 
     // Draw horizontal lines across the entire canvas height
-    for (let y = 0; y <= canvas.height; y += gridSize) {
+    for (let y = 0; y <= canvasHeight; y += gridSize) {
         ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
+        ctx.lineTo(canvasWidth, y);
     }
 
     ctx.stroke();

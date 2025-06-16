@@ -1,46 +1,64 @@
-// src/canvas.js - FIXED VERSION - Reduced excessive logging during redraws
+// src/canvas.js - FIXED VERSION with adaptive canvas sizing for iOS compatibility
 import { AppState } from './state.js';
 import { HelperPointManager } from './helpers.js';
 
 export class CanvasManager {
-  // In canvas.js, replace the entire init function with this one.
-
- // In canvas.js, replace the entire init function with this one.
-
   static init(canvasElement) {
     console.log('CanvasManager: Initializing canvas');
     AppState.canvas = canvasElement;
     AppState.ctx = canvasElement.getContext('2d');
     
-    // MODIFIED: Set a fixed canvas size of 10,000 x 10,000 pixels
-    // for a consistently large drawing area on all devices.
-    AppState.canvas.width = 10000;
-    AppState.canvas.height = 10000;
+    // Detect if we're on iOS
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     
-    console.log('CanvasManager: Canvas initialized with fixed size:', AppState.canvas.width, 'x', AppState.canvas.height);
+    // Determine maximum safe canvas size based on device
+    let maxCanvasSize;
+    if (isIOS) {
+      // iOS has strict limits - use 4096 as safe maximum
+      maxCanvasSize = 4096;
+      console.log('iOS detected - limiting canvas to', maxCanvasSize);
+    } else if (isMobile) {
+      // Other mobile devices - use 6000 as safe limit
+      maxCanvasSize = 6000;
+      console.log('Mobile device detected - limiting canvas to', maxCanvasSize);
+    } else {
+      // Desktop - can handle larger canvas
+      maxCanvasSize = 10000;
+      console.log('Desktop detected - using canvas size', maxCanvasSize);
+    }
+    
+    // For extra safety on iOS, we can be even more conservative
+    if (isIOS && window.devicePixelRatio > 2) {
+      // Retina iOS devices need even smaller canvases
+      maxCanvasSize = 3000;
+      console.log('High-DPI iOS device - further limiting canvas to', maxCanvasSize);
+    }
+    
+    // Set canvas dimensions
+    AppState.canvas.width = maxCanvasSize;
+    AppState.canvas.height = maxCanvasSize;
+    
+    // Store the canvas size for reference
+    AppState.canvasSize = maxCanvasSize;
+    
+    console.log('CanvasManager: Canvas initialized with size:', AppState.canvas.width, 'x', AppState.canvas.height);
 
-    // This logic remains the same. It sets the initial viewport to the 
-    // center of the new large canvas for any new sketch.
+    // Center the viewport
     const viewport = document.getElementById('canvasViewport');
     if (viewport) {
         const viewportWidth = viewport.clientWidth;
         const viewportHeight = viewport.clientHeight;
 
-        // This transform pans the canvas so its center aligns with the viewport's center.
         AppState.viewportTransform.x = -(AppState.canvas.width / 2) + (viewportWidth / 2);
         AppState.viewportTransform.y = -(AppState.canvas.height / 2) + (viewportHeight / 2);
         
-        // Apply the initial transform to the canvas container element.
         this.updateViewportTransform();
         console.log('CanvasManager: Initial viewport centered on canvas at:', AppState.viewportTransform);
     }
   }
 
-
-  
-  // In canvas.js, replace the redraw function with this version that ensures proper layer order
-
-static redraw() {
+  static redraw() {
     const { ctx, canvas } = AppState;
     if (!ctx || !canvas) {
       console.warn('CanvasManager: Canvas not initialized, skipping redraw');
@@ -69,24 +87,20 @@ static redraw() {
     AppState.emit('canvas:redraw:ui');
     
     // *** LAYER 6 (TOP): Current drawing elements - ALWAYS ON TOP ***
-    // This ensures purple drawing points (pX) are always visible above everything else
     if (AppState.currentMode === 'drawing') {
-        // Force the drawing manager to redraw its elements on the top layer
         AppState.emit('canvas:redraw:drawing-overlay');
     }
     
     // Restore context state
     ctx.restore();
-}
+  }
   
   static saveAction() {
     AppState.historyIndex++;
     AppState.actionHistory = AppState.actionHistory.slice(0, AppState.historyIndex);
     
-    // Get the current state snapshot (which should include viewport transform)
     const snapshot = AppState.getStateSnapshot();
     
-    // Ensure viewport transform is saved - add it if getStateSnapshot doesn't include it
     if (!snapshot.viewportTransform) {
       snapshot.viewportTransform = {
         x: AppState.viewportTransform.x,
@@ -97,24 +111,17 @@ static redraw() {
     
     AppState.actionHistory.push(snapshot);
     
-    // Only log when actions are actually saved, not during every redraw
     console.log('CanvasManager: Action saved, history length:', AppState.actionHistory.length);
     AppState.emit('history:saved');
   }
   
- // Replace your existing undo() function with this one
-// Replace the entire undo() function in src/canvas.js with this one:
-
-// Replace the entire undo() function in src/canvas.js with this one.
-static undo() {
+  static undo() {
     console.log('--- UNDO: Button Pressed ---');
     if (AppState.historyIndex <= 0) {
         console.log('Undo: No more actions to undo.');
-        // If we are at the beginning, restore the very first state (or a clean state)
         AppState.restoreStateSnapshot(AppState.actionHistory[0] || AppState.getInitialState());
         AppState.historyIndex = 0;
     } else {
-        // Otherwise, move to the previous state in the history
         AppState.historyIndex--;
         const stateToRestore = AppState.actionHistory[AppState.historyIndex];
         if (stateToRestore) {
@@ -125,44 +132,38 @@ static undo() {
         }
     }
     
-    // --- NEW LOGIC ---
-    // After restoring the state, visually update the viewport's position and redraw.
     CanvasManager.updateViewportTransform();
     HelperPointManager.updateHelperPoints();
     CanvasManager.redraw();
     
     console.log('--- UNDO: Complete ---');
-}
-  
-// Replace your existing redo() function with this one
-static redo() {
-  if (AppState.historyIndex < AppState.actionHistory.length - 1) {
-    AppState.historyIndex++;
-    const snapshot = AppState.actionHistory[AppState.historyIndex];
-    AppState.restoreStateSnapshot(snapshot);
-
-    // After restoring the path, update the helper points
-    HelperPointManager.updateHelperPoints();
-
-    // Restore viewport transform if it exists in the snapshot
-    if (snapshot.viewportTransform) {
-      AppState.viewportTransform.x = snapshot.viewportTransform.x;
-      AppState.viewportTransform.y = snapshot.viewportTransform.y;
-      AppState.viewportTransform.scale = snapshot.viewportTransform.scale;
-
-      // Update the visual transform
-      CanvasManager.updateViewportTransform();
-
-      console.log('CanvasManager: Restored viewport transform:', snapshot.viewportTransform);
-    }
-
-    console.log('CanvasManager: Redo performed');
-    AppState.emit('history:redo');
-    CanvasManager.redraw();
-  } else {
-    console.log('CanvasManager: No more actions to redo');
   }
-}
+  
+  static redo() {
+    if (AppState.historyIndex < AppState.actionHistory.length - 1) {
+      AppState.historyIndex++;
+      const snapshot = AppState.actionHistory[AppState.historyIndex];
+      AppState.restoreStateSnapshot(snapshot);
+
+      HelperPointManager.updateHelperPoints();
+
+      if (snapshot.viewportTransform) {
+        AppState.viewportTransform.x = snapshot.viewportTransform.x;
+        AppState.viewportTransform.y = snapshot.viewportTransform.y;
+        AppState.viewportTransform.scale = snapshot.viewportTransform.scale;
+
+        CanvasManager.updateViewportTransform();
+
+        console.log('CanvasManager: Restored viewport transform:', snapshot.viewportTransform);
+      }
+
+      console.log('CanvasManager: Redo performed');
+      AppState.emit('history:redo');
+      CanvasManager.redraw();
+    } else {
+      console.log('CanvasManager: No more actions to redo');
+    }
+  }
   
   // Helper method to convert screen coordinates to canvas coordinates
   static screenToCanvas(screenX, screenY) {

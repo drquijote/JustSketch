@@ -21,7 +21,7 @@ import {
  * Draws a grid pattern across the entire canvas.
  * This ensures the visual background matches the canvas's full dimensions.
  */
- function drawGrid() {
+function drawGrid() {
     const { ctx, canvas } = AppState;
     if (!ctx || !canvas) return;
 
@@ -32,20 +32,16 @@ import {
     ctx.strokeStyle = '#dcdcdc'; // A light gray for the grid lines
     ctx.lineWidth = 1;
 
-    // Use the actual canvas dimensions (which are now adaptive)
-    const canvasWidth = canvas.width;
-    const canvasHeight = canvas.height;
-
     // Draw vertical lines across the entire canvas width
-    for (let x = 0; x <= canvasWidth; x += gridSize) {
+    for (let x = 0; x <= canvas.width; x += gridSize) {
         ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvasHeight);
+        ctx.lineTo(x, canvas.height);
     }
 
     // Draw horizontal lines across the entire canvas height
-    for (let y = 0; y <= canvasHeight; y += gridSize) {
+    for (let y = 0; y <= canvas.height; y += gridSize) {
         ctx.moveTo(0, y);
-        ctx.lineTo(canvasWidth, y);
+        ctx.lineTo(canvas.width, y);
     }
 
     ctx.stroke();
@@ -111,8 +107,14 @@ function initializeAppControls(previewManager, saveManager) {
             const paletteId = e.target.getAttribute('data-palette');
             
             if (paletteId === 'photosPalette') {
-                switchToPhotosMode();
+                // Toggle photo mode
+                if (AppState.currentMode === 'photos') {
+                    switchToPlacementMode();
+                } else {
+                    switchToPhotosMode();
+                }
             } else {
+                // Any other palette button exits photo mode and goes to placement mode
                 switchToPlacementMode();
             }
 
@@ -126,8 +128,14 @@ function initializeAppControls(previewManager, saveManager) {
     AppState.on('app:exitDrawingMode', switchToPlacementMode);
     AppState.on('app:switchToDrawingMode', switchToDrawingMode);
 
-    // MODIFIED: Edit button now cycles through three states
-    document.getElementById('editBtn').addEventListener('click', cycleEditMode);
+    // Edit button now cycles through three states and exits photo mode
+    document.getElementById('editBtn').addEventListener('click', () => {
+        // Exit photo mode first if we're in it
+        if (AppState.currentMode === 'photos') {
+            switchToPlacementMode();
+        }
+        cycleEditMode();
+    });
     
     document.getElementById('legendToggleBtn').addEventListener('click', toggleLegend);
     const undoBtn = document.getElementById('undo');
@@ -135,13 +143,17 @@ function initializeAppControls(previewManager, saveManager) {
     if (undoBtn) undoBtn.addEventListener('click', (e) => { e.preventDefault(); CanvasManager.undo(); });
     if (redoBtn) redoBtn.addEventListener('click', (e) => { e.preventDefault(); CanvasManager.redo(); });
 
-    // Drawing mode button handler
+    // Drawing mode button handler - exits photo mode
     const startBtn = document.getElementById('startBtn');
     if (startBtn) {
         startBtn.addEventListener('click', () => {
             if (AppState.currentMode === 'drawing') {
                 switchToPlacementMode();
             } else {
+                // Exit photo mode first if we're in it
+                if (AppState.currentMode === 'photos') {
+                    switchToPlacementMode();
+                }
                 switchToDrawingMode();
             }
         });
@@ -250,21 +262,20 @@ function switchToEditAreasMode() {
     CanvasManager.redraw();
 }
 
-
 // --- Standard Mode Switching Functions (Modified) ---
 
 function switchToPhotosMode() {
     console.log('Switching to photos mode from:', AppState.currentMode);
-    
-    // Clean up any orphan points when leaving drawing mode
-    if (AppState.currentMode === 'drawing') {
-        cleanupOrphanPoints();
-    }
-    
     deactivateSketchListeners(); 
     AppState.currentMode = 'photos';
     AppState.editSubMode = null;
     resetAllModeButtons();
+    
+    // Activate the photos button
+    const photosBtn = document.getElementById('photosBtn');
+    if (photosBtn) {
+        photosBtn.classList.add('active');
+    }
     
     const modeIndicator = document.getElementById('modeIndicator');
     modeIndicator.textContent = 'PHOTOS';
@@ -277,12 +288,6 @@ function switchToPhotosMode() {
 
 function switchToPlacementMode() {
     console.log('Switching to placement mode (READY) from:', AppState.currentMode);
-    
-    // Clean up any orphan points when leaving drawing mode
-    if (AppState.currentMode === 'drawing') {
-        cleanupOrphanPoints();
-    }
-    
     activateSketchListeners();
     AppState.currentMode = 'placement';
     AppState.editSubMode = null; // Reset sub-mode
@@ -327,38 +332,6 @@ function switchToDrawingMode() {
     CanvasManager.redraw();
 }
 
-// --- NEW: Cleanup orphan points function ---
-function cleanupOrphanPoints() {
-    console.log('🧹 Cleaning up orphan points from drawing mode');
-    
-    // Check if there are any unfinished drawing points
-    if (AppState.currentPolygonPoints && AppState.currentPolygonPoints.length > 0) {
-        console.log(`🧹 Found ${AppState.currentPolygonPoints.length} orphan points, removing them`);
-        
-        // Clear the current drawing points
-        AppState.currentPolygonPoints = [];
-        AppState.currentPolygonCounter = 0;
-        
-        // Reset drawing manager state if it exists
-        if (window.drawingManager) {
-            window.drawingManager.waitingForFirstVertex = true;
-            window.drawingManager.distanceInputSequence = [];
-            window.drawingManager.angleInputSequence = [];
-        }
-        
-        // Clear any temporary helper points
-        AppState.helperPoints = [];
-        
-        // Update helper points
-        HelperPointManager.updateHelperPoints();
-        
-        // Save the cleaned state
-        CanvasManager.saveAction();
-        
-        console.log('✅ Orphan points cleaned up successfully');
-    }
-}
-
 function resetAllModeButtons() {
     const startBtn = document.getElementById('startBtn');
     if (startBtn) {
@@ -371,6 +344,10 @@ function resetAllModeButtons() {
         editBtn.textContent = 'Edit'; // Reset text
         editBtn.classList.remove('active');
     }
+    
+    // Reset all palette buttons to inactive
+    const paletteButtons = document.querySelectorAll('[data-palette]');
+    paletteButtons.forEach(btn => btn.classList.remove('active'));
 }
 
 // --- Utility Functions ---

@@ -194,6 +194,8 @@ export class SaveManager {
     /**
      * UPDATED: Loads a sketch with photos from IndexedDB
      */
+  // src/saveManager.js
+
     async loadSketchFromURL() {
         const urlParams = new URLSearchParams(window.location.search);
         const sketchIdToLoad = parseInt(urlParams.get('loadSketch'), 10);
@@ -212,6 +214,13 @@ export class SaveManager {
                 // Update app state to know which sketch is loaded
                 AppState.currentSketchId = sketchToLoad.id;
                 AppState.currentSketchName = sketchToLoad.name;
+
+                //
+                // ***** FIX: ADD THIS LINE *****
+                // This synchronizes the visual CSS transform with the newly loaded state.
+                CanvasManager.updateViewportTransform();
+                // ***** END FIX *****
+                //
 
                 CanvasManager.redraw();
                 AppState.emit('app:sketchLoaded');

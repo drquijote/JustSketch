@@ -1,4 +1,4 @@
-// src/previewManager.js - UPGRADED with new styling
+// src/previewManager.js - FIXED with larger edge labels positioned outside polygons
 
 import { AppState } from './state.js';
 
@@ -36,10 +36,6 @@ export class PreviewManager {
      * @param {object} state - The AppState snapshot.
      * @returns {string} A complete HTML document as a string.
      */
-// In previewManager.js, replace this entire function
-
-// In previewManager.js, replace this entire function
-// In previewManager.js, replace this entire function
 _generatePreviewHTML(state) {
     // --- Calculate Summary Data ---
     let totalGLA = 0;
@@ -243,7 +239,7 @@ _generatePreviewHTML(state) {
                                 const dx = p2.x - p1.x;
                                 const dy = p2.y - p1.y;
                                 const lengthInFeet = Math.sqrt(dx * dx + dy * dy) / 8;
-                                if (lengthInFeet < 1) return;
+                                if (lengthInFeet < 3) return; // Only show labels for edges 3+ feet
 
                                 const startPoint = toPreviewCoords(p1);
                                 const endPoint = toPreviewCoords(p2);
@@ -253,13 +249,19 @@ _generatePreviewHTML(state) {
                                 const canvasDy = endPoint.y - startPoint.y;
                                 const canvasEdgeLength = Math.sqrt(canvasDx*canvasDx + canvasDy*canvasDy);
                                 if (canvasEdgeLength === 0) return;
+                                
+                                // Calculate perpendicular direction for label offset
                                 const perpX = -canvasDy / canvasEdgeLength;
                                 const perpY = canvasDx / canvasEdgeLength;
+                                
+                                // Calculate centroid position
                                 const centroidPreview = toPreviewCoords(poly.centroid);
                                 const toCentroidX = centroidPreview.x - midX;
                                 const toCentroidY = centroidPreview.y - midY;
                                 const dotProduct = toCentroidX * perpX + toCentroidY * perpY;
-                                const offset = 15;
+                                
+                                // FIXED: Increased offset and ensure label is ALWAYS outside
+                                const offset = Math.max(30, 40 * scale); // Much larger offset
                                 const labelX = midX + (dotProduct > 0 ? -perpX * offset : perpX * offset);
                                 const labelY = midY + (dotProduct > 0 ? -perpY * offset : perpY * offset);
                                 
@@ -271,14 +273,31 @@ _generatePreviewHTML(state) {
                                 }
                                 ctx.rotate(angle);
                                 const text = \`\${lengthInFeet.toFixed(1)}'\`;
-                                ctx.font = \`bold \${Math.max(8, 10 * scale)}px Arial\`;
+                                
+                                // FIXED: Much larger font size for edge labels
+                                const fontSize = Math.max(12, 14 * scale);
+                                ctx.font = \`bold \${fontSize}px Arial\`;
                                 ctx.textAlign = 'center';
                                 ctx.textBaseline = 'middle';
                                 const textMetrics = ctx.measureText(text);
-                                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                                ctx.fillRect(-textMetrics.width / 2 - 3, -8, textMetrics.width + 6, 16);
+                                
+                                // White background with border for better visibility
+                                ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+                                ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+                                ctx.lineWidth = 1;
+                                const padding = 6;
+                                const bgRect = {
+                                    x: -textMetrics.width / 2 - padding,
+                                    y: -fontSize / 2 - padding/2,
+                                    width: textMetrics.width + padding * 2,
+                                    height: fontSize + padding
+                                };
+                                ctx.fillRect(bgRect.x, bgRect.y, bgRect.width, bgRect.height);
+                                ctx.strokeRect(bgRect.x, bgRect.y, bgRect.width, bgRect.height);
+                                
+                                // Draw text
                                 ctx.fillStyle = '#333';
-                                ctx.fillText(text, 0, 1);
+                                ctx.fillText(text, 0, 0);
                                 ctx.restore();
                             });
                         });
@@ -290,13 +309,16 @@ _generatePreviewHTML(state) {
                             const elHeight = el.height * scale;
                             Object.assign(div.style, { position: 'absolute', left: \`\${pos.x}px\`, top: \`\${pos.y}px\`, width: \`\${elWidth}px\`, height: \`\${elHeight}px\`, transformOrigin: 'top left' });
                             if (el.type === 'room' || el.type === 'area_label') {
-                                Object.assign(div.style, { fontSize: \`\${12 * Math.max(0.6, scale * 0.5)}px\`, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', flexDirection: 'column' });
+                                Object.assign(div.style, { fontSize: \`\${16 * Math.max(0.8, scale * 0.7)}px\`, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', flexDirection: 'column' });
                                 if (el.type === 'area_label') {
-                                    div.innerHTML = \`<strong>\${el.areaData.areaText}</strong><span style="font-size:0.8em">\${el.areaData.sqftText}</span>\`;
+                                    div.innerHTML = \`<strong style="font-size: 1.1em;">\${el.areaData.areaText}</strong><span style="font-size:0.9em; font-weight: 600; color: #222; margin-top: 3px;">\${el.areaData.sqftText}</span>\`;
                                 } else {
                                     div.style.background = el.styling.backgroundColor;
                                     div.style.color = el.styling.color || 'white';
                                     div.style.borderRadius = '4px';
+                                    div.style.fontSize = \`\${14 * Math.max(0.9, scale * 0.8)}px\`;
+                                    div.style.fontWeight = '600';
+                                    div.style.padding = '4px 8px';
                                     div.textContent = el.content;
                                 }
                             } else if (el.type === 'icon') {
@@ -323,14 +345,3 @@ _generatePreviewHTML(state) {
     `;
 }
 }
- 
-
-
-
- 
-
-
-
-
-
-

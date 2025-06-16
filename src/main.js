@@ -255,6 +255,12 @@ function switchToEditAreasMode() {
 
 function switchToPhotosMode() {
     console.log('Switching to photos mode from:', AppState.currentMode);
+    
+    // Clean up any orphan points when leaving drawing mode
+    if (AppState.currentMode === 'drawing') {
+        cleanupOrphanPoints();
+    }
+    
     deactivateSketchListeners(); 
     AppState.currentMode = 'photos';
     AppState.editSubMode = null;
@@ -271,6 +277,12 @@ function switchToPhotosMode() {
 
 function switchToPlacementMode() {
     console.log('Switching to placement mode (READY) from:', AppState.currentMode);
+    
+    // Clean up any orphan points when leaving drawing mode
+    if (AppState.currentMode === 'drawing') {
+        cleanupOrphanPoints();
+    }
+    
     activateSketchListeners();
     AppState.currentMode = 'placement';
     AppState.editSubMode = null; // Reset sub-mode
@@ -313,6 +325,38 @@ function switchToDrawingMode() {
     AppState.emit('mode:changed', { mode: 'drawing' });
     AppState.emit('mode:editToggled', { isEditMode: false });
     CanvasManager.redraw();
+}
+
+// --- NEW: Cleanup orphan points function ---
+function cleanupOrphanPoints() {
+    console.log('🧹 Cleaning up orphan points from drawing mode');
+    
+    // Check if there are any unfinished drawing points
+    if (AppState.currentPolygonPoints && AppState.currentPolygonPoints.length > 0) {
+        console.log(`🧹 Found ${AppState.currentPolygonPoints.length} orphan points, removing them`);
+        
+        // Clear the current drawing points
+        AppState.currentPolygonPoints = [];
+        AppState.currentPolygonCounter = 0;
+        
+        // Reset drawing manager state if it exists
+        if (window.drawingManager) {
+            window.drawingManager.waitingForFirstVertex = true;
+            window.drawingManager.distanceInputSequence = [];
+            window.drawingManager.angleInputSequence = [];
+        }
+        
+        // Clear any temporary helper points
+        AppState.helperPoints = [];
+        
+        // Update helper points
+        HelperPointManager.updateHelperPoints();
+        
+        // Save the cleaned state
+        CanvasManager.saveAction();
+        
+        console.log('✅ Orphan points cleaned up successfully');
+    }
 }
 
 function resetAllModeButtons() {

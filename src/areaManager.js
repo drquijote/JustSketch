@@ -453,61 +453,42 @@ handleCanvasTouchEnd(e) {
 
     // --- Pencil Editing Logic ---
 
-    // *** NEW: Draw pencil icon for area editing ***
-    drawAreaEditPencil(ctx, polygon) {
-        const pencilSize = 24;
-        const pencilX = polygon.centroid.x + 60; // Position to the right of the area label
-        const pencilY = polygon.centroid.y - 12; // Slightly above center
-        
-        // Store pencil click area for later detection
-        this.pencilClickAreas.set(polygon.id, {
-            x: pencilX - pencilSize/2,
-            y: pencilY - pencilSize/2,
-            width: pencilSize,
-            height: pencilSize,
-            polygon: polygon
-        });
-        
+ drawAreaEditIcon(ctx, polygon) {
+    const iconSize = 24; // Use a consistent, touch-friendly size
+    
+    // Position the icon relative to the area's center (centroid)
+    const iconCenterX = polygon.centroid.x + 60;
+    const iconCenterY = polygon.centroid.y;
+    
+    // The top-left corner for drawing the image
+    const iconX = iconCenterX - iconSize / 2;
+    const iconY = iconCenterY - iconSize / 2;
+
+    // This part is for click detection, the logic remains the same
+    this.pencilClickAreas.set(polygon.id, {
+        x: iconX,
+        y: iconY,
+        width: iconSize,
+        height: iconSize,
+        polygon: polygon
+    });
+    
+    // Get the preloaded edit icon from the shared AppState cache
+    const editIcon = AppState.imageCache['public/edit.svg'];
+
+    if (editIcon) {
+        // Draw the svg image
+        ctx.drawImage(editIcon, iconX, iconY, iconSize, iconSize);
+    } else {
+        // Provide a simple fallback shape in case the image hasn't loaded
         ctx.save();
-        
-        // Draw pencil background circle
-        ctx.fillStyle = '#3498db';
+        ctx.fillStyle = 'rgba(52, 152, 219, 0.8)'; // Blue fallback
         ctx.beginPath();
-        ctx.arc(pencilX, pencilY, pencilSize/2, 0, Math.PI * 2);
+        ctx.arc(iconCenterX, iconCenterY, iconSize / 2, 0, Math.PI * 2);
         ctx.fill();
-        
-        // Draw white border
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(pencilX, pencilY, pencilSize/2, 0, Math.PI * 2);
-        ctx.stroke();
-        
-        // Draw pencil icon (simplified)
-        ctx.strokeStyle = 'white';
-        ctx.fillStyle = 'white';
-        ctx.lineWidth = 2;
-        ctx.lineCap = 'round';
-        
-        // Pencil body (diagonal line)
-        ctx.beginPath();
-        ctx.moveTo(pencilX - 6, pencilY + 6);
-        ctx.lineTo(pencilX + 4, pencilY - 4);
-        ctx.stroke();
-        
-        // Pencil tip
-        ctx.beginPath();
-        ctx.moveTo(pencilX + 4, pencilY - 4);
-        ctx.lineTo(pencilX + 6, pencilY - 6);
-        ctx.stroke();
-        
-        // Pencil eraser (small circle)
-        ctx.beginPath();
-        ctx.arc(pencilX - 6, pencilY + 6, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-        
         ctx.restore();
     }
+}
 
     // *** NEW: Handle pencil clicks ***
     handlePencilClick(clickX, clickY) {
@@ -1185,7 +1166,7 @@ deleteCurrentCycle() {
  
 
 // In areaManager.js, replace the entire drawCompletedAreas function with this one.
-drawCompletedAreas() {
+ drawCompletedAreas() {
     const { ctx } = AppState;
     if (!ctx || AppState.drawnPolygons.length === 0) return;
 
@@ -1198,13 +1179,11 @@ drawCompletedAreas() {
         ctx.lineWidth = 1.5;
         ctx.setLineDash([]);
         
-        // NEW: Adjust fill opacity based on the edit sub-mode
         let fillOpacity = 0.4;
         if (AppState.currentMode === 'edit' && AppState.editSubMode === 'labels') {
-            fillOpacity = 0.1; // Make areas transparent when editing labels
+            fillOpacity = 0.1;
         }
         
-        // Fill colors based on area type with the new opacity
         if (poly.glaType === 1) {
             ctx.fillStyle = `rgba(144, 238, 144, ${fillOpacity})`;
         } else if (poly.type === 'ADU') {
@@ -1224,7 +1203,6 @@ drawCompletedAreas() {
         ctx.fill();
         ctx.stroke();
 
-        // MODIFIED: Only show area edit handles (red lines, pencil) in 'areas' sub-mode
         if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
             for (let i = 0; i < poly.path.length; i++) {
                 const p1 = poly.path[i];
@@ -1240,10 +1218,10 @@ drawCompletedAreas() {
                 ctx.stroke();
                 ctx.restore();
             }
-            this.drawAreaEditPencil(ctx, poly);
+            // --- CHANGE HERE: Call the new function ---
+            this.drawAreaEditIcon(ctx, poly);
         }
 
-        // Draw edge length labels (always visible)
         for (let i = 0; i < poly.path.length; i++) {
             const p1 = poly.path[i];
             const p2 = poly.path[(i + 1) % poly.path.length];

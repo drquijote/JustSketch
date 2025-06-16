@@ -3,6 +3,7 @@ export const AppState = {
   // Canvas & Viewport (will be populated by canvas.js)
   canvas: null,
   ctx: null,
+  imageCache: {}, // NEW: Centralized cache for shared images
   viewportTransform: { x: 0, y: 0, scale: 1 },
   activePhotoElement: null,
   

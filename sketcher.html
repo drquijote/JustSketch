@@ -326,35 +326,42 @@
     </div>
 
     <!-- Modals -->
+    <div class="modal hidden" id="labelEditModal">
+        <div class="modal-content">
+            <h3>Edit Label</h3>
+            <input id="labelEditTextInput" placeholder="Enter new label text" type="text" style="width: 90%; margin-top: 10px;"/>
+            <div class="modal-buttons">
+                <button id="cancelLabelEditBtn" class="modal-btn btn-secondary">Cancel</button>
+                <button id="saveLabelEditBtn" class="modal-btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
     <div class="modal hidden" id="polygonModal">
         <div class="modal-content">
             <h3>Label Polygon</h3>
             <input id="polygonName" placeholder="e.g., Floor 1, Garage" type="text"/>
               <select id="polygonType">
-                <option value="living" data-gla="1">Floor</option>
-                <option value="garage" data-gla="0">Garage </option>
-                <option value="covered_patio" data-gla="2">Covered Patio</option>
-                <option value="uncovered_patio" data-gla="2">Uncovered Patio</option>
-                <option value="covered_porch" data-gla="2">Covered Porch</option>
-                <option value="uncovered_porch" data-gla="2">Unovered Porch</option>
-                <option value="covered_deck" data-gla="2">Covered Deck</option>
-                <option value="uncovered_deck" data-gla="2">Unovered Deck</option>
+<option value="living" data-gla="1"  data-pic-Allarround="1" data-pic-SmokeAlarm="1" data-pic-C02Alarm="1" data-pic-WaterHtr="1" data-pic-BackYard="1" data-pic-Amenities="1" data-pic-Concerns="1" data-pic-FHA="1">Floor</option>
+<option value="garage" data-gla="0" data-pic-Interior="1" data-pic-Front="1" >Garage </option>
+                <option value="covered_patio" data-gla="2" data-pic-Front="1">Covered Patio</option>
+                <option value="uncovered_patio" data-gla="2" data-pic-Front="1">Uncovered Patio</option>
+                <option value="covered_porch" data-gla="2" data-pic-Front="1">Covered Porch</option>
+                <option value="uncovered_porch" data-gla="2" data-pic-Front="1">Unovered Porch</option>
+                <option value="covered_deck" data-gla="2" data-pic-Front="1">Covered Deck</option>
+                <option value="uncovered_deck" data-gla="2" data-pic-Front="1">Unovered Deck</option>
                 <option value="garage" data-gla="2">OpenBelow </option>
-                <option value="carport" data-gla="0">Carport </option>
+                <option value="carport" data-gla="0" data-pic-Front="1">Carport </option>
                 <option value="driveway" data-gla="2">Driveway </option>
-                <option value="patio" data-gla="2">Patio/Deck </option>
-                <option value="utility" data-gla="0">Utility Room</option>
-                <option value="storage" data-gla="0">Storage </option>
-                <option value="basement" data-gla="0">Basement</option>
-                <option value="attic" data-gla="0">Attic</option>
-                <option value="ADU" data-gla="0">ADU </option> 
-                <option value="UNIT-1" data-gla="1">UNIT</option> 
-                <option value="other" data-gla="2">Other</option>
-                <option value="uncovered_patio" data-gla="2">Uncovered Patio</option>
-                <option value="uncovered_porch">Uncovered Porch</option>
-                <option value="storage_shed" data-gla="2">Storage Shed</option>
-                <option value="car_port_1" data-gla="0">1 Car Port</option>
-                <option value="car_port_2" data-gla="0">2 Car Port</option>
+                <option value="utility" data-gla="0" data-pic-Interior="1" data-pic-Front="1">Utility Room</option>
+                <option value="storage" data-gla="0" data-pic-Interior="1" data-pic-Front="1">Storage </option>
+                <option value="basement" data-gla="0" data-pic-Interior="1">Basement</option>
+                <option value="attic" data-gla="0" data-pic-Interior="1">Attic</option>
+<option value="ADU" data-gla="0" data-pic-Front="1" data-pic-SmokeAlarm="1" data-pic-C02Alarm="1" >ADU </option> 
+<option value="UNIT-1" data-gla="1" data-pic-Front="1" data-pic-SmokeAlarm="1" data-pic-C02Alarm="1" >UNIT</option> 
+<option value="other" data-gla="2">Other</option>
+<option value="storage_shed" data-gla="2" data-pic-Front="1" data-pic-Interior="1">Storage Shed</option>
+<option value="car_port_1" data-gla="0">1 Car Port</option>
+<option value="car_port_2" data-gla="0">2 Car Port</option>
             </select>
 
 

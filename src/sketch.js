@@ -14,6 +14,7 @@ let lastVisiblePalette = null;
 let isEditMode = false;
 let editingElement = null;
 let editInput = null;
+let elementToEditInModal = null;
 
 // Icon editing variables
 let editingIcon = null;
@@ -46,24 +47,79 @@ function isMobileDevice() {
            (navigator.maxTouchPoints > 0);
 }
 
+
+// src/sketch.js
+
+// NEW: Add this function to forcibly reset canvas interaction states.
+/**
+ * Resets any 'stuck' canvas states like panning or dragging.
+ * This is a failsafe to prevent the cursor from getting stuck.
+ */
+function forceResetCanvasState() {
+    console.log('Forcibly resetting canvas interaction state.');
+    isPanning = false;
+    isDragging = false;
+    draggedElement = null;
+    
+    // Reset the cursor to the default pointer
+    if(canvas) {
+        canvas.style.cursor = 'default';
+    }
+}
+ function preloadImages() {
+    console.log('Preloading UI images...');
+    const imagesToLoad = {
+        'editIcon': 'public/edit.svg'
+    };
+
+    for (const key in imagesToLoad) {
+        const img = new Image();
+        img.src = imagesToLoad[key];
+        img.onload = () => {
+            AppState.imageCache[imagesToLoad[key]] = img; // Use AppState.imageCache
+            console.log(`Image '${key}' preloaded and cached from ${imagesToLoad[key]}.`);
+        };
+        img.onerror = () => {
+            console.error(`Failed to load image: ${imagesToLoad[key]}`);
+        };
+    }
+}
+
+
+
 function initSketchModule() {
     console.log('DEBUG: initSketchModule() called');
     
     canvas = AppState.canvas;
     ctx = AppState.ctx;
     
+    preloadImages();
+    
     AppState.placedElements = placedElements;
     AppState.actionHistory = actionHistory;
     AppState.historyIndex = historyIndex;
     AppState.viewportTransform = viewportTransform;
     
+    // --- FIX START: Prevent click-through on the label edit modal ---
+    // This stops mousedown events on the modal from starting a pan on the canvas.
+    const labelEditModal = document.getElementById('labelEditModal');
+    if (labelEditModal) {
+        labelEditModal.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+        });
+        labelEditModal.addEventListener('touchstart', (e) => {
+            e.stopPropagation();
+        }, { passive: false });
+    }
+    // --- FIX END ---
+
     AppState.on('mode:editToggled', (e) => {
         isEditMode = e.detail.isEditMode;
         console.log('Sketch.js: isEditMode set to', isEditMode);
         
         if (!isEditMode) {
             if (editingIcon) finishIconEditing();
-            if (editingElement) finishEditing();
+            // No need to check for editingElement as it was removed
         }
     });
     
@@ -79,6 +135,7 @@ function initSketchModule() {
 }
 
 // MODIFIED: This function now calls drawIconEditHighlight() instead of drawIconEditHandles()
+// REPLACE this function to use the shared AppState.imageCache
 function redrawPlacedElements() {
     ctx.save();
     
@@ -128,30 +185,43 @@ function redrawPlacedElements() {
             }
             
             if (isEditMode && AppState.editSubMode === 'labels' && element !== editingElement) {
-                const deleteSize = 20;
-                const deleteX = element.x + element.width + 2;
-                const deleteY = element.y - 2;
+                const iconSize = 24;
+                const padding = 6;
+                const elementCenterY = element.y + element.height / 2;
+
+                const editX = element.x - iconSize - padding;
+                const editY = elementCenterY - (iconSize / 2);
+
+                const deleteX = element.x + element.width + padding;
+                const deleteY = elementCenterY - (iconSize / 2);
+
+                const editIcon = AppState.imageCache['public/edit.svg']; // Use AppState.imageCache
+                if (editIcon) {
+                    ctx.globalAlpha = 1.0;
+                    ctx.drawImage(editIcon, editX, editY, iconSize, iconSize);
+                }
+
                 ctx.globalAlpha = 1.0;
                 ctx.fillStyle = '#e74c3c';
                 ctx.beginPath();
-                ctx.arc(deleteX + deleteSize/2, deleteY + deleteSize/2, deleteSize/2, 0, Math.PI * 2);
+                ctx.arc(deleteX + iconSize/2, deleteY + iconSize/2, iconSize/2, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.strokeStyle = 'white';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.arc(deleteX + deleteSize/2, deleteY + deleteSize/2, deleteSize/2, 0, Math.PI * 2);
+                ctx.arc(deleteX + iconSize/2, deleteY + iconSize/2, iconSize/2, 0, Math.PI * 2);
                 ctx.stroke();
                 ctx.strokeStyle = 'white';
                 ctx.lineWidth = 3;
                 ctx.lineCap = 'round';
-                const offset = 6;
-                const centerX = deleteX + deleteSize/2;
-                const centerY = deleteY + deleteSize/2;
+                const crossOffset = 7;
+                const crossCenterX = deleteX + iconSize/2;
+                const crossCenterY = deleteY + iconSize/2;
                 ctx.beginPath();
-                ctx.moveTo(centerX - offset, centerY - offset);
-                ctx.lineTo(centerX + offset, centerY + offset);
-                ctx.moveTo(centerX + offset, centerY - offset);
-                ctx.lineTo(centerX - offset, centerY + offset);
+                ctx.moveTo(crossCenterX - crossOffset, crossCenterY - crossOffset);
+                ctx.lineTo(crossCenterX + crossOffset, crossCenterY + crossOffset);
+                ctx.moveTo(crossCenterX + crossOffset, crossCenterY - crossOffset);
+                ctx.lineTo(crossCenterX - crossOffset, crossCenterY + crossOffset);
                 ctx.stroke();
             }
         } else if (element.type === 'icon') {
@@ -166,16 +236,15 @@ function redrawPlacedElements() {
                 }
                 ctx.drawImage(img, element.x, element.y, element.width, element.height);
                 ctx.restore();
-                // THIS IS THE KEY CHANGE: Call the new highlight function
                 drawIconEditHighlight(element);
             };
             
-            if (!imageCache[element.content]) {
+            if (!AppState.imageCache[element.content]) { // Use AppState.imageCache
                 const img = new Image();
-                img.onload = () => { imageCache[element.content] = img; CanvasManager.redraw(); };
+                img.onload = () => { AppState.imageCache[element.content] = img; CanvasManager.redraw(); }; // Use AppState.imageCache
                 img.src = element.content;
             } else {
-                drawRotatedIcon(imageCache[element.content]);
+                drawRotatedIcon(AppState.imageCache[element.content]); // Use AppState.imageCache
             }
         }
         ctx.restore();
@@ -183,7 +252,7 @@ function redrawPlacedElements() {
     
     ctx.restore();
     updateLegend();
-}
+} 
  
 function setupPaletteListeners() {
     console.log('Setting up palette listeners...');
@@ -568,6 +637,81 @@ function drawIconEditHighlight(element) {
     ctx.setLineDash([]);
 }
 
+
+/**
+ * Opens the label editing modal and populates it with the element's data.
+ * @param {object} element The room or area label element to edit.
+ */
+function openLabelEditModal(element) {
+    if (!element) return;
+    elementToEditInModal = element;
+
+    const modal = document.getElementById('labelEditModal');
+    const input = document.getElementById('labelEditTextInput');
+    const saveBtn = document.getElementById('saveLabelEditBtn');
+    const cancelBtn = document.getElementById('cancelLabelEditBtn');
+
+    // Populate the input with the current label content
+    input.value = element.content;
+
+    // Set up button listeners
+    saveBtn.onclick = saveLabelEdit;
+    cancelBtn.onclick = closeLabelEditModal;
+
+    // Show the modal
+    modal.classList.remove('hidden');
+
+    // Automatically focus the input field for immediate typing
+    setTimeout(() => input.focus(), 50);
+}
+
+/**
+ * Hides the label editing modal and cleans up the state.
+ */
+ function closeLabelEditModal() {
+    const modal = document.getElementById('labelEditModal');
+    modal.classList.add('hidden');
+    elementToEditInModal = null; // Clear the element being edited
+
+    // FIX: Forcibly reset any 'stuck' canvas states to fix the cursor issue.
+    forceResetCanvasState();
+}
+
+/**
+ * Saves the new text from the modal to the selected element.
+ */
+function saveLabelEdit() {
+    const input = document.getElementById('labelEditTextInput');
+    const newContent = input.value.trim();
+
+    if (elementToEditInModal && newContent) {
+        // Update the element's content
+        elementToEditInModal.content = newContent;
+
+        // Dynamically adjust the width of the label to fit the new text
+        if (elementToEditInModal.type === 'area_label') {
+            elementToEditInModal.areaData.areaText = newContent;
+            const linkedPolygon = AppState.drawnPolygons.find(p => p.id === elementToEditInModal.linkedPolygonId);
+            if (linkedPolygon) {
+                linkedPolygon.label = newContent;
+            }
+            AppState.emit('app:requestLegendUpdate');
+        } else {
+             // Adjust width for standard room labels
+            elementToEditInModal.width = Math.max(58, newContent.length * 8 + 8);
+        }
+
+        console.log(`Label updated to "${newContent}"`);
+
+        // Save the change to history and redraw the canvas
+        CanvasManager.saveAction();
+        CanvasManager.redraw();
+    }
+    
+    closeLabelEditModal();
+}
+
+
 function updateCustomCursor(e) {
     const customCursor = document.getElementById('customCursor');
     if (customCursor) {
@@ -730,37 +874,8 @@ function finishEditing() {
     CanvasManager.redraw();
 }
 
-function getElementAt(x, y) {
-    if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
-        return null;
-    }
-    
-    for (let i = AppState.placedElements.length - 1; i >= 0; i--) {
-        const element = AppState.placedElements[i];
-        
-        let isHit = (x >= element.x && x <= element.x + element.width && 
-                     y >= element.y && y <= element.y + element.height);
-
-        if (isEditMode && AppState.editSubMode === 'labels' && (element.type === 'room' || element.type === 'area_label')) {
-            const deleteSize = 20;
-            const deleteX = element.x + element.width + 2;
-            const deleteY = element.y - 2;
-            const centerX = deleteX + deleteSize/2;
-            const centerY = deleteY + deleteSize/2;
-            const distance = Math.sqrt((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY));
-            
-            if (distance <= deleteSize/2) {
-                deleteElement(element);
-                return null; 
-            }
-        }
-        
-        if (isHit) {
-            return element;
-        }
-    }
-    return null;
-}
+ // MODIFIED: This function is updated
+ 
 
 // MODIFIED: Simplified to remove on-canvas handle logic.
 function handleViewportMouseDown(e) {
@@ -888,6 +1003,56 @@ function handleViewportTouchMove(e) {
 }
 
 // MODIFIED: Logic now unified for click and touch
+ 
+
+ // REPLACE this function with the updated version below
+function getElementAt(x, y) {
+    if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
+        return null;
+    }
+    
+    for (let i = AppState.placedElements.length - 1; i >= 0; i--) {
+        const element = AppState.placedElements[i];
+        
+        let isHit = (x >= element.x && x <= element.x + element.width && 
+                     y >= element.y && y <= element.y + element.height);
+
+        if (isEditMode && AppState.editSubMode === 'labels' && (element.type === 'room' || element.type === 'area_label')) {
+            const iconSize = 24;
+            const padding = 6;
+            const elementCenterY = element.y + element.height / 2;
+
+            // Edit Icon Hit Box (Left of the label)
+            const editX = element.x - iconSize - padding;
+            const editY = elementCenterY - (iconSize / 2);
+            if (x >= editX && x <= editX + iconSize && y >= editY && y <= editY + iconSize) {
+                console.log('Edit icon clicked, opening modal for:', element.content);
+                openLabelEditModal(element); // Call the new modal function
+                return null; 
+            }
+
+            // Delete Icon Hit Box (Right of the label)
+            const deleteX = element.x + element.width + padding;
+            const deleteY = elementCenterY - (iconSize / 2);
+            const deleteCenterX = deleteX + iconSize/2;
+            const deleteCenterY = deleteY + iconSize/2;
+            const distance = Math.sqrt((x - deleteCenterX) * (x - deleteCenterX) + (y - deleteCenterY) * (y - deleteCenterY));
+            
+            if (distance <= iconSize/2) {
+                deleteElement(element);
+                return null; 
+            }
+        }
+        
+        // Return the element if it's being dragged, but not for initiating edits
+        if (isHit) {
+            return element;
+        }
+    }
+    return null;
+}
+
+// REPLACE this function with the updated version below
 function handleCanvasClick(e) {
     if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
         return;
@@ -901,59 +1066,47 @@ function handleCanvasClick(e) {
     } 
     
     if (isEditMode) {
+        // The getElementAt function now handles all label edit/delete actions,
+        // so we only need to handle icon editing here.
         const clickedElement = getElementAt(pos.x, pos.y);
         
         if (clickedElement && AppState.editSubMode === 'labels') {
             e.preventDefault();
             e.stopPropagation();
 
-            if (clickedElement.type === 'room' || clickedElement.type === 'area_label') {
-                hideIconEditControls();
-                startEditingElement(clickedElement);
-            } else if (clickedElement.type === 'icon') {
-                finishEditing(); 
+            if (clickedElement.type === 'icon') {
+                // This logic is for the other icons, not labels.
                 showIconEditControls(clickedElement);
             }
+            // IMPORTANT: The part that made labels editable on click is now removed.
+
         } else {
-            finishEditing();
-            hideIconEditControls();
+             // If clicking anywhere else, ensure any open editing panels are closed.
+             hideIconEditControls();
         }
     }
 }
 
-// MODIFIED: Logic now unified for click and touch
+// REPLACE this function with the updated version below
 function handleViewportTouchEnd(e) {
     if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
         return;
     }
 
+    // `getElementAt` now handles both delete and edit icon taps.
+    // We check for a touched element here primarily for icon editing.
     if (isEditMode && e.changedTouches.length > 0 && !isDragging) {
         const touch = e.changedTouches[0];
         const pos = getEventPos({changedTouches: [touch]});
         const clickedElement = getElementAt(pos.x, pos.y);
         
-        if (clickedElement) {
-             if (clickedElement.type === 'room' || clickedElement.type === 'area_label') {
-                const deleteSize = 20;
-                const deleteX = clickedElement.x + clickedElement.width + 2;
-                const deleteY = clickedElement.y - 2;
-                const centerX = deleteX + deleteSize/2;
-                const centerY = deleteY + deleteSize/2;
-                const distance = Math.sqrt((pos.x - centerX) * (pos.x - centerX) + (pos.y - centerY) * (pos.y - centerY));
-                
-                if (distance <= deleteSize/2) {
-                    deleteElement(clickedElement);
-                } else {
-                    startEditingElement(clickedElement);
-                }
-                e.preventDefault();
-                return;
-            } else if (clickedElement.type === 'icon') {
-                showIconEditControls(clickedElement);
-                e.preventDefault();
-                return;
-            }
+        if (clickedElement && clickedElement.type === 'icon') {
+            showIconEditControls(clickedElement);
+            e.preventDefault();
+            return;
         }
+        // IMPORTANT: The redundant logic for deleting or editing labels is removed
+        // because getElementAt() now correctly handles it for both touch and click.
     }
     
     if (!isEditMode && selectedElement && e.touches.length === 0 && !isDragging) {

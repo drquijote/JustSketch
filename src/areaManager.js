@@ -19,6 +19,14 @@ export class AreaManager {
     }
 
     // Replace the entire init function in areaManager.js with this:
+
+    // in areaManager.js
+
+// Add these two new functions inside the AreaManager class
+ 
+ 
+
+ 
     init() {
         console.log('AreaManager: Initialized and listening for events.');
         AppState.on('app:cycleClosed', (e) => this.handleCycleClosed(e));
@@ -47,7 +55,7 @@ export class AreaManager {
         viewport.addEventListener('mousemove', (e) => boundTouchMove(this.createTouchEvent(e)));
         viewport.addEventListener('mouseup', (e) => boundTouchEnd(this.createTouchEvent(e)));
     }
-
+ 
     // *** NEW: Ensure all existing polygons have draggable labels ***
     ensureAreaLabelsExist() {
         if (!AppState.drawnPolygons) return;

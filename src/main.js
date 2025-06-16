@@ -264,26 +264,31 @@ function switchToEditAreasMode() {
 
 // --- Standard Mode Switching Functions (Modified) ---
 
+// in main.js
 function switchToPhotosMode() {
-    console.log('Switching to photos mode from:', AppState.currentMode);
-    deactivateSketchListeners(); 
+    // DEBUG: Log the start of the mode switch
+    console.log('DEBUG: Attempting to switch to Photos Mode. Current mode is:', AppState.currentMode);
+
+    deactivateSketchListeners();
     AppState.currentMode = 'photos';
     AppState.editSubMode = null;
     resetAllModeButtons();
-    
-    // Activate the photos button
+
     const photosBtn = document.getElementById('photosBtn');
     if (photosBtn) {
         photosBtn.classList.add('active');
     }
-    
+
     const modeIndicator = document.getElementById('modeIndicator');
     modeIndicator.textContent = 'PHOTOS';
-    modeIndicator.className = 'mode-indicator photos-mode'; 
+    modeIndicator.className = 'mode-indicator photos-mode';
 
     AppState.emit('mode:changed', { mode: 'photos' });
     AppState.emit('mode:editToggled', { isEditMode: false });
     CanvasManager.redraw();
+
+    // DEBUG: Confirm the mode switch is complete
+    console.log('DEBUG: Mode switched. AppState.currentMode is now:', AppState.currentMode);
 }
 
 function switchToPlacementMode() {

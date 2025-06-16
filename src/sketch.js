@@ -66,18 +66,25 @@ function forceResetCanvasState() {
         canvas.style.cursor = 'default';
     }
 }
+
+
  function preloadImages() {
     console.log('Preloading UI images...');
     const imagesToLoad = {
-        'editIcon': 'public/edit.svg'
+        'editIcon': 'public/edit.svg',
+        'deleteIcon': 'public/delete.svg'
     };
 
     for (const key in imagesToLoad) {
         const img = new Image();
         img.src = imagesToLoad[key];
         img.onload = () => {
-            AppState.imageCache[imagesToLoad[key]] = img; // Use AppState.imageCache
+            AppState.imageCache[imagesToLoad[key]] = img;
             console.log(`Image '${key}' preloaded and cached from ${imagesToLoad[key]}.`);
+            
+            // --- THIS IS THE FIX ---
+            // Force a redraw of the canvas *after* the image has loaded.
+            CanvasManager.redraw(); 
         };
         img.onerror = () => {
             console.error(`Failed to load image: ${imagesToLoad[key]}`);

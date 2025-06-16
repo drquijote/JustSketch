@@ -276,17 +276,33 @@ constructor() {
  
 
 
- 
- handleCanvasTouchStart(e) {
-    // Check if we're in edit mode with areas submode
-    if (AppState.currentMode !== 'edit' || AppState.editSubMode !== 'areas') return false;
+// REPLACE this function
+handleEditModeToggle(event) {
+    this.isEditModeActive = event.detail.isEditMode && event.detail.subMode === 'areas';
+    console.log('AreaManager: Edit Areas mode is now', this.isEditModeActive ? 'ACTIVE' : 'INACTIVE');
+    
+    if (this.isEditModeActive) {
+        this.setupDirectionalPadListener();
+    } else {
+        this.removeDirectionalPadListener();
+        this.activeLineEdit = null; // Clear active line when exiting mode
+    }
+
+    if (!event.detail.isEditMode && this.isDraggingArea) {
+        this.endAreaDrag();
+    }
+}
+
+// REPLACE this function
+handleCanvasTouchStart(e) {
+    if (!this.isEditModeActive) return false;
 
     const touch = e.touches ? e.touches[0] : e;
     if (!touch) return;
 
     const pos = CanvasManager.screenToCanvas(touch.clientX, touch.clientY);
     
-    // Priority 1: Check for a click on a line's edit/delete icon (available in ANY edit submode)
+    // Priority 1: Check for a click on a line's edit/delete icon
     const iconClick = this.findClickedLineIcon(pos);
     if (iconClick) {
         if (iconClick.action === 'delete') {
@@ -297,9 +313,6 @@ constructor() {
         try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } catch (err) {}
         return true;
     }
-
-    // All the following actions are only available in 'areas' submode
-    // (Line icons, pencil clicks, and area dragging)
 
     // Priority 2: Check for a click on an Area Edit icon (for properties)
     const pencilHandled = this.handlePencilClick(pos.x, pos.y);
@@ -328,6 +341,8 @@ constructor() {
 }
 
 
+
+
 // In areaManager.js, replace the existing handleCanvasTouchMove function
 handleCanvasTouchMove(e) {
     const touch = e.touches ? e.touches[0] : e;
@@ -354,79 +369,49 @@ handleCanvasTouchMove(e) {
 }
 
 
-// REPLACE this function in areaManager.js
-handleEditModeToggle(event) {
-    this.isEditModeActive = event.detail.isEditMode && event.detail.subMode === 'areas';
-    console.log('AreaManager: Edit Areas mode is now', this.isEditModeActive ? 'ACTIVE' : 'INACTIVE');
-    
-    // Setup directional pad listener whenever in ANY edit mode
-    if (event.detail.isEditMode) {
-        this.setupDirectionalPadListener();
-    } else {
-        this.removeDirectionalPadListener();
-        this.activeLineEdit = null; // Clear active line when exiting edit mode
-    }
+// ADD these NEW functions inside the AreaManager class
 
-    if (!event.detail.isEditMode && this.isDraggingArea) {
-        this.endAreaDrag();
-    }
+/**
+ * Sets up listeners on the directional pad for moving an active line.
+ */
+setupDirectionalPadListener() {
+    console.log('AreaManager: Setting up directional pad listeners.');
+    const directionButtons = document.querySelectorAll('.dir-btn');
+    directionButtons.forEach(button => {
+        button.addEventListener('click', this.boundHandleLineMove);
+    });
 }
 
-// REPLACE this function in areaManager.js
-toggleActiveLineEdit(edgeInfo) {
-    // If the clicked line is already active, deactivate it
-    if (this.activeLineEdit && this.activeLineEdit.polygon.id === edgeInfo.polygon.id && this.activeLineEdit.edgeStartIndex === edgeInfo.edgeStartIndex) {
-        this.activeLineEdit = null;
-        console.log('Deactivated line editing.');
-    } else {
-        // Otherwise, make this line the active one
-        this.activeLineEdit = edgeInfo;
-        console.log('Activated line for editing:', edgeInfo);
-        // Ensure directional pad is set up when a line is selected
-        this.setupDirectionalPadListener();
-    }
-    CanvasManager.redraw();
+/**
+ * Removes listeners from the directional pad.
+ */
+removeDirectionalPadListener() {
+    console.log('AreaManager: Removing directional pad listeners.');
+    const directionButtons = document.querySelectorAll('.dir-btn');
+    directionButtons.forEach(button => {
+        button.removeEventListener('click', this.boundHandleLineMove);
+    });
 }
 
-// REPLACE this function in areaManager.js
+/**
+ * Handles clicks from the directional pad to move the active line.
+ * @param {Event} e - The click event from the button.
+ */
 handleLineMove(e) {
-    if (!this.activeLineEdit) {
-        console.log('No active line to move');
-        return; // Only act if a line is selected
-    }
+    if (!this.activeLineEdit) return; // Only act if a line is selected
 
     e.preventDefault();
     e.stopPropagation();
 
-    const button = e.currentTarget; // Use currentTarget instead of target
+    const button = e.target;
     const moveAmount = 0.5 * this.PIXELS_PER_FOOT; // Move by 1/2 foot
     let dx = 0, dy = 0;
 
-    // Check for direction classes
-    if (button.classList.contains('right')) { 
-        dx = moveAmount; 
-    } else if (button.classList.contains('left')) { 
-        dx = -moveAmount; 
-    } else if (button.classList.contains('up')) { 
-        dy = -moveAmount; 
-    } else if (button.classList.contains('down')) { 
-        dy = moveAmount; 
-    } else if (button.classList.contains('up-right')) { 
-        dx = moveAmount; 
-        dy = -moveAmount; 
-    } else if (button.classList.contains('up-left')) { 
-        dx = -moveAmount; 
-        dy = -moveAmount; 
-    } else if (button.classList.contains('down-right')) { 
-        dx = moveAmount; 
-        dy = moveAmount; 
-    } else if (button.classList.contains('down-left')) { 
-        dx = -moveAmount; 
-        dy = moveAmount; 
-    } else { 
-        console.log('Not a direction button');
-        return; // Not a direction button
-    }
+    if (button.classList.contains('right')) { dx = moveAmount; } 
+    else if (button.classList.contains('left')) { dx = -moveAmount; } 
+    else if (button.classList.contains('up')) { dy = -moveAmount; } 
+    else if (button.classList.contains('down')) { dy = moveAmount; }
+    else { return; } // Not a cardinal direction button
 
     // Get the vertices of the active line
     const poly = this.activeLineEdit.polygon;
@@ -441,8 +426,7 @@ handleLineMove(e) {
     // This ensures connected polygons are updated together
     AppState.drawnPolygons.forEach(p => {
         p.path.forEach(v => {
-            if ((Math.abs(v.x - vertex1.x) < 0.1 && Math.abs(v.y - vertex1.y) < 0.1) || 
-                (Math.abs(v.x - vertex2.x) < 0.1 && Math.abs(v.y - vertex2.y) < 0.1)) {
+            if ((v.x === vertex1.x && v.y === vertex1.y) || (v.x === vertex2.x && v.y === vertex2.y)) {
                 v.x += dx;
                 v.y += dy;
             }
@@ -456,36 +440,6 @@ handleLineMove(e) {
     CanvasManager.redraw();
 }
 
-// REPLACE this function in areaManager.js
-setupDirectionalPadListener() {
-    console.log('AreaManager: Setting up directional pad listeners.');
-    const directionButtons = document.querySelectorAll('.dir-btn');
-    
-    // Remove existing listeners first to avoid duplicates
-    directionButtons.forEach(button => {
-        button.removeEventListener('click', this.boundHandleLineMove);
-    });
-    
-    // Add fresh listeners
-    directionButtons.forEach(button => {
-        button.addEventListener('click', this.boundHandleLineMove);
-    });
-}
- 
-
-/**
- * Removes listeners from the directional pad.
- */
-removeDirectionalPadListener() {
-    console.log('AreaManager: Removing directional pad listeners.');
-    const directionButtons = document.querySelectorAll('.dir-btn');
-    directionButtons.forEach(button => {
-        button.removeEventListener('click', this.boundHandleLineMove);
-    });
-}
-
- 
-
 /**
  * Recalculates the area and centroid of a given polygon.
  * @param {object} polygon - The polygon to update.
@@ -497,7 +451,22 @@ recalculatePolygonMetrics(polygon) {
 }
 
 
- 
+/**
+ * Toggles which line is active for editing.
+ * @param {object} edgeInfo - Information about the clicked edge.
+ */
+toggleActiveLineEdit(edgeInfo) {
+    // If the clicked line is already active, deactivate it
+    if (this.activeLineEdit && this.activeLineEdit.polygon.id === edgeInfo.polygon.id && this.activeLineEdit.edgeStartIndex === edgeInfo.edgeStartIndex) {
+        this.activeLineEdit = null;
+        console.log('Deactivated line editing.');
+    } else {
+        // Otherwise, make this line the active one
+        this.activeLineEdit = edgeInfo;
+        console.log('Activated line for editing:', edgeInfo);
+    }
+    CanvasManager.redraw();
+}
 
 /**
  * Finds which line icon (edit/delete) was clicked.
@@ -1303,7 +1272,9 @@ deleteCurrentCycle() {
     }
 }
 
- drawCompletedAreas() {
+// REPLACE this function
+// This is the main drawing function that now renders the new line icons.
+drawCompletedAreas() {
     const { ctx } = AppState;
     if (!ctx || AppState.drawnPolygons.length === 0) return;
 
@@ -1333,9 +1304,9 @@ deleteCurrentCycle() {
         ctx.fill();
         ctx.stroke();
 
-        // --- FIXED: Show line icons ONLY in edit areas mode ---
-        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
-            // Draw the area edit icon in the center
+        // --- NEW DRAWING LOGIC ---
+        if (this.isEditModeActive) {
+            // Draw the main area properties icon in the center
             this.drawAreaEditIcon(ctx, poly);
 
             const editIcon = AppState.imageCache['public/edit.svg'];
@@ -1404,6 +1375,7 @@ deleteCurrentCycle() {
         ctx.restore();
     });
 }
+
     // *** HELPER FUNCTIONS FOR EDGE LABELS ***
 
     findAllSharedEdges() {

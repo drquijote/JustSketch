@@ -56,15 +56,19 @@ window.toggleLegend = toggleLegend;
 window.switchToPlacementMode = switchToPlacementMode;
 window.switchToDrawingMode = switchToDrawingMode;
 
+// Create global saveManager instance for import/export
+let globalSaveManager;
+
 // --- Main Application Setup ---
 document.addEventListener('DOMContentLoaded', () => {
     const splitterManager = new SplitterManager();
     splitterManager.init();
 
-    const saveManager = new SaveManager();
-    saveManager.init();
+    globalSaveManager = new SaveManager();
+    globalSaveManager.init();
     const photoManager = new PhotoManager();
     photoManager.init();  
+    window.photoManager = photoManager; // ADD THIS LINE
     
     console.log("App loaded - initializing modular architecture");
 
@@ -86,7 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSketchModule();
 
     // Setup all UI event handlers
-    initializeAppControls(previewManager, saveManager);
+    initializeAppControls(previewManager, globalSaveManager);
     setupKeyboardShortcuts();
 
     // Initial render and save
@@ -94,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
     CanvasManager.saveAction();
 
     // Check if the URL is requesting a specific sketch to be loaded
-    saveManager.loadSketchFromURL();
+    globalSaveManager.loadSketchFromURL();
 
     console.log("App initialization complete");
 });
@@ -158,6 +162,17 @@ function initializeAppControls(previewManager, saveManager) {
             }
         });
     }
+
+
+function exportSketchToJSON() {
+    // Use the global SaveManager instance
+    globalSaveManager.exportSketchToJSON();
+}
+
+function importSketchFromJSON(file) {
+    // FIXED: Use the global SaveManager instance that handles photos
+    globalSaveManager.importSketchFromJSON(file);
+}
 
     // --- Export and Import Handlers ---
     const exportBtn = document.querySelector('.export-dropdown > button');
@@ -372,41 +387,6 @@ function setupKeyboardShortcuts() {
     });
 }
 
-function exportSketchToJSON() {
-    const sketchData = {
-        version: '1.0',
-        createdAt: new Date().toISOString(),
-        data: AppState.getStateSnapshot()
-    };
-    const jsonString = JSON.stringify(sketchData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `sketch-data-${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-}
-
-function importSketchFromJSON(file) {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        try {
-            const importedData = JSON.parse(event.target.result);
-            if (!importedData.data || !importedData.data.drawnPolygons) {
-                throw new Error('Invalid or corrupted sketch file.');
-            }
-            AppState.restoreStateSnapshot(importedData.data);
-            HelperPointManager.updateHelperPoints();
-            CanvasManager.updateViewportTransform();
-            CanvasManager.redraw();
-            CanvasManager.saveAction();
-            alert('Sketch imported successfully!');
-        } catch (error) {
-            console.error('Error during import:', error);
-            alert('Failed to import sketch. The file may be invalid or corrupted.');
-        }
-    };
-    reader.onerror = () => alert('An error occurred while trying to read the file.');
-    reader.readAsText(file);
-}
+ 
+ 
+// REMOVED: Old duplicate import function that didn't handle photos

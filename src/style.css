@@ -923,12 +923,7 @@ body {
     background-color: #8e44ad; /* A distinct purple color */
 }
 
-/* Add this to force the Photos button to match the others */
-#photosBtn {
-  /* You may need to adjust this color to perfectly match your theme */
-  background-color: #A8D8F0; 
-  border: 1px solid #a9c7f5;
-}
+ 
 
 /* === Add to the end of src/style.css === */
 

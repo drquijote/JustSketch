@@ -1,12 +1,11 @@
-// src/photos.js - REVISED IMPLEMENTATION
+// src/photos.js - UPDATED FOR JSON STORAGE AT 300 DPI
 
 import { AppState } from './state.js';
-import { db } from './db.js';
 import { CanvasManager } from './canvas.js';
 
 /**
- * Manages all functionality related to photo mode, including attaching
- * photos to canvas elements and saving them to the database.
+ * Updated PhotoManager that stores photos directly in the app state
+ * for JSON export compatibility, with 300 DPI optimization
  */
 export class PhotoManager {
     constructor() {
@@ -14,6 +13,17 @@ export class PhotoManager {
         this.cameraInput = this.createFileInput(true);
         this.libraryInput = this.createFileInput(false);
         this.activeElement = null;
+        
+        // 300 DPI sizing for mobile-friendly dimensions
+        // Using 7" x 7" maximum (square) to handle both portrait and landscape orientations
+        this.MAX_300DPI_SIZE = 2100;   // 7 inches * 300 DPI = 2100 pixels
+        this.THUMBNAIL_SIZE = 80;      // Keep thumbnails small for UI
+        this.JPEG_QUALITY = 0.75;     // Good balance of quality vs size
+        
+        // Alternative common mobile photo sizes at 300 DPI:
+        // 5" x 7" = 1500 x 2100 pixels
+        // 4" x 6" = 1200 x 1800 pixels  
+        // 6" x 8" = 1800 x 2400 pixels
     }
 
     createFileInput(useCamera) {
@@ -29,7 +39,12 @@ export class PhotoManager {
         return input;
     }
 
-    init() {
+init() {
+        // Initialize photos array in AppState if it doesn't exist
+        if (!AppState.photos) {
+            AppState.photos = [];
+        }
+
         AppState.on('mode:changed', (e) => {
             console.log(`DEBUG: PhotoManager detected "mode:changed" event. New mode: "${e.detail.mode}"`);
 
@@ -39,7 +54,29 @@ export class PhotoManager {
                 this.deactivate();
             }
         });
-        console.log('PhotoManager initialized.');
+
+        // CRITICAL FIX: Listen for photo import events
+        AppState.on('photos:imported', (e) => {
+            console.log('🔄 PhotoManager: Received photos:imported event', e.detail);
+            const { photoCount, photosByElement } = e.detail;
+            
+            // Show a helpful message about imported photos
+            console.log(`📸 ${photoCount} photos were imported across ${Object.keys(photosByElement).length} elements`);
+            
+            // Log which elements have photos for debugging
+            Object.keys(photosByElement).forEach(elementId => {
+                const count = photosByElement[elementId].length;
+                console.log(`   Element ${elementId}: ${count} photo(s)`);
+            });
+            
+            // If we're currently in photos mode, refresh the display
+            if (AppState.currentMode === 'photos' && this.activeElement) {
+                console.log('🔄 Refreshing photo display for current active element...');
+                this.loadAndDisplayThumbnails();
+            }
+        });
+        
+        console.log('PhotoManager initialized with JSON storage.');
     }
 
     activate() {
@@ -81,7 +118,6 @@ export class PhotoManager {
             const element = AppState.placedElements[i];
             let isHit = false;
 
-            // *** THIS IS THE CRITICAL FIX ***
             // Check element type and use the correct boundary calculation
             if (element.type === 'area_label') {
                 // For area_labels, x/y is the CENTER, so we need to check bounds differently
@@ -181,7 +217,6 @@ export class PhotoManager {
         }
         
         console.log('DEBUG: Active element:', this.activeElement);
-        console.log('DEBUG: Current sketch ID:', AppState.currentSketchId);
         
         try {
             console.log('DEBUG: Starting image processing...');
@@ -191,9 +226,9 @@ export class PhotoManager {
                 thumbnail: photoData.thumbnailData.length
             });
             
-            console.log('DEBUG: Starting database save...');
-            await this.savePhotoToDb(photoData);
-            console.log('DEBUG: Database save completed successfully!');
+            console.log('DEBUG: Saving photo to AppState...');
+            this.savePhotoToAppState(photoData);
+            console.log('DEBUG: Photo save completed successfully!');
             
         } catch (error) {
             console.error('%cDEBUG: ERROR during upload process:', 'color: red; font-weight: bold;', error);
@@ -217,12 +252,12 @@ export class PhotoManager {
                     console.log('DEBUG: Image loaded successfully, dimensions:', img.width, 'x', img.height);
                     
                     try {
-                        console.log('DEBUG: Creating full-size canvas (max 1024x1024)...');
-                        const fullSizeData = this.resizeCanvas(img, 1024, 1024);
-                        console.log('DEBUG: Full-size canvas created, data length:', fullSizeData.length);
+                        console.log(`DEBUG: Creating mobile-optimized canvas (max ${this.MAX_300DPI_SIZE}x${this.MAX_300DPI_SIZE})...`);
+                        const fullSizeData = this.resizeToOptimalSize(img, this.MAX_300DPI_SIZE, this.MAX_300DPI_SIZE);
+                        console.log('DEBUG: Mobile-optimized canvas created, data length:', fullSizeData.length);
                         
-                        console.log('DEBUG: Creating thumbnail canvas (80x80)...');
-                        const thumbnailData = this.resizeCanvas(img, 80, 80);
+                        console.log(`DEBUG: Creating thumbnail canvas (${this.THUMBNAIL_SIZE}x${this.THUMBNAIL_SIZE})...`);
+                        const thumbnailData = this.resizeToOptimalSize(img, this.THUMBNAIL_SIZE, this.THUMBNAIL_SIZE);
                         console.log('DEBUG: Thumbnail canvas created, data length:', thumbnailData.length);
                         
                         resolve({ fullSizeData, thumbnailData });
@@ -245,101 +280,100 @@ export class PhotoManager {
         });
     }
     
-    resizeCanvas(img, maxWidth, maxHeight) {
-        console.log(`DEBUG: resizeCanvas() called - input: ${img.width}x${img.height}, max: ${maxWidth}x${maxHeight}`);
+    /**
+     * Resizes image optimally for 300 DPI mobile photos while maintaining aspect ratio
+     * Target: 7"x7" maximum (2100x2100 pixels) to handle mobile landscape/portrait
+     */
+    resizeToOptimalSize(img, maxWidth, maxHeight) {
+        console.log(`DEBUG: resizeToOptimalSize() - input: ${img.width}x${img.height}, max: ${maxWidth}x${maxHeight}`);
         
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
+        
+        // Calculate optimal dimensions while maintaining aspect ratio
         let width = img.width;
         let height = img.height;
-
-        if (width > height) {
-            if (width > maxWidth) {
-                height *= maxWidth / width;
-                width = maxWidth;
-            }
-        } else {
-            if (height > maxHeight) {
-                width *= maxHeight / height;
-                height = maxHeight;
-            }
-        }
         
-        console.log(`DEBUG: Calculated output dimensions: ${width}x${height}`);
+        // Scale down if image is larger than maximum dimensions
+        const widthRatio = maxWidth / width;
+        const heightRatio = maxHeight / height;
+        const scaleRatio = Math.min(widthRatio, heightRatio, 1); // Never scale up
         
+        width = Math.floor(width * scaleRatio);
+        height = Math.floor(height * scaleRatio);
+        
+        // Log the resulting print size at 300 DPI
+        const printWidthInches = (width / 300).toFixed(1);
+        const printHeightInches = (height / 300).toFixed(1);
+        console.log(`DEBUG: Calculated dimensions: ${width}x${height} (${printWidthInches}"x${printHeightInches}" at 300 DPI, scale: ${scaleRatio.toFixed(3)})`);
+        
+        // Set canvas size to exact calculated dimensions
         canvas.width = width;
         canvas.height = height;
+        
+        // Use high-quality rendering settings
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        
+        // Draw the image
         ctx.drawImage(img, 0, 0, width, height);
         
-        const dataURL = canvas.toDataURL('image/jpeg', 0.85);
-        console.log(`DEBUG: Canvas converted to data URL, length: ${dataURL.length}`);
+        // Convert to JPEG with optimized quality
+        const dataURL = canvas.toDataURL('image/jpeg', this.JPEG_QUALITY);
+        console.log(`DEBUG: Canvas converted to JPEG (quality: ${this.JPEG_QUALITY}), data length: ${dataURL.length}`);
         
         return dataURL;
     }
 
-    async savePhotoToDb(photoData) {
-        console.log('DEBUG: savePhotoToDb() called');
+    /**
+     * Save photo directly to AppState for JSON export compatibility
+     */
+    savePhotoToAppState(photoData) {
+        console.log('DEBUG: savePhotoToAppState() called');
         
         if (!this.activeElement) {
             console.log('%cDEBUG: ERROR - No active element for photo save!', 'color: red;');
             return;
         }
         
-        if (!AppState.currentSketchId) {
-            console.log('%cDEBUG: ERROR - No current sketch ID for photo save!', 'color: red;');
-            alert('Please save your sketch first before adding photos.');
-            return;
-        }
+        console.log('DEBUG: Creating new photo entry for AppState...');
+
+        const newPhoto = {
+            elementId: this.activeElement.id,
+            timestamp: Date.now(),
+            imageData: photoData.fullSizeData,
+            thumbnailData: photoData.thumbnailData,
+            // Store metadata for reference
+            metadata: {
+                addedDate: new Date().toISOString(),
+                elementType: this.activeElement.type,
+                elementContent: this.activeElement.content || this.activeElement.alt
+            }
+        };
         
-        console.log('DEBUG: Attempting to get sketch from DB, ID:', AppState.currentSketchId);
+        console.log('DEBUG: Created new photo object:', {
+            elementId: newPhoto.elementId,
+            timestamp: newPhoto.timestamp,
+            imageDataLength: newPhoto.imageData.length,
+            thumbnailDataLength: newPhoto.thumbnailData.length,
+            metadata: newPhoto.metadata
+        });
 
-        try {
-            const sketch = await db.sketches.get(AppState.currentSketchId);
-            console.log('DEBUG: Retrieved sketch from DB:', sketch ? 'SUCCESS' : 'NOT FOUND');
-            
-            if (!sketch) {
-                console.log('%cDEBUG: ERROR - Sketch not found in database!', 'color: red;');
-                return;
-            }
-
-            if (!sketch.photos) {
-                console.log('DEBUG: Initializing photos array for sketch');
-                sketch.photos = [];
-            } else {
-                console.log('DEBUG: Existing photos count:', sketch.photos.length);
-            }
-            
-            const newPhoto = {
-                elementId: this.activeElement.id,
-                timestamp: Date.now(),
-                imageData: photoData.fullSizeData,
-                thumbnailData: photoData.thumbnailData
-            };
-            
-            console.log('DEBUG: Created new photo object:', {
-                elementId: newPhoto.elementId,
-                timestamp: newPhoto.timestamp,
-                imageDataLength: newPhoto.imageData.length,
-                thumbnailDataLength: newPhoto.thumbnailData.length
-            });
-
-            sketch.photos.push(newPhoto);
-            console.log('DEBUG: Added photo to sketch, new total count:', sketch.photos.length);
-            
-            console.log('DEBUG: Saving updated sketch to database...');
-            await db.sketches.put(sketch);
-            console.log('DEBUG: Sketch saved to database successfully!');
-
-            console.log('DEBUG: Calling loadAndDisplayThumbnails()...');
-            this.loadAndDisplayThumbnails();
-
-        } catch (error) {
-            console.error('%cDEBUG: ERROR in savePhotoToDb:', 'color: red; font-weight: bold;', error);
-            alert('Failed to save photo to database: ' + error.message);
-        }
+        // Add photo to AppState photos array
+        AppState.photos.push(newPhoto);
+        console.log('DEBUG: Added photo to AppState, total count:', AppState.photos.length);
+        
+        // Save the action for undo/redo functionality
+        CanvasManager.saveAction();
+        
+        // Update thumbnails display
+        console.log('DEBUG: Calling loadAndDisplayThumbnails()...');
+        this.loadAndDisplayThumbnails();
+        
+        console.log('✅ Photo successfully saved to AppState!');
     }
 
-    async loadAndDisplayThumbnails() {
+    loadAndDisplayThumbnails() {
         console.log('DEBUG: loadAndDisplayThumbnails() called');
         
         const container = document.getElementById('thumbnailContainer');
@@ -354,92 +388,93 @@ export class PhotoManager {
             return;
         }
         
-        if (!AppState.currentSketchId) {
-            console.log('DEBUG: No current sketch ID, clearing container');
-            container.innerHTML = '';
-            return;
-        }
-        
         console.log('DEBUG: Clearing existing thumbnails...');
         container.innerHTML = '';
 
-        try {
-            console.log('DEBUG: Getting sketch from DB for thumbnails...');
-            const sketch = await db.sketches.get(AppState.currentSketchId);
-            
-            if (!sketch) {
-                console.log('DEBUG: No sketch found for thumbnails');
-                return;
-            }
-            
-            if (!sketch.photos) {
-                console.log('DEBUG: No photos array in sketch');
-                return;
-            }
-            
-            console.log('DEBUG: Total photos in sketch:', sketch.photos.length);
-            
-            const elementPhotos = sketch.photos.filter(p => p.elementId === this.activeElement.id);
-            console.log('DEBUG: Photos for active element:', elementPhotos.length);
+        // Filter photos for the current active element
+        const elementPhotos = AppState.photos.filter(p => p.elementId === this.activeElement.id);
+        console.log('DEBUG: Photos for active element:', elementPhotos.length);
 
-            if (elementPhotos.length === 0) {
-                console.log('DEBUG: No photos found for active element');
-                return;
-            }
+        if (elementPhotos.length === 0) {
+            console.log('DEBUG: No photos found for active element');
+            return;
+        }
 
-            elementPhotos.forEach((photo, index) => {
-                console.log(`DEBUG: Creating thumbnail ${index + 1}/${elementPhotos.length}`);
-                
-                const thumbWrapper = document.createElement('div');
-                thumbWrapper.className = 'photo-thumbnail-wrapper';
-                
-                const img = document.createElement('img');
-                img.src = photo.thumbnailData;
-                img.onload = () => {
-                    console.log(`DEBUG: Thumbnail ${index + 1} loaded successfully`);
-                };
-                img.onerror = () => {
-                    console.log(`%cDEBUG: ERROR loading thumbnail ${index + 1}`, 'color: red;');
-                };
-                
-                const deleteBtn = document.createElement('div');
-                deleteBtn.className = 'thumbnail-delete-btn';
-                deleteBtn.innerHTML = '&times;';
-                deleteBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    if (confirm('Are you sure you want to delete this photo?')) {
-                        this.deletePhoto(photo.timestamp);
-                    }
-                };
-                
-                thumbWrapper.appendChild(img);
-                thumbWrapper.appendChild(deleteBtn);
-                container.appendChild(thumbWrapper);
-                
-                console.log(`DEBUG: Thumbnail ${index + 1} added to container`);
-            });
+        elementPhotos.forEach((photo, index) => {
+            console.log(`DEBUG: Creating thumbnail ${index + 1}/${elementPhotos.length}`);
             
-            console.log('DEBUG: All thumbnails processed and added to UI');
+            const thumbWrapper = document.createElement('div');
+            thumbWrapper.className = 'photo-thumbnail-wrapper';
             
-        } catch (error) {
-            console.error('%cDEBUG: ERROR in loadAndDisplayThumbnails:', 'color: red; font-weight: bold;', error);
+            const img = document.createElement('img');
+            img.src = photo.thumbnailData;
+            img.onload = () => {
+                console.log(`DEBUG: Thumbnail ${index + 1} loaded successfully`);
+            };
+            img.onerror = () => {
+                console.log(`%cDEBUG: ERROR loading thumbnail ${index + 1}`, 'color: red;');
+            };
+            
+            const deleteBtn = document.createElement('div');
+            deleteBtn.className = 'thumbnail-delete-btn';
+            deleteBtn.innerHTML = '&times;';
+            deleteBtn.onclick = (e) => {
+                e.stopPropagation();
+                if (confirm('Are you sure you want to delete this photo?')) {
+                    this.deletePhoto(photo.timestamp);
+                }
+            };
+            
+            thumbWrapper.appendChild(img);
+            thumbWrapper.appendChild(deleteBtn);
+            container.appendChild(thumbWrapper);
+            
+            console.log(`DEBUG: Thumbnail ${index + 1} added to container`);
+        });
+        
+        console.log('DEBUG: All thumbnails processed and added to UI');
+    }
+
+    deletePhoto(timestamp) {
+        console.log('DEBUG: Deleting photo with timestamp:', timestamp);
+        
+        // Find and remove the photo from AppState
+        const photoIndex = AppState.photos.findIndex(p => p.timestamp === timestamp);
+        if (photoIndex > -1) {
+            AppState.photos.splice(photoIndex, 1);
+            console.log('Photo deleted successfully from AppState.');
+            
+            // Save the action for undo/redo
+            CanvasManager.saveAction();
+            
+            // Refresh thumbnails display
+            this.loadAndDisplayThumbnails();
+        } else {
+            console.error('Photo not found for deletion.');
         }
     }
 
-    async deletePhoto(timestamp) {
-        if (!AppState.currentSketchId) return;
-        
-        try {
-            const sketch = await db.sketches.get(AppState.currentSketchId);
-            if (!sketch || !sketch.photos) return;
-            
-            sketch.photos = sketch.photos.filter(p => p.timestamp !== timestamp);
-            await db.sketches.put(sketch);
+    /**
+     * Get all photos for a specific element (useful for export/display)
+     */
+    getPhotosForElement(elementId) {
+        return AppState.photos.filter(photo => photo.elementId === elementId);
+    }
 
-            console.log('Photo deleted successfully.');
-            this.loadAndDisplayThumbnails();
-        } catch (error) {
-            console.error('Failed to delete photo:', error);
-        }
+    /**
+     * Get total number of photos in the current sketch
+     */
+    getTotalPhotoCount() {
+        return AppState.photos.length;
+    }
+
+    /**
+     * Get approximate total size of all photos in bytes (for export size estimation)
+     */
+    getTotalPhotoSize() {
+        return AppState.photos.reduce((total, photo) => {
+            // Rough estimation: base64 data URL length correlates to byte size
+            return total + (photo.imageData.length * 0.75) + (photo.thumbnailData.length * 0.75);
+        }, 0);
     }
 }

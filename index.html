@@ -216,8 +216,8 @@
             displaySavedSketches();
         });
         
-        /**
-         * REFACTORED: Finds a sketch in IndexedDB and triggers its download as a JSON file.
+/**
+         * UPDATED: Export function using shared utility for consistency
          * @param {number} sketchId The ID of the sketch to export.
          * @param {string} sketchName The name of the sketch, used for the filename.
          */
@@ -230,19 +230,69 @@
                     return;
                 }
 
-                const fileData = {
-                    version: '1.0',
-                    createdAt: sketchEntry.savedAt,
-                    data: sketchEntry.data
-                };
-
-                const fileName = `${sketchName}.json`;
-                triggerFileDownload(fileData, fileName);
+                // Try to use shared export utility
+                try {
+                    const { ExportUtils } = await import('./src/exportUtils.js');
+                    ExportUtils.exportSavedSketch(sketchEntry, sketchName);
+                } catch (importError) {
+                    console.warn('Could not load shared export utility, using fallback:', importError);
+                    // Fallback to standalone logic
+                    fallbackExportSketch(sketchEntry, sketchName);
+                }
 
             } catch (error) {
                 console.error("Failed to export sketch:", error);
                 alert("An error occurred while preparing the sketch for download.");
             }
+        }
+
+        /**
+         * Fallback export function (matches the shared utility logic)
+         * @private
+         */
+        function fallbackExportSketch(sketchEntry, sketchName) {
+            // Check if the sketch data already includes photos
+            const hasPhotos = sketchEntry.data.photos && sketchEntry.data.photos.length > 0;
+            const dataVersion = sketchEntry.data.metadata?.exportVersion || (hasPhotos ? '2.0' : '1.0');
+
+            let fileData;
+            
+            if (dataVersion === '2.0' || hasPhotos) {
+                // Version 2.0 format with photos
+                fileData = {
+                    version: '2.0',
+                    createdAt: sketchEntry.savedAt,
+                    application: 'Floor Plan Sketcher',
+                    data: sketchEntry.data,
+                    metadata: {
+                        name: sketchName,
+                        photoCount: sketchEntry.data.photos ? sketchEntry.data.photos.length : 0,
+                        totalPhotoSizeKB: sketchEntry.metadata?.totalPhotoSizeKB || 0,
+                        exportFormat: 'JSON with embedded photos'
+                    }
+                };
+                
+                console.log(`Exporting saved sketch "${sketchName}" as version 2.0 with ${fileData.metadata.photoCount} photos`);
+            } else {
+                // Legacy version 1.0 format (backward compatibility)
+                fileData = {
+                    version: '1.0',
+                    createdAt: sketchEntry.savedAt,
+                    data: sketchEntry.data
+                };
+                
+                console.log(`Exporting saved sketch "${sketchName}" as legacy version 1.0 (no photos)`);
+            }
+
+            const fileName = `${sketchName.replace(/[^a-z0-9]/gi, '_')}-${Date.now()}.json`;
+            triggerFileDownload(fileData, fileName);
+
+            // Show export info
+            const photoInfo = fileData.metadata?.photoCount > 0 
+                ? ` (includes ${fileData.metadata.photoCount} photos)`
+                : '';
+            
+            console.log(`✅ Saved sketch exported successfully${photoInfo}`);
         }
 
         /**

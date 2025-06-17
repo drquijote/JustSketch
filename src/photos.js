@@ -84,6 +84,12 @@ init() {
 
     activate() {
     console.log('Activating Photos Mode.');
+    // ---- THIS IS THE FIX ----
+    // First, sync the states of helper buttons from any existing photos.
+    // This ensures they are grayed out correctly upon entering photo mode.
+    this._syncHelperButtonStates();
+    // ---- END FIX ----
+
     this.boundHandleCanvasClick = (e) => this.handleCanvasClick(e);
     
     // Add click listener to canvas, not viewport, to avoid interfering with panning
@@ -340,6 +346,30 @@ async handleFileSelected(event) {
     
     // Clear the input so the same file can be selected again
     event.target.value = '';
+}
+
+
+// src/photos.js
+
+_syncHelperButtonStates() {
+    console.log('Syncing helper button states from existing photos...');
+    if (!AppState.photos || AppState.photos.length === 0) {
+        console.log('No photos in state to sync.');
+        return;
+    }
+
+    let syncedCount = 0;
+    // Go through every photo in the application state
+    AppState.photos.forEach(photo => {
+        // A photo is from a helper button if it has both an elementId and a pictureType
+        if (photo.elementId && photo.pictureType) {
+            // Use the existing function to mark this button's photo as 'taken'
+            photoHelperButtons.markPhotoTaken(photo.elementId, photo.pictureType);
+            syncedCount++;
+        }
+    });
+
+    console.log(`Sync complete. Marked ${syncedCount} helper buttons as 'taken'.`);
 }
     
     processImage(file) {

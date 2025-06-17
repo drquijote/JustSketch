@@ -1,6 +1,7 @@
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
 import { AreaHelpers } from './helpers.js';
+import { photoHelperButtons } from './photoHelperButtons.js';
 
 export class AreaManager {
     // REPLACE the constructor
@@ -60,6 +61,15 @@ export class AreaManager {
         viewport.addEventListener('mousedown', (e) => boundTouchStart(this.createTouchEvent(e)));
         viewport.addEventListener('mousemove', (e) => boundTouchMove(this.createTouchEvent(e)));
         viewport.addEventListener('mouseup', (e) => boundTouchEnd(this.createTouchEvent(e)));
+        AppState.on('mode:changed', (e) => {
+            if (e.detail.mode === 'photos') {
+                photoHelperButtons.initializePhotoHelpers();
+            } else {
+                photoHelperButtons.clearAllHelperButtons();
+            }
+});
+
+        
     }
  
     // *** NEW: Ensure all existing polygons have draggable labels ***

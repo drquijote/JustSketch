@@ -941,18 +941,19 @@ function handleViewportMouseDown(e) {
     const pos = getEventPos(e);
     const elementAtPoint = getElementAt(pos.x, pos.y);
 
-    if (elementAtPoint && !editingIcon) {
-        if (AppState.currentMode === 'placement' || AppState.editSubMode === 'labels') {
-             isDragging = true;
-             draggedElement = elementAtPoint;
-             dragOffset.x = pos.x - draggedElement.x;
-             dragOffset.y = pos.y - draggedElement.y;
-             canvas.style.cursor = 'grabbing';
-             return;
-        }
-    } 
+    // Allow dragging elements in placement and edit labels modes
+    if (elementAtPoint && !editingIcon && (AppState.currentMode === 'placement' || AppState.editSubMode === 'labels')) {
+        isDragging = true;
+        draggedElement = elementAtPoint;
+        dragOffset.x = pos.x - draggedElement.x;
+        dragOffset.y = pos.y - draggedElement.y;
+        canvas.style.cursor = 'grabbing';
+        return;
+    }
     
-    if (!selectedElement && !editingIcon && !isDragging) {
+    // Enable panning in ALL modes including photos mode
+    // Remove the restriction that prevented panning when selectedElement exists
+    if (!editingIcon && !isDragging) {
         isPanning = true;
         lastPanPoint = { x: e.clientX, y: e.clientY };
         canvas.style.cursor = 'grabbing';
@@ -998,33 +999,38 @@ function handleViewportMouseUp(e) {
 }
 
 function handleViewportTouchStart(e) {
-    if (e.touches.length === 1) {
-        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
-            return;
-        }
-        const pos = getEventPos(e);
+    if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
+        return;
+    }
+
+    const touches = e.touches;
+    
+    if (touches.length === 1) {
+        const touch = touches[0];
+        const pos = getEventPos({touches: [touch]});
         const elementAtPoint = getElementAt(pos.x, pos.y);
         
-        if (elementAtPoint && !editingIcon) {
-            if (AppState.currentMode === 'placement' || AppState.editSubMode === 'labels') {
-                isDragging = true;
-                draggedElement = elementAtPoint;
-                dragOffset.x = pos.x - draggedElement.x;
-                dragOffset.y = pos.y - draggedElement.y;
-                e.preventDefault();
-            }
+        // Allow dragging elements in placement and edit labels modes
+        if (elementAtPoint && !editingIcon && (AppState.currentMode === 'placement' || AppState.editSubMode === 'labels')) {
+            isDragging = true;
+            draggedElement = elementAtPoint;
+            dragOffset.x = pos.x - draggedElement.x;
+            dragOffset.y = pos.y - draggedElement.y;
+            e.preventDefault();
+        } else {
+            // Enable panning in ALL modes including photos mode
+            isPanning = true;
+            lastPanPoint = { x: touch.clientX, y: touch.clientY };
+            // Don't prevent default to allow touch scrolling
         }
-    } else if (e.touches.length === 2 && !editingIcon) {
-        e.preventDefault();
+    } else if (touches.length === 2) {
         isGesturing = true;
         isPanning = false;
         isDragging = false;
-        draggedElement = null;
-        
-        lastTouchCenter = {
-            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-            y: (e.touches[0].clientY + e.touches[1].clientY) / 2
-        };
+        const centerX = (touches[0].clientX + touches[1].clientX) / 2;
+        const centerY = (touches[0].clientY + touches[1].clientY) / 2;
+        lastTouchCenter = { x: centerX, y: centerY };
+        e.preventDefault();
     }
 }
 

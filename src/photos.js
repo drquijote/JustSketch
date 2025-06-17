@@ -2,6 +2,8 @@
 
 import { AppState } from './state.js';
 import { CanvasManager } from './canvas.js';
+import { photoHelperButtons } from './photoHelperButtons.js';  // ADD THIS LINE
+
 
 /**
  * Updated PhotoManager that stores photos directly in the app state
@@ -78,14 +80,21 @@ init() {
         
         console.log('PhotoManager initialized with JSON storage.');
     }
+ 
 
     activate() {
-        console.log('Activating Photos Mode.');
-        this.boundHandleCanvasClick = (e) => this.handleCanvasClick(e);
-        AppState.canvas.addEventListener('click', this.boundHandleCanvasClick);
-        AppState.canvas.style.cursor = 'pointer';
-        CanvasManager.redraw();
-    }
+    console.log('Activating Photos Mode.');
+    this.boundHandleCanvasClick = (e) => this.handleCanvasClick(e);
+    
+    // Add click listener to canvas, not viewport, to avoid interfering with panning
+    AppState.canvas.addEventListener('click', this.boundHandleCanvasClick);
+    
+    // Don't change the cursor to pointer - keep it as default to allow grab cursor for panning
+    // AppState.canvas.style.cursor = 'pointer'; // REMOVED
+    
+    CanvasManager.redraw();
+}
+
 
     deactivate() {
         if (this.boundHandleCanvasClick) {
@@ -99,73 +108,110 @@ init() {
         console.log('Deactivating Photos Mode.');
     }
 
-    handleCanvasClick(event) {
-        console.log('%cDEBUG: PhotoManager.handleCanvasClick() HAS FIRED!', 'color: lightgreen; font-weight: bold;');
+ handleCanvasClick(event) {
+    console.log('%cDEBUG: PhotoManager.handleCanvasClick() HAS FIRED!', 'color: lightgreen; font-weight: bold;');
 
-        // Get the correct coordinates accounting for viewport transform
-        const viewport = document.getElementById('canvasViewport');
-        const rect = viewport.getBoundingClientRect();
-        const x = (event.clientX - rect.left) - AppState.viewportTransform.x;
-        const y = (event.clientY - rect.top) - AppState.viewportTransform.y;
+    // Get the correct coordinates accounting for viewport transform
+    const viewport = document.getElementById('canvasViewport');
+    const rect = viewport.getBoundingClientRect();
+    const x = (event.clientX - rect.left) - AppState.viewportTransform.x;
+    const y = (event.clientY - rect.top) - AppState.viewportTransform.y;
+    
+    console.log(`DEBUG: Click detected at canvas coordinates: x=${x.toFixed(1)}, y=${y.toFixed(1)}`);
+
+    // CHECK FOR HELPER BUTTON CLICKS FIRST
+    const buttonClick = photoHelperButtons.handleButtonClick(x, y);
+    if (buttonClick) {
+        console.log(`Photo helper button clicked: ${buttonClick.pictureType} for polygon ${buttonClick.polygonId}`);
         
-        console.log(`DEBUG: Click detected at canvas coordinates: x=${x.toFixed(1)}, y=${y.toFixed(1)}`);
+        // Find the polygon to get its label
+        const polygon = AppState.drawnPolygons.find(p => p.id === buttonClick.polygonId);
+        if (polygon) {
+            // Create element object that matches regular elements structure
+            const tempElement = {
+                id: buttonClick.polygonId,
+                type: 'area',
+                content: polygon.label + ' - ' + buttonClick.pictureType, // Include picture type in label
+                alt: polygon.label,
+                pictureType: buttonClick.pictureType,
+                // These properties ensure it works like regular elements
+                width: 100,
+                height: 50,
+                x: polygon.centroid.x,
+                y: polygon.centroid.y
+            };
+            
+            // USE THE EXACT SAME selectElement FUNCTION
+            this.selectElement(tempElement);
+        }
+        
+        return; // Stop processing other clicks
+    }
 
-        let clickedElement = null;
-        console.log('DEBUG: Starting to loop through elements to find a match...');
-        console.log(`DEBUG: Total elements to check: ${AppState.placedElements.length}`);
+    // EXISTING CODE - Check for regular element clicks
+    let clickedElement = null;
+    console.log('DEBUG: Starting to loop through elements to find a match...');
+    console.log(`DEBUG: Total elements to check: ${AppState.placedElements.length}`);
 
-        for (let i = AppState.placedElements.length - 1; i >= 0; i--) {
-            const element = AppState.placedElements[i];
-            let isHit = false;
+    for (let i = AppState.placedElements.length - 1; i >= 0; i--) {
+        const element = AppState.placedElements[i];
+        let isHit = false;
 
-            // Check element type and use the correct boundary calculation
-            if (element.type === 'area_label') {
-                // For area_labels, x/y is the CENTER, so we need to check bounds differently
-                const halfWidth = element.width / 2;
-                const halfHeight = element.height / 2;
-                isHit = (x >= element.x - halfWidth && x <= element.x + halfWidth &&
-                         y >= element.y - halfHeight && y <= element.y + halfHeight);
-                
-                console.log(`- Checking area_label "${element.content}" at center (${element.x}, ${element.y}) with bounds [${element.x - halfWidth}, ${element.x + halfWidth}] x [${element.y - halfHeight}, ${element.y + halfHeight}]... HIT: ${isHit}`);
-            } else {
-                // For all other elements (room, icon), x/y is the TOP-LEFT corner
-                isHit = (x >= element.x && x <= element.x + element.width &&
-                         y >= element.y && y <= element.y + element.height);
-                
-                console.log(`- Checking ${element.type} "${element.content || element.alt}" at top-left (${element.x}, ${element.y}) with bounds [${element.x}, ${element.x + element.width}] x [${element.y}, ${element.y + element.height}]... HIT: ${isHit}`);
-            }
-
-            if (isHit) {
-                clickedElement = element;
-                break;
-            }
+        // Check element type and use the correct boundary calculation
+        if (element.type === 'area_label') {
+            // For area_labels, x/y is the CENTER, so we need to check bounds differently
+            const halfWidth = element.width / 2;
+            const halfHeight = element.height / 2;
+            isHit = (x >= element.x - halfWidth && x <= element.x + halfWidth &&
+                     y >= element.y - halfHeight && y <= element.y + halfHeight);
+            
+            console.log(`- Checking area_label "${element.content}" at center (${element.x}, ${element.y}) with bounds [${element.x - halfWidth}, ${element.x + halfWidth}] x [${element.y - halfHeight}, ${element.y + halfHeight}]... HIT: ${isHit}`);
+        } else {
+            // For all other elements (room, icon), x/y is the TOP-LEFT corner
+            isHit = (x >= element.x && x <= element.x + element.width &&
+                     y >= element.y && y <= element.y + element.height);
+            
+            console.log(`- Checking ${element.type} "${element.content || element.alt}" at top-left (${element.x}, ${element.y}) with bounds [${element.x}, ${element.x + element.width}] x [${element.y}, ${element.y + element.height}]... HIT: ${isHit}`);
         }
 
-        if (clickedElement) {
-            console.log('%cSUCCESS: An element was clicked and found!', 'color: lightgreen;', clickedElement);
-            this.selectElement(clickedElement);
-        } else {
-            console.log('%cFAILURE: No element was found at the clicked position.', 'color: red;');
-            this.activeElement = null;
-            AppState.activePhotoElement = null;
-            if (this.photosPalette) {
-                this.photosPalette.innerHTML = '';
-            }
-            CanvasManager.redraw();
+        if (isHit) {
+            clickedElement = element;
+            break;
         }
     }
 
-    selectElement(element) {
-        console.log('Selected element for photos:', element.content || element.alt);
-        this.activeElement = element;
-        AppState.activePhotoElement = element;
-        
-        this.buildPaletteUI();
-        this.loadAndDisplayThumbnails();
-        
+    if (clickedElement) {
+        console.log('%cSUCCESS: An element was clicked and found!', 'color: lightgreen;', clickedElement);
+        this.selectElement(clickedElement);
+    } else {
+        console.log('%cFAILURE: No element was found at the clicked position.', 'color: lightcoral;');
+        // Deselect if clicking on empty space
+        this.activeElement = null;
+        AppState.activePhotoElement = null;
+        // Clear the photo palette
+        if (this.photosPalette) {
+            this.photosPalette.innerHTML = '';
+        }
         CanvasManager.redraw();
     }
+}
+
+ selectElement(element) {
+    console.log('Selected element for photos:', element.content || element.alt || 'Unknown');
+    console.log('Element details:', element);
     
+    this.activeElement = element;
+    AppState.activePhotoElement = element;
+    
+    // Always rebuild the palette UI when selecting an element
+    this.buildPaletteUI();
+    
+    // Then load and display any existing thumbnails
+    this.loadAndDisplayThumbnails();
+    
+    // Redraw canvas to show selection
+    CanvasManager.redraw();
+}
     buildPaletteUI() {
         const elementName = this.activeElement.content || this.activeElement.alt || 'Selection';
         
@@ -194,50 +240,107 @@ init() {
         document.getElementById('cameraBtn').addEventListener('click', () => this.cameraInput.click());
     }
 
-    async handleFileSelected(event) {
-        console.log('%c=== IMAGE UPLOAD DEBUG START ===', 'color: blue; font-weight: bold; font-size: 16px;');
-        
-        if (!event.target.files || event.target.files.length === 0) {
-            console.log('%cDEBUG: No files selected', 'color: red;');
-            return;
-        }
-        
-        const file = event.target.files[0];
-        console.log('DEBUG: File selected:', {
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            lastModified: new Date(file.lastModified)
-        });
-        
-        if (!this.activeElement) {
-            console.log('%cDEBUG: ERROR - No active element selected!', 'color: red; font-weight: bold;');
-            alert('Please select a room or element first before uploading a photo.');
-            return;
-        }
-        
-        console.log('DEBUG: Active element:', this.activeElement);
-        
-        try {
-            console.log('DEBUG: Starting image processing...');
-            const photoData = await this.processImage(file);
-            console.log('DEBUG: Image processing completed, data size:', {
-                fullSize: photoData.fullSizeData.length,
-                thumbnail: photoData.thumbnailData.length
-            });
-            
-            console.log('DEBUG: Saving photo to AppState...');
-            this.savePhotoToAppState(photoData);
-            console.log('DEBUG: Photo save completed successfully!');
-            
-        } catch (error) {
-            console.error('%cDEBUG: ERROR during upload process:', 'color: red; font-weight: bold;', error);
-            alert('Could not process the selected image: ' + error.message);
-        }
+ // src/photos.js
 
-        event.target.value = '';
-        console.log('%c=== IMAGE UPLOAD DEBUG END ===', 'color: blue; font-weight: bold; font-size: 16px;');
+async handleFileSelected(event) {
+    const file = event.target.files[0];
+    if (!file || !this.activeElement) return;
+
+    try {
+        const reader = new FileReader();
+        
+        const imageDataUrl = await new Promise((resolve, reject) => {
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+
+        const img = new Image();
+        
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+            img.src = imageDataUrl;
+        });
+
+        // Resize image to 300 DPI dimensions
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Calculate dimensions while maintaining aspect ratio
+        let width = img.width;
+        let height = img.height;
+        const aspectRatio = width / height;
+        
+        if (width > height) {
+            if (width > this.MAX_300DPI_SIZE) {
+                width = this.MAX_300DPI_SIZE;
+                height = width / aspectRatio;
+            }
+        } else {
+            if (height > this.MAX_300DPI_SIZE) {
+                height = this.MAX_300DPI_SIZE;
+                width = height * aspectRatio;
+            }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Get full-size data for storage
+        const fullSizeData = canvas.toDataURL('image/jpeg', this.JPEG_QUALITY);
+        
+        // Create thumbnail
+        const thumbCanvas = document.createElement('canvas');
+        const thumbCtx = thumbCanvas.getContext('2d');
+        thumbCanvas.width = this.THUMBNAIL_SIZE;
+        thumbCanvas.height = this.THUMBNAIL_SIZE;
+        
+        // Center crop for thumbnail
+        const size = Math.min(width, height);
+        const sx = (width - size) / 2;
+        const sy = (height - size) / 2;
+        
+        thumbCtx.drawImage(canvas, sx, sy, size, size, 0, 0, this.THUMBNAIL_SIZE, this.THUMBNAIL_SIZE);
+        const thumbnailData = thumbCanvas.toDataURL('image/jpeg', 0.8);
+        
+        // Create photo object
+        const photo = {
+            id: Date.now(),
+            elementId: this.activeElement.id,
+            elementType: this.activeElement.type,
+            elementContent: this.activeElement.content,
+            pictureType: this.activeElement.pictureType || null, // Store picture type if from helper button
+            data: fullSizeData,
+            thumbnailData: thumbnailData, // CORRECTED: Was 'thumbnail', now 'thumbnailData'
+            timestamp: new Date().toISOString(),
+            dimensions: { width, height }
+        };
+        
+        // Add to AppState photos
+        AppState.photos.push(photo);
+        
+        // Mark the helper button as taken if this was from a helper button click
+        if (this.activeElement && this.activeElement.pictureType) {
+            photoHelperButtons.markPhotoTaken(this.activeElement.id, this.activeElement.pictureType);
+        }
+        
+        console.log(`Photo added for element ${this.activeElement.id}. Total photos: ${AppState.photos.length}`);
+        console.log(`Photo size: ${Math.round(fullSizeData.length / 1024)}KB (300 DPI: ${width}x${height}px)`);
+        
+        //this.updatePhotosPalette();
+        this.loadAndDisplayThumbnails();
+        CanvasManager.redraw();
+        
+    } catch (error) {
+        console.error('Error processing photo:', error);
+        alert('Failed to process the photo. Please try again.');
     }
+    
+    // Clear the input so the same file can be selected again
+    event.target.value = '';
+}
     
     processImage(file) {
         console.log('DEBUG: processImage() called with file:', file.name);

@@ -1,6 +1,7 @@
 // src/canvas.js - FIXED VERSION with adaptive canvas sizing for iOS compatibility
 import { AppState } from './state.js';
 import { HelperPointManager } from './helpers.js';
+import { photoHelperButtons } from './photoHelperButtons.js';
 
 export class CanvasManager {
   static init(canvasElement) {
@@ -86,6 +87,11 @@ export class CanvasManager {
     // *** LAYER 5: UI overlays (edit handles, etc.) ***
     AppState.emit('canvas:redraw:ui');
     
+    // *** LAYER 5.5: Photo helper buttons (only in photo mode) ***
+    if (AppState.currentMode === 'photos') {
+        photoHelperButtons.drawHelperButtons(ctx);
+    }
+
     // *** LAYER 6 (TOP): Current drawing elements - ALWAYS ON TOP ***
     if (AppState.currentMode === 'drawing') {
         AppState.emit('canvas:redraw:drawing-overlay');

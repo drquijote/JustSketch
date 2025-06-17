@@ -353,13 +353,13 @@ function switchToEditAreasMode() {
  
 
 // --- Standard Mode Switching Functions (Modified) ---
-
-// in main.js
-function switchToPhotosMode() {
+ function switchToPhotosMode() {
     // DEBUG: Log the start of the mode switch
     console.log('DEBUG: Attempting to switch to Photos Mode. Current mode is:', AppState.currentMode);
 
-    deactivateSketchListeners();
+    // DEACTIVATING LISTENERS IS DISABLED TO ALLOW PANNING IN PHOTO MODE.
+    // deactivateSketchListeners(); // This line is commented out to allow panning.
+
     AppState.currentMode = 'photos';
     AppState.editSubMode = null;
     resetAllModeButtons();
@@ -380,6 +380,9 @@ function switchToPhotosMode() {
     // DEBUG: Confirm the mode switch is complete
     console.log('DEBUG: Mode switched. AppState.currentMode is now:', AppState.currentMode);
 }
+
+ 
+
 
  function switchToPlacementMode() {
     console.log('Switching to placement mode (READY) from:', AppState.currentMode);

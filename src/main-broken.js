@@ -17,49 +17,6 @@ import {
   deactivateSketchListeners
 } from './sketch.js';
 
-
-
-/**
- * Cleans up any orphan vertices left from incomplete drawing operations
- * This ensures no stray points remain on the canvas when switching modes
- */
-function cleanupOrphanVertices() {
-    console.log('🧹 Cleaning up orphan vertices...');
-    
-    // Clear any current drawing path
-    if (AppState.currentPolygonPoints && AppState.currentPolygonPoints.length > 0) {
-        console.log(`🧹 Clearing ${AppState.currentPolygonPoints.length} orphan vertices from current drawing`);
-        AppState.currentPolygonPoints = [];
-        AppState.currentPolygonCounter = 0;
-    }
-    
-    // Reset drawing manager state if it exists
-    if (window.drawingManager) {
-        window.drawingManager.waitingForFirstVertex = true;
-        window.drawingManager.distanceInputSequence = [];
-        window.drawingManager.angleInputSequence = [];
-        
-        // Clear any active inputs
-        const distanceInput = document.getElementById('distanceDisplay');
-        const angleInput = document.getElementById('angleDisplay');
-        if (distanceInput) distanceInput.value = '0';
-        if (angleInput) angleInput.value = '0';
-    }
-    
-    // Clear helper points that depend on current drawing
-    if (AppState.helperPoints) {
-        AppState.helperPoints = [];
-    }
-    
-    // Update helper points to reflect the cleaned state
-    if (window.HelperPointManager && window.HelperPointManager.updateHelperPoints) {
-        window.HelperPointManager.updateHelperPoints();
-    }
-    
-    console.log('✅ Orphan vertices cleanup complete');
-}
-
-
 /**
  * Draws a grid pattern across the entire canvas.
  * This ensures the visual background matches the canvas's full dimensions.
@@ -351,9 +308,6 @@ function cycleEditMode() {
 }
 
 function switchToEditLabelsMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
     console.log('Switching to Edit Labels mode');
     activateSketchListeners(); 
     AppState.currentMode = 'edit';
@@ -373,10 +327,8 @@ function switchToEditLabelsMode() {
     CanvasManager.redraw();
 }
 
+// NEW FUNCTION: Add this between switchToEditLabelsMode and switchToEditAreasMode
 function switchToEditLinesMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
     console.log('Switching to Edit Lines mode');
     activateSketchListeners();
     AppState.currentMode = 'edit';
@@ -398,9 +350,6 @@ function switchToEditLinesMode() {
 }
 
 function switchToEditAreasMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
     console.log('Switching to Edit Areas mode');
     activateSketchListeners();
     AppState.currentMode = 'edit';
@@ -420,16 +369,13 @@ function switchToEditAreasMode() {
     setTimeout(() => console.log('💡 EDIT AREAS: Click and drag areas to move them, or click the pencil icon to edit properties!'), 100);
     CanvasManager.redraw();
 }
- 
+
  
 
  
 
 // --- Standard Mode Switching Functions (Modified) ---
-function switchToPhotosMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
+ function switchToPhotosMode() {
     // DEBUG: Log the start of the mode switch
     console.log('DEBUG: Attempting to switch to Photos Mode. Current mode is:', AppState.currentMode);
 
@@ -457,10 +403,10 @@ function switchToPhotosMode() {
     console.log('DEBUG: Mode switched. AppState.currentMode is now:', AppState.currentMode);
 }
 
-function switchToPlacementMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
+ 
+
+
+ function switchToPlacementMode() {
     console.log('Switching to placement mode (READY) from:', AppState.currentMode);
     activateSketchListeners();
     AppState.currentMode = 'placement';
@@ -474,12 +420,10 @@ function switchToPlacementMode() {
     AppState.emit('mode:changed', { mode: 'placement' });
     AppState.emit('mode:editToggled', { isEditMode: false, subMode: null });  // UPDATED: Include subMode
     CanvasManager.redraw();
-} 
+}
+ 
 
- function switchToDrawingMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
+function switchToDrawingMode() {
     console.log('Switching to drawing mode from:', AppState.currentMode);
     AppState.currentMode = 'drawing';
     AppState.editSubMode = null;
@@ -527,9 +471,175 @@ function resetAllModeButtons() {
     paletteButtons.forEach(btn => btn.classList.remove('active'));
 }
 
+// src/drawing.js
+import { AppState } from './state.js';
+import { CanvasManager } from './canvas.js';
+import { HelperPointManager } from './helpers.js';
 
+export class DrawingManager {
+    constructor() {
+        this.PIXELS_PER_FOOT = 8;
+        this.isDrawing = false;
+        this.activeLine = null;
+        this.waitingForFirstVertex = true;
+        this.snapDistance = 15;
+    }
 
+    init() {
+        AppState.on('canvas:redraw:drawing-overlay', () => this.drawDrawingState());
+        AppState.on('app:startDrawing', () => this.startDrawing());
+        AppState.on('app:stopDrawing', () => this.stopDrawing());
+        AppState.on('app:clearDrawing', () => this.clearDrawingState());
+        AppState.on('app:closeAndSaveCycle', () => this.closeAndSaveCycle());
+        AppState.on('app:addDrawingPoint', (e) => this.addPoint(e.detail.value));
 
+        const canvas = AppState.canvas;
+        canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
+    }
+
+    startDrawing() {
+        if (this.isDrawing) return;
+        console.log('Starting drawing mode.');
+        this.isDrawing = true;
+        this.waitingForFirstVertex = true;
+        AppState.currentPolygonPoints = [];
+        AppState.currentPolygonCounter = 0;
+        HelperPointManager.updateHelperPoints();
+    }
+
+    stopDrawing() {
+        if (!this.isDrawing) return;
+        console.log('Stopping drawing mode.');
+        this.isDrawing = false;
+        this.clearDrawingState();
+    }
+
+    // --- THIS IS THE ONLY CHANGE TO THIS FILE ---
+    // This function resets the drawing state and is called when switching modes.
+    clearDrawingState() {
+        console.log('Clearing active drawing state to remove orphaned points.');
+        AppState.currentPolygonPoints = [];
+        AppState.currentPolygonCounter = 0;
+        this.activeLine = null;
+        this.waitingForFirstVertex = true;
+        HelperPointManager.updateHelperPoints();
+        CanvasManager.redraw();
+    }
+    // --- END CHANGE ---
+
+    addPoint(value) {
+        if (!this.isDrawing || !this.activeLine) return;
+        const lengthInPixels = value * this.PIXELS_PER_FOOT;
+        const lastPoint = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1];
+        const newPoint = {
+            x: lastPoint.x + lengthInPixels * Math.cos(this.activeLine.angle),
+            y: lastPoint.y + lengthInPixels * Math.sin(this.activeLine.angle),
+            name: `p${AppState.currentPolygonCounter}`
+        };
+        AppState.currentPolygonPoints.push(newPoint);
+        AppState.currentPolygonCounter++;
+        this.activeLine.start = newPoint;
+        HelperPointManager.updateHelperPoints();
+        CanvasManager.redraw();
+    }
+    
+    closeAndSaveCycle() {
+        if (AppState.currentPolygonPoints.length > 2) {
+            const firstPoint = AppState.currentPolygonPoints[0];
+            const lastPoint = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1];
+            if (this.calculateDistance(firstPoint, lastPoint) < this.snapDistance) {
+                AppState.emit('app:cycleClosed', { path: [...AppState.currentPolygonPoints] });
+                this.clearDrawingState();
+            } else {
+                alert("The start and end points are too far apart to close the cycle.");
+            }
+        }
+    }
+
+    handleMouseMove(e) {
+        if (!this.isDrawing || this.waitingForFirstVertex) return;
+        const rect = AppState.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left - AppState.viewportTransform.x;
+        const mouseY = e.clientY - rect.top - AppState.viewportTransform.y;
+        const lastPoint = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1];
+        
+        const dx = mouseX - lastPoint.x;
+        const dy = mouseY - lastPoint.y;
+        let angle = Math.atan2(dy, dx);
+        angle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+        
+        this.activeLine = { start: lastPoint, angle: angle };
+        CanvasManager.redraw();
+    }
+
+    handleCanvasClick(e) {
+        if (!this.isDrawing) return;
+        const rect = AppState.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left - AppState.viewportTransform.x;
+        const y = e.clientY - rect.top - AppState.viewportTransform.y;
+        
+        let clickPos = { x, y };
+        const snappedPoint = HelperPointManager.getSnapPoint(clickPos, AppState.currentPolygonPoints);
+        if (snappedPoint) {
+            clickPos = snappedPoint;
+        }
+
+        if (this.waitingForFirstVertex) {
+            AppState.currentPolygonPoints.push({ x: clickPos.x, y: clickPos.y, name: `p${AppState.currentPolygonCounter}` });
+            AppState.currentPolygonCounter++;
+            this.waitingForFirstVertex = false;
+        } else {
+            if (this.activeLine) {
+                const lastPoint = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1];
+                const length = this.calculateDistance(lastPoint, clickPos);
+                const newPoint = {
+                    x: lastPoint.x + length * Math.cos(this.activeLine.angle),
+                    y: lastPoint.y + length * Math.sin(this.activeLine.angle),
+                    name: `p${AppState.currentPolygonCounter}`
+                };
+                AppState.currentPolygonPoints.push(newPoint);
+                AppState.currentPolygonCounter++;
+            }
+        }
+        HelperPointManager.updateHelperPoints();
+        CanvasManager.redraw();
+        CanvasManager.saveAction();
+    }
+
+    drawDrawingState() {
+        const { ctx } = AppState;
+        if (!this.isDrawing) return;
+        
+        ctx.save();
+        ctx.lineWidth = 2;
+        
+        if (AppState.currentPolygonPoints.length > 1) {
+            ctx.strokeStyle = '#0000FF'; // Blue
+            ctx.beginPath();
+            ctx.moveTo(AppState.currentPolygonPoints[0].x, AppState.currentPolygonPoints[0].y);
+            for (let i = 1; i < AppState.currentPolygonPoints.length; i++) {
+                ctx.lineTo(AppState.currentPolygonPoints[i].x, AppState.currentPolygonPoints[i].y);
+            }
+            ctx.stroke();
+        }
+
+        if (this.activeLine) {
+            ctx.strokeStyle = '#FF0000'; // Red
+            ctx.beginPath();
+            ctx.moveTo(this.activeLine.start.x, this.activeLine.start.y);
+            ctx.lineTo(this.activeLine.start.x + 1000 * Math.cos(this.activeLine.angle), this.activeLine.start.y + 1000 * Math.sin(this.activeLine.angle));
+            ctx.stroke();
+        }
+
+        HelperPointManager.drawTemporaryHelperPoints(ctx);
+        ctx.restore();
+    }
+
+    calculateDistance(p1, p2) {
+        return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+    }
+}
 // --- Utility Functions ---
 function setupKeyboardShortcuts() {
     document.addEventListener('keydown', (event) => {

@@ -17,49 +17,6 @@ import {
   deactivateSketchListeners
 } from './sketch.js';
 
-
-
-/**
- * Cleans up any orphan vertices left from incomplete drawing operations
- * This ensures no stray points remain on the canvas when switching modes
- */
-function cleanupOrphanVertices() {
-    console.log('🧹 Cleaning up orphan vertices...');
-    
-    // Clear any current drawing path
-    if (AppState.currentPolygonPoints && AppState.currentPolygonPoints.length > 0) {
-        console.log(`🧹 Clearing ${AppState.currentPolygonPoints.length} orphan vertices from current drawing`);
-        AppState.currentPolygonPoints = [];
-        AppState.currentPolygonCounter = 0;
-    }
-    
-    // Reset drawing manager state if it exists
-    if (window.drawingManager) {
-        window.drawingManager.waitingForFirstVertex = true;
-        window.drawingManager.distanceInputSequence = [];
-        window.drawingManager.angleInputSequence = [];
-        
-        // Clear any active inputs
-        const distanceInput = document.getElementById('distanceDisplay');
-        const angleInput = document.getElementById('angleDisplay');
-        if (distanceInput) distanceInput.value = '0';
-        if (angleInput) angleInput.value = '0';
-    }
-    
-    // Clear helper points that depend on current drawing
-    if (AppState.helperPoints) {
-        AppState.helperPoints = [];
-    }
-    
-    // Update helper points to reflect the cleaned state
-    if (window.HelperPointManager && window.HelperPointManager.updateHelperPoints) {
-        window.HelperPointManager.updateHelperPoints();
-    }
-    
-    console.log('✅ Orphan vertices cleanup complete');
-}
-
-
 /**
  * Draws a grid pattern across the entire canvas.
  * This ensures the visual background matches the canvas's full dimensions.
@@ -351,9 +308,6 @@ function cycleEditMode() {
 }
 
 function switchToEditLabelsMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
     console.log('Switching to Edit Labels mode');
     activateSketchListeners(); 
     AppState.currentMode = 'edit';
@@ -373,10 +327,8 @@ function switchToEditLabelsMode() {
     CanvasManager.redraw();
 }
 
+// NEW FUNCTION: Add this between switchToEditLabelsMode and switchToEditAreasMode
 function switchToEditLinesMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
     console.log('Switching to Edit Lines mode');
     activateSketchListeners();
     AppState.currentMode = 'edit';
@@ -398,9 +350,6 @@ function switchToEditLinesMode() {
 }
 
 function switchToEditAreasMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
     console.log('Switching to Edit Areas mode');
     activateSketchListeners();
     AppState.currentMode = 'edit';
@@ -420,16 +369,13 @@ function switchToEditAreasMode() {
     setTimeout(() => console.log('💡 EDIT AREAS: Click and drag areas to move them, or click the pencil icon to edit properties!'), 100);
     CanvasManager.redraw();
 }
- 
+
  
 
  
 
 // --- Standard Mode Switching Functions (Modified) ---
-function switchToPhotosMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
+ function switchToPhotosMode() {
     // DEBUG: Log the start of the mode switch
     console.log('DEBUG: Attempting to switch to Photos Mode. Current mode is:', AppState.currentMode);
 
@@ -457,10 +403,10 @@ function switchToPhotosMode() {
     console.log('DEBUG: Mode switched. AppState.currentMode is now:', AppState.currentMode);
 }
 
-function switchToPlacementMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
+ 
+
+
+ function switchToPlacementMode() {
     console.log('Switching to placement mode (READY) from:', AppState.currentMode);
     activateSketchListeners();
     AppState.currentMode = 'placement';
@@ -474,12 +420,10 @@ function switchToPlacementMode() {
     AppState.emit('mode:changed', { mode: 'placement' });
     AppState.emit('mode:editToggled', { isEditMode: false, subMode: null });  // UPDATED: Include subMode
     CanvasManager.redraw();
-} 
+}
+ 
 
- function switchToDrawingMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
+function switchToDrawingMode() {
     console.log('Switching to drawing mode from:', AppState.currentMode);
     AppState.currentMode = 'drawing';
     AppState.editSubMode = null;
@@ -526,9 +470,6 @@ function resetAllModeButtons() {
     const paletteButtons = document.querySelectorAll('[data-palette]');
     paletteButtons.forEach(btn => btn.classList.remove('active'));
 }
-
-
-
 
 // --- Utility Functions ---
 function setupKeyboardShortcuts() {

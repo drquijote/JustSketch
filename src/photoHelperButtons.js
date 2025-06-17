@@ -18,14 +18,23 @@ class PhotoHelperButtons {
         this.COLOR_DEFAULT_TEXT = 'white';
         this.COLOR_TAKEN_TEXT = '#f5f5f5';
         
-        // --- NEW: Define button groups by position ---
+        // --- Define button groups by position ---
         this.frontGroupTypes = ['Front', 'AddressVerification', 'StreetView'];
-        this.rearGroupTypes = ['RearView', 'BackYard']; 
+        this.rearGroupTypes = ['RearView', 'BackYard'];
+        this.leftGroupTypes = ['ExteriorLeft'];
+        this.rightGroupTypes = ['ExteriorRight'];
+        this.utilityGroupTypes = ['SmokeAlarm', 'C02Alarm', 'WaterHtr'];
+        this.fhaGroupTypes = ['CrawlSpace', 'AtticSpace', 'FireOn', 'WaterOn'];
+        // --- NEW: Define the interior button type ---
+        this.interiorGroupTypes = ['Interior'];
     }
 
     initializePhotoHelpers() {
         console.log('Initializing photo helper buttons...');
         this.clearAllHelperButtons();
+        
+        const isFHA = AppState.reportTypes?.fha === true;
+        console.log('Is this an FHA file?', isFHA);
 
         const polygonsByType = AppState.drawnPolygons.reduce((acc, poly) => {
             if (!acc[poly.type]) acc[poly.type] = [];
@@ -39,25 +48,40 @@ class PhotoHelperButtons {
             if (!typeOption) continue;
 
             const eachArea = typeOption.getAttribute('data-pics-EachArea') === '1';
-            
-            // --- MODIFIED LOGIC TO HANDLE MULTIPLE GROUPS ---
             const targetPolygons = eachArea ? polygons : [this.findFirstNumberedPolygon(polygons)].filter(Boolean);
 
             targetPolygons.forEach(poly => {
-                // Check for and create the FRONT group (6 o'clock)
-                const requiredFrontButtons = this.frontGroupTypes.filter(picType => 
-                    typeOption.getAttribute(`data-pic-${picType}`) === '1'
-                );
-                if (requiredFrontButtons.length > 0) {
-                    this.createAndAddButtonGroup(poly, requiredFrontButtons, 'front');
+                let leftSideAnchor = null;
+                let rightSideAnchor = null;
+
+                const allGroups = [
+                    { types: this.frontGroupTypes, position: 'front' },
+                    { types: this.rearGroupTypes, position: 'rear' },
+                    { types: this.leftGroupTypes, position: 'left' },
+                    { types: this.rightGroupTypes, position: 'right' },
+                    { types: this.interiorGroupTypes, position: 'interior' } // Added interior group
+                ];
+
+                allGroups.forEach(group => {
+                    const requiredButtons = group.types.filter(picType => typeOption.getAttribute(`data-pic-${picType}`) === '1');
+                    if (requiredButtons.length > 0) {
+                        const createdButtons = this.createAndAddButtonGroup(poly, requiredButtons, group.position);
+                        if (group.position === 'left' && createdButtons.length > 0)   leftSideAnchor = createdButtons[0];
+                        if (group.position === 'right' && createdButtons.length > 0) rightSideAnchor = createdButtons[0];
+                    }
+                });
+
+                // Handle dependent stacks
+                const requiredUtilityButtons = this.utilityGroupTypes.filter(picType => typeOption.getAttribute(`data-pic-${picType}`) === '1');
+                if (requiredUtilityButtons.length > 0) {
+                    this.createAndAddButtonGroup(poly, requiredUtilityButtons, 'right-stack', rightSideAnchor);
                 }
 
-                // Check for and create the REAR group (12 o'clock)
-                const requiredRearButtons = this.rearGroupTypes.filter(picType => 
-                    typeOption.getAttribute(`data-pic-${picType}`) === '1'
-                );
-                if (requiredRearButtons.length > 0) {
-                    this.createAndAddButtonGroup(poly, requiredRearButtons, 'rear');
+                if (isFHA) {
+                    const requiredFhaButtons = this.fhaGroupTypes.filter(picType => typeOption.getAttribute(`data-pic-${picType}`) === '1');
+                    if (requiredFhaButtons.length > 0) {
+                        this.createAndAddButtonGroup(poly, requiredFhaButtons, 'left-stack', leftSideAnchor);
+                    }
                 }
             });
         }
@@ -66,69 +90,64 @@ class PhotoHelperButtons {
         CanvasManager.redraw();
     }
     
-    // --- MODIFIED: Creates a group of buttons for a specific position ---
-    createAndAddButtonGroup(polygon, pictureTypes, position) {
-        if (!this.helperButtons.has(polygon.id)) {
-            this.helperButtons.set(polygon.id, []);
-        }
-        const buttonGroup = this.helperButtons.get(polygon.id);
+    // --- CONSOLIDATED a new group of buttons ---
+    createAndAddButtonGroup(polygon, pictureTypes, position, anchorButton = null) {
+        if (!this.helperButtons.has(polygon.id)) this.helperButtons.set(polygon.id, []);
+        const buttonGroupOnPolygon = this.helperButtons.get(polygon.id);
 
-        let totalWidth = 0;
-        const buttonDetails = pictureTypes.map(picType => {
-            const width = this.calculateButtonWidth(picType);
-            totalWidth += width;
-            return { picType, width };
-        });
-        totalWidth += Math.max(0, pictureTypes.length - 1) * this.BUTTON_SPACING;
+        const isVertical = position.endsWith('-stack');
+        const bounds = this.getPolygonBounds(polygon);
+        const centroid = polygon.centroid || this.calculateCentroid(polygon.path);
+        const offset = 15;
 
-        let currentX = this.calculateGroupStartPosition(polygon, totalWidth);
+        const buttonDetails = pictureTypes.map(picType => ({ picType, width: this.calculateButtonWidth(picType) }));
+
+        let currentX, currentY;
         
-        buttonDetails.forEach(({ picType, width }) => {
-            const button = this.createHelperButton(polygon, picType, currentX, width, position);
-            buttonGroup.push(button);
-            currentX += width + this.BUTTON_SPACING;
+        if (isVertical) {
+            const stackWidth = Math.max(...buttonDetails.map(b => b.width));
+            const totalHeight = (this.BUTTON_HEIGHT * pictureTypes.length) + (this.BUTTON_SPACING * Math.max(0, pictureTypes.length - 1));
+            
+            if (anchorButton) {
+                currentX = anchorButton.x + (anchorButton.width / 2) - (stackWidth / 2);
+                currentY = anchorButton.y + anchorButton.height + this.BUTTON_SPACING;
+            } else {
+                currentY = centroid.y - (totalHeight / 2);
+                currentX = (position === 'left-stack') ? bounds.minX - stackWidth - offset : bounds.maxX + offset;
+            }
+        } else { // Horizontal groups
+            const totalWidth = buttonDetails.reduce((sum, b) => sum + b.width, 0) + (this.BUTTON_SPACING * Math.max(0, pictureTypes.length - 1));
+            switch(position) {
+                case 'front': currentX = centroid.x - (totalWidth / 2); currentY = bounds.maxY + offset; break;
+                case 'rear': currentX = centroid.x - (totalWidth / 2); currentY = bounds.minY - offset - this.BUTTON_HEIGHT; break;
+                case 'left': currentX = bounds.minX - offset - totalWidth; currentY = centroid.y - (this.BUTTON_HEIGHT / 2); break;
+                case 'right': currentX = bounds.maxX + offset; currentY = centroid.y - (this.BUTTON_HEIGHT / 2); break;
+                // --- NEW: Position logic for the interior button ---
+                case 'interior': currentX = centroid.x - (totalWidth / 2); currentY = centroid.y - (this.BUTTON_HEIGHT / 2); break;
+            }
+        }
+        
+        const createdButtons = buttonDetails.map(({ picType, width }) => {
+            let buttonX = isVertical ? currentX + (Math.max(...buttonDetails.map(b => b.width)) - width) / 2 : currentX;
+            const button = this.createHelperButton(polygon, picType, buttonX, width, currentY);
+            if (!isVertical) currentX += width + this.BUTTON_SPACING;
+            else currentY += this.BUTTON_HEIGHT + this.BUTTON_SPACING;
+            return button;
         });
+
+        buttonGroupOnPolygon.push(...createdButtons);
+        return createdButtons;
     }
 
-    // --- MODIFIED: Creates a single button at a specific position ---
-    createHelperButton(polygon, pictureType, x, width, position) {
-        const buttonPos = this.calculateButtonPosition(polygon, x, position);
-        
+    createHelperButton(polygon, pictureType, x, width, y) {
         return {
-            id: `${polygon.id}_${pictureType}`,
-            polygonId: polygon.id,
-            pictureType: pictureType,
-            label: this.formatButtonLabel(pictureType),
-            x: buttonPos.x,
-            y: buttonPos.y,
-            width: width,
-            height: this.BUTTON_HEIGHT,
+            id: `${polygon.id}_${pictureType}`, polygonId: polygon.id, pictureType: pictureType,
+            label: this.formatButtonLabel(pictureType), x: x, y: y, width: width, height: this.BUTTON_HEIGHT,
             taken: this.isPhotoTaken(polygon.id, pictureType),
         };
     }
     
-    calculateGroupStartPosition(polygon, totalWidth) {
-        const centroid = polygon.centroid || this.calculateCentroid(polygon.path);
-        return centroid.x - (totalWidth / 2);
-    }
-
-    // --- MODIFIED: Calculates Y position based on group ('front' or 'rear') ---
-    calculateButtonPosition(polygon, x, position) {
-        const bounds = this.getPolygonBounds(polygon);
-        const offset = 15;
-        let y = 0;
-
-        switch (position) {
-            case 'front': // 6 o'clock
-                y = bounds.maxY + offset;
-                break;
-            case 'rear': // 12 o'clock
-                y = bounds.minY - offset - this.BUTTON_HEIGHT;
-                break;
-        }
-        return { x, y };
-    }
-    
+    // --- The rest of the functions remain the same ---
     calculateButtonWidth(pictureType) {
         const tempCtx = AppState.ctx;
         tempCtx.font = this.FONT_STYLE;
@@ -144,18 +163,15 @@ class PhotoHelperButtons {
                 for (let j = i + 1; j < allButtons.length; j++) {
                     const buttonA = allButtons[i];
                     const buttonB = allButtons[j];
+                    if (buttonA.polygonId === buttonB.polygonId) continue;
 
                     const overlapX = buttonA.x < buttonB.x + buttonB.width && buttonA.x + buttonA.width > buttonB.x;
                     const overlapY = buttonA.y < buttonB.y + buttonB.height && buttonA.y + buttonA.height > buttonB.y;
 
                     if (overlapX && overlapY) {
-                        if (buttonA.polygonId === buttonB.polygonId) continue;
-                        console.warn(`Overlap detected between buttons for polygon ${buttonA.polygonId} and ${buttonB.polygonId}. Adjusting...`);
-                        
                         const groupToMove = (buttonA.y <= buttonB.y) ? this.helperButtons.get(buttonB.polygonId) : this.helperButtons.get(buttonA.polygonId);
                         const moveAmount = buttonA.height + 10;
                         groupToMove.forEach(btn => btn.y += moveAmount);
-                        
                         changed = true; 
                     }
                 }

@@ -1307,109 +1307,133 @@ export class AreaManager {
         }
     }
 
-    drawCompletedAreas() {
-        const { ctx } = AppState;
-        if (!ctx || AppState.drawnPolygons.length === 0) return;
+ drawCompletedAreas() {
+    const { ctx } = AppState;
+    if (!ctx || AppState.drawnPolygons.length === 0) return;
 
-        const sharedEdges = this.findAllSharedEdges();
-        this.lineIconClickAreas.clear(); // Clear old icon positions
+    const sharedEdges = this.findAllSharedEdges();
+    this.lineIconClickAreas.clear(); // Clear old icon positions
 
-        AppState.drawnPolygons.forEach((poly) => {
-            ctx.save();
-            
-            // Unchanged polygon fill and stroke logic...
-            ctx.strokeStyle = '#555';
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash([]);
-            let fillOpacity = 0.4;
+    AppState.drawnPolygons.forEach((poly) => {
+        ctx.save();
+        
+        // Unchanged polygon fill and stroke logic...
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([]);
+        
+        let fillOpacity = 0.4;
+        let fillColor;
+        
+        // Check if we're in photo mode - make fills very subdued
+        if (AppState.currentMode === 'photos') {
+            // Very light gray with high transparency for all areas in photo mode
+            fillColor = 'rgba(200, 200, 200, 0.15)'; // Light gray, 15% opacity
+        } else {
+            // Normal mode colors
             if (AppState.currentMode === 'edit' && AppState.editSubMode === 'labels') {
                 fillOpacity = 0.1;
             }
-            if (poly.glaType === 1) { ctx.fillStyle = `rgba(144, 238, 144, ${fillOpacity})`; }
-            else if (poly.type === 'ADU') { ctx.fillStyle = `rgba(173, 255, 173, ${fillOpacity + 0.1})`; }
-            else if (poly.glaType === 0) { ctx.fillStyle = `rgba(180, 180, 180, ${fillOpacity + 0.2})`; }
-            else { ctx.fillStyle = `rgba(220, 220, 220, ${fillOpacity - 0.1})`; }
             
-            ctx.beginPath();
-            ctx.moveTo(poly.path[0].x, poly.path[0].y);
-            for (let i = 1; i < poly.path.length; i++) { ctx.lineTo(poly.path[i].x, poly.path[i].y); }
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-
-            // Show area edit icon ONLY in edit areas mode
-            if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
-                this.drawAreaEditIcon(ctx, poly);
+            if (poly.glaType === 1) { 
+                fillColor = `rgba(144, 238, 144, ${fillOpacity})`; // Green
+            } else if (poly.type === 'ADU') { 
+                fillColor = `rgba(173, 255, 173, ${fillOpacity + 0.1})`; // Light green
+            } else if (poly.glaType === 0) { 
+                fillColor = `rgba(180, 180, 180, ${fillOpacity + 0.2})`; // Gray
+            } else { 
+                fillColor = `rgba(220, 220, 220, ${fillOpacity - 0.1})`; // Light gray
             }
+        }
+        
+        ctx.fillStyle = fillColor;
+        
+        ctx.beginPath();
+        ctx.moveTo(poly.path[0].x, poly.path[0].y);
+        for (let i = 1; i < poly.path.length; i++) { 
+            ctx.lineTo(poly.path[i].x, poly.path[i].y); 
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
 
-            // Show line icons ONLY in edit lines mode
-            if (AppState.currentMode === 'edit' && AppState.editSubMode === 'lines') {
-                const editIcon = AppState.imageCache['public/edit.svg'];
-                const deleteIcon = AppState.imageCache['public/delete.svg'];
-                const iconSize = 20;
+        // Show area edit icon ONLY in edit areas mode
+        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
+            this.drawAreaEditIcon(ctx, poly);
+        }
 
-                for (let i = 0; i < poly.path.length; i++) {
-                    const p1 = poly.path[i];
-                    const p2 = poly.path[(i + 1) % poly.path.length];
-                    
-                    // --- Highlight the active line ---
-                    if (this.activeLineEdit && this.activeLineEdit.polygon.id === poly.id && this.activeLineEdit.edgeStartIndex === i) {
-                        ctx.save();
-                        ctx.strokeStyle = 'rgba(52, 152, 219, 0.9)'; // Bright blue for active
-                        ctx.lineWidth = 6;
-                        ctx.lineCap = 'round';
-                        ctx.beginPath();
-                        ctx.moveTo(p1.x, p1.y);
-                        ctx.lineTo(p2.x, p2.y);
-                        ctx.stroke();
-                        ctx.restore();
-                    }
+        // Show line icons ONLY in edit lines mode
+        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'lines') {
+            const editIcon = AppState.imageCache['public/edit.svg'];
+            const deleteIcon = AppState.imageCache['public/delete.svg'];
+            const iconSize = 20;
 
-                    // Calculate 1/3 and 2/3 points on the line
-                    const editPointX = p1.x + (p2.x - p1.x) / 3;
-                    const editPointY = p1.y + (p2.y - p1.y) / 3;
-                    const deletePointX = p1.x + (p2.x - p1.x) * 2 / 3;
-                    const deletePointY = p1.y + (p2.y - p1.y) * 2 / 3;
-
-                    // Draw Edit Icon at 1/3 point
-                    if (editIcon) {
-                        ctx.drawImage(editIcon, editPointX - iconSize/2, editPointY - iconSize/2, iconSize, iconSize);
-                    }
-                    
-                    // Draw Delete Icon at 2/3 point
-                    if (deleteIcon) {
-                        ctx.drawImage(deleteIcon, deletePointX - iconSize/2, deletePointY - iconSize/2, iconSize, iconSize);
-                    }
-                    
-                    // Store click areas for both icons
-                    const editKey = `edit-${poly.id}-${i}`;
-                    const deleteKey = `delete-${poly.id}-${i}`;
-                    const edgeInfo = { polygon: poly, edgeStartIndex: i, edgeEndIndex: (i + 1) % poly.path.length };
-                    
-                    this.lineIconClickAreas.set(editKey, {
-                        x: editPointX - iconSize / 2, y: editPointY - iconSize / 2,
-                        width: iconSize, height: iconSize, action: 'edit', edgeInfo: edgeInfo
-                    });
-                    this.lineIconClickAreas.set(deleteKey, {
-                        x: deletePointX - iconSize / 2, y: deletePointY - iconSize / 2,
-                        width: iconSize, height: iconSize, action: 'delete', edgeInfo: edgeInfo
-                    });
-                }
-            }
-            
-            // Draw external wall length labels (unchanged)
             for (let i = 0; i < poly.path.length; i++) {
                 const p1 = poly.path[i];
                 const p2 = poly.path[(i + 1) % poly.path.length];
-                const edgeKey = this.getEdgeKey(poly.id, i, (i + 1) % poly.path.length);
-                if (!sharedEdges.has(edgeKey)) {
-                    this.drawExternalLabel(ctx, p1, p2, poly.centroid);
+                
+                // --- Highlight the active line ---
+                if (this.activeLineEdit && this.activeLineEdit.polygon.id === poly.id && this.activeLineEdit.edgeStartIndex === i) {
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(52, 152, 219, 0.9)'; // Bright blue for active
+                    ctx.lineWidth = 6;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.stroke();
+                    ctx.restore();
                 }
+
+                // Calculate 1/3 and 2/3 points on the line
+                const editPointX = p1.x + (p2.x - p1.x) / 3;
+                const editPointY = p1.y + (p2.y - p1.y) / 3;
+                const deletePointX = p1.x + (p2.x - p1.x) * 2 / 3;
+                const deletePointY = p1.y + (p2.y - p1.y) * 2 / 3;
+
+                // Draw Edit Icon at 1/3 point
+                if (editIcon) {
+                    ctx.drawImage(editIcon, editPointX - iconSize/2, editPointY - iconSize/2, iconSize, iconSize);
+                }
+                
+                // Draw Delete Icon at 2/3 point
+                if (deleteIcon) {
+                    ctx.drawImage(deleteIcon, deletePointX - iconSize/2, deletePointY - iconSize/2, iconSize, iconSize);
+                }
+                
+                // Store click areas for both icons
+                const editKey = `edit-${poly.id}-${i}`;
+                const deleteKey = `delete-${poly.id}-${i}`;
+                const edgeInfo = { polygon: poly, edgeStartIndex: i, edgeEndIndex: (i + 1) % poly.path.length };
+                
+                this.lineIconClickAreas.set(editKey, {
+                    x: editPointX - iconSize / 2, y: editPointY - iconSize / 2,
+                    width: iconSize, height: iconSize, action: 'edit', edgeInfo: edgeInfo
+                });
+                this.lineIconClickAreas.set(deleteKey, {
+                    x: deletePointX - iconSize / 2, y: deletePointY - iconSize / 2,
+                    width: iconSize, height: iconSize, action: 'delete', edgeInfo: edgeInfo
+                });
             }
-            
-            ctx.restore();
-        });
-    }
+        }
+        
+        // Draw external wall length labels (unchanged)
+        for (let i = 0; i < poly.path.length; i++) {
+            const p1 = poly.path[i];
+            const p2 = poly.path[(i + 1) % poly.path.length];
+            const edgeKey = this.getEdgeKey(poly.id, i, (i + 1) % poly.path.length);
+            if (!sharedEdges.has(edgeKey)) {
+                this.drawExternalLabel(ctx, p1, p2, poly.centroid);
+            }
+        }
+
+        // Note: Area labels are now separate draggable elements, not drawn here
+
+        ctx.restore();
+    });
+
+    this.updateLegendCalculations();
+}
     // *** HELPER FUNCTIONS FOR EDGE LABELS ***
 
     findAllSharedEdges() {

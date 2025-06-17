@@ -69,30 +69,7 @@ export class SaveManager {
     /**
      * UPDATED: Enhanced state snapshot that includes photos
      */
-    getEnhancedStateSnapshot() {
-        const standardSnapshot = AppState.getStateSnapshot();
-        
-        // Add photos to the snapshot
-        const enhancedSnapshot = {
-            ...standardSnapshot,
-            photos: AppState.photos || [],
-            metadata: {
-                ...standardSnapshot.metadata,
-                photoCount: AppState.photos ? AppState.photos.length : 0,
-                totalPhotoSize: this._calculatePhotoSize(),
-                exportVersion: '2.0', // Version 2.0 includes photos
-                exportDate: new Date().toISOString()
-            }
-        };
-        
-        console.log('Enhanced snapshot created:', {
-            standardElements: Object.keys(standardSnapshot).length,
-            photoCount: enhancedSnapshot.photos.length,
-            totalSizeKB: Math.round(enhancedSnapshot.metadata.totalPhotoSize / 1024)
-        });
-        
-        return enhancedSnapshot;
-    }
+   
 
     /**
      * Calculate approximate total size of photos in bytes
@@ -239,28 +216,64 @@ export class SaveManager {
             alert('An error occurred while loading the sketch.');
         }
     }
+ 
 
-    /**
-     * NEW: Enhanced state restoration that handles photos
-     */
-    restoreEnhancedStateSnapshot(data) {
-        // First restore the standard state
-        AppState.restoreStateSnapshot(data);
-        
-        // Then handle photos if they exist
-        if (data.photos && Array.isArray(data.photos)) {
-            AppState.photos = data.photos;
-            console.log(`Restored ${data.photos.length} photos from saved data.`);
-        } else {
-            AppState.photos = [];
-            console.log('No photos found in saved data, initialized empty photos array.');
+ getEnhancedStateSnapshot() {
+    const standardSnapshot = AppState.getStateSnapshot();
+    
+    // Get report type values from checkboxes
+    const reportTypes = {
+        exteriorOnly: document.getElementById('exteriorOnlyCheckbox')?.checked || false,
+        fullInspection: document.getElementById('fullInspectionCheckbox')?.checked || false,
+        fha: document.getElementById('fhaCheckbox')?.checked || false
+    };
+    
+    // Add photos and report types to the snapshot
+    const enhancedSnapshot = {
+        ...standardSnapshot,
+        photos: AppState.photos || [],
+        reportTypes: reportTypes, // NEW: Add report types
+        metadata: {
+            ...standardSnapshot.metadata,
+            photoCount: AppState.photos ? AppState.photos.length : 0,
+            totalPhotoSize: AppState.photos ? this._calculatePhotoSize() : 0, // Use the existing method
+            exportVersion: '2.0'
         }
-        
-        // Handle version compatibility
-        if (data.metadata && data.metadata.exportVersion) {
-            console.log(`Loading sketch data version: ${data.metadata.exportVersion}`);
-        }
+    };
+    
+    return enhancedSnapshot;
+}
+
+// Also update the restoreEnhancedStateSnapshot method to restore these values:
+restoreEnhancedStateSnapshot(data) {
+    // First restore the standard state
+    AppState.restoreStateSnapshot(data);
+    
+    // Then handle photos if they exist
+    if (data.photos && Array.isArray(data.photos)) {
+        AppState.photos = data.photos;
+        console.log(`Restored ${data.photos.length} photos from saved data.`);
+    } else {
+        AppState.photos = [];
+        console.log('No photos found in saved data, initialized empty photos array.');
     }
+    
+    // Restore report types if they exist
+    if (data.reportTypes) {
+        // Store in AppState for reference
+        AppState.reportTypes = data.reportTypes;
+        console.log('Restored report types:', data.reportTypes);
+    }
+    
+    // Handle version compatibility
+    if (data.metadata && data.metadata.exportVersion) {
+        console.log(`Loading sketch data version: ${data.metadata.exportVersion}`);
+    }
+}
+
+
+
+
 
     /**
      * NEW: Export sketch with photos to JSON file

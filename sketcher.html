@@ -341,7 +341,7 @@
             <h3>Label Polygon</h3>
             <input id="polygonName" placeholder="e.g., Floor 1, Garage" type="text"/>
               <select id="polygonType">
-<option value="living" data-gla="1"  data-pic-Allarround="1" data-pic-SmokeAlarm="1" data-pic-C02Alarm="1" data-pic-WaterHtr="1" data-pic-BackYard="1" data-pic-Amenities="1" data-pic-Concerns="1" data-pic-FHA="1">Floor</option>
+<option value="living" data-gla="1"  data-pic-ExteriorDriveBy="1" data-pic-ExteriorLeft="1" data-pic-ExteriorRight="1" data-pic-SmokeAlarm="1" data-pic-C02Alarm="1" data-pic-WaterHtr="1"  data-pic-Amenities="1" data-pic-Concerns="1" data-pic-FHA="1">Floor</option>
 <option value="garage" data-gla="0" data-pic-Interior="1" data-pic-Front="1" >Garage </option>
                 <option value="covered_patio" data-gla="2" data-pic-Front="1">Covered Patio</option>
                 <option value="uncovered_patio" data-gla="2" data-pic-Front="1">Uncovered Patio</option>
@@ -401,19 +401,43 @@
 
     <div id="customCursor" class="hidden"></div>
 
-    <div class="modal hidden" id="saveModal">
-        <div class="modal-content">
-            <h3>Save Sketch</h3>
-            <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
-                Enter a name for this sketch. It will be saved to your browser's local storage.
+ <div class="modal hidden" id="saveModal">
+    <div class="modal-content modal-content-mobile">
+        <h3>Save Sketch</h3>
+        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+            Enter a name for this sketch. It will be saved to your browser's local storage.
+        </p>
+        <input id="sketchNameInput" placeholder="e.g., Main Floor Plan" type="text"/>
+        
+        <!-- New report type options -->
+        <div class="report-type-section">
+            <p style="font-size: 12px; color: #666; margin: 12px 0 8px 0;">
+                Select report type(s):
             </p>
-            <input id="sketchNameInput" placeholder="e.g., Main Floor Plan" type="text"/>
-            <div class="modal-buttons">
-                <button id="cancelSaveBtn" class="modal-btn btn-secondary">Cancel</button>
-                <button id="confirmSaveBtn" class="modal-btn btn-primary">Save</button>
+            <div class="report-type-options">
+                <label class="report-type-label">
+                    <input type="checkbox" id="exteriorOnlyCheckbox" class="report-type-checkbox">
+                    <span class="report-type-text">Exterior-Only</span>
+                </label>
+                <label class="report-type-label">
+                    <input type="checkbox" id="fullInspectionCheckbox" class="report-type-checkbox">
+                    <span class="report-type-text">Full-Inspection</span>
+                </label>
+                <label class="report-type-label">
+                    <input type="checkbox" id="fhaCheckbox" class="report-type-checkbox">
+                    <span class="report-type-text">FHA</span>
+                </label>
             </div>
         </div>
+        
+        <div class="modal-buttons">
+            <button id="cancelSaveBtn" class="modal-btn btn-secondary">Cancel</button>
+            <button id="confirmSaveBtn" class="modal-btn btn-primary">Save</button>
+        </div>
     </div>
+</div>
+
+
 
     <script type="module" src="src/main.js"></script>
 </body>

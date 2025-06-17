@@ -100,9 +100,54 @@ document.addEventListener('DOMContentLoaded', () => {
     // Check if the URL is requesting a specific sketch to be loaded
     globalSaveManager.loadSketchFromURL();
 
+
+    checkAndPromptNewSketch();
     console.log("App initialization complete");
 });
 
+
+function checkAndPromptNewSketch() {
+    // Check if we're loading without a sketch ID (new sketch)
+    const urlParams = new URLSearchParams(window.location.search);
+    const isLoadingSketch = urlParams.has('loadSketch');
+    
+    // If no sketch is being loaded and no current sketch exists, it's a new sketch
+    if (!isLoadingSketch && !AppState.currentSketchId) {
+        // Give a small delay to ensure everything is initialized
+        setTimeout(() => {
+            console.log('New sketch detected - showing save modal');
+            
+            // Clear the input field for a fresh start
+            const nameInput = document.getElementById('sketchNameInput');
+            if (nameInput) {
+                nameInput.value = '';
+                nameInput.placeholder = 'e.g., 123 Main Street';
+            }
+            
+            // Clear any previous checkbox selections
+            const exteriorCheckbox = document.getElementById('exteriorOnlyCheckbox');
+            const fullInspectionCheckbox = document.getElementById('fullInspectionCheckbox');
+            const fhaCheckbox = document.getElementById('fhaCheckbox');
+            
+            if (exteriorCheckbox) exteriorCheckbox.checked = false;
+            if (fullInspectionCheckbox) fullInspectionCheckbox.checked = false;
+            if (fhaCheckbox) fhaCheckbox.checked = false;
+            
+            // Show the save modal
+            const saveModal = document.getElementById('saveModal');
+            if (saveModal) {
+                saveModal.classList.remove('hidden');
+                
+                // Focus on the name input
+                setTimeout(() => {
+                    if (nameInput) {
+                        nameInput.focus();
+                    }
+                }, 100);
+            }
+        }, 500); // Half second delay to ensure smooth loading
+    }
+}
 function initializeAppControls(previewManager, saveManager) {
     // Palette button handlers
     const paletteButtons = document.querySelectorAll('[data-palette]');

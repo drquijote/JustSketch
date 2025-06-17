@@ -336,48 +336,63 @@
         /**
          * REFACTORED: Renders the list of saved sketches from IndexedDB.
          */
-        async function displaySavedSketches() {
-            const listContainer = document.getElementById('savedSketchesList');
-            
-            try {
-                // Fetch all sketches from the 'sketches' object store, order by savedAt descending.
-                const allSketches = await db.sketches.orderBy('savedAt').reverse().toArray();
+       async function displaySavedSketches() {
+    const listContainer = document.getElementById('savedSketchesList');
+    
+    try {
+        // Fetch all sketches from the 'sketches' object store, order by savedAt descending.
+        const allSketches = await db.sketches.orderBy('savedAt').reverse().toArray();
 
-                if (allSketches.length === 0) {
-                    listContainer.innerHTML = '<h2 style="text-align: center; margin-bottom: 1rem; color: #555;">Saved Sketches</h2><p style="text-align: center; color: #888;">No saved sketches found.</p>';
-                    return;
-                }
-
-                let html = '<h2 style="text-align: center; margin-bottom: 1rem; color: #555;">Saved Sketches</h2>';
-                html += '<ul style="list-style: none; padding: 0; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">';
-
-                for (const sketch of allSketches) {
-                    const savedDate = new Date(sketch.savedAt).toLocaleString();
-                    // CHANGED: The URL now uses the numeric `id` from the database.
-                    const loadUrl = `sketcher.html?loadSketch=${sketch.id}`;
-
-                    // CHANGED: onclick events now pass the numeric `id` for reliability.
-                    html += `<li style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid #eee;">
-                                <div>
-                                    <strong style="color: #333;">${sketch.name}</strong>
-                                    <div style="font-size: 12px; color: #777;">Saved: ${savedDate}</div>
-                                </div>
-                                <div style="display: flex; gap: 10px; align-items: center;">
-                                    <a href="#" onclick="loadApp('${loadUrl}'); return false;" class="list-btn load-btn">Load</a>
-                                    <button onclick="exportSketch(${sketch.id}, '${sketch.name}')" class="list-btn export-btn">Save to Device</button>
-                                    <button onclick="deleteSketch(${sketch.id})" class="list-btn delete-btn">Delete</button>
-                                </div>
-                            </li>`;
-                }
-
-                html += '</ul>';
-                listContainer.innerHTML = html;
-
-            } catch (error) {
-                console.error("Failed to display sketches from IndexedDB:", error);
-                listContainer.innerHTML = '<h2 style="text-align: center; margin-bottom: 1rem; color: #555;">Error</h2><p style="text-align: center; color: #c00;">Could not load saved sketches from the database.</p>';
-            }
+        if (allSketches.length === 0) {
+            listContainer.innerHTML = '<h2 style="text-align: center; margin-bottom: 1rem; color: #555;">Saved Sketches</h2><p style="text-align: center; color: #888;">No saved sketches found.</p>';
+            return;
         }
+
+        let html = '<h2 style="text-align: center; margin-bottom: 1rem; color: #555;">Saved Sketches</h2>';
+        html += '<ul style="list-style: none; padding: 0; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">';
+
+        for (const sketch of allSketches) {
+            const savedDate = new Date(sketch.savedAt).toLocaleString();
+            const loadUrl = `sketcher.html?loadSketch=${sketch.id}`;
+            
+            // Get report types from the sketch data
+            let reportTypes = [];
+            if (sketch.data && sketch.data.reportTypes) {
+                if (sketch.data.reportTypes.exteriorOnly) reportTypes.push('Exterior-Only');
+                if (sketch.data.reportTypes.fullInspection) reportTypes.push('Full-Inspection');
+                if (sketch.data.reportTypes.fha) reportTypes.push('FHA');
+            }
+            
+            // Format report types display
+            let reportTypeDisplay = '';
+            if (reportTypes.length > 0) {
+                reportTypeDisplay = `<div style="font-size: 11px; color: #3498db; font-weight: 500; margin-top: 2px;">
+                    ${reportTypes.join(' • ')}
+                </div>`;
+            }
+
+            html += `<li style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid #eee;">
+                        <div>
+                            <strong style="color: #333;">${sketch.name}</strong>
+                            <div style="font-size: 12px; color: #777;">Saved: ${savedDate}</div>
+                            ${reportTypeDisplay}
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <a href="#" onclick="loadApp('${loadUrl}'); return false;" class="list-btn load-btn">Load</a>
+                            <button onclick="exportSketch(${sketch.id}, '${sketch.name}')" class="list-btn export-btn">Save to Device</button>
+                            <button onclick="deleteSketch(${sketch.id})" class="list-btn delete-btn">Delete</button>
+                        </div>
+                    </li>`;
+        }
+
+        html += '</ul>';
+        listContainer.innerHTML = html;
+
+    } catch (error) {
+        console.error("Failed to display sketches from IndexedDB:", error);
+        listContainer.innerHTML = '<h2 style="text-align: center; margin-bottom: 1rem; color: #555;">Error</h2><p style="text-align: center; color: #c00;">Could not load saved sketches from the database.</p>';
+    }
+}
     </script>
 </body>
 </html>

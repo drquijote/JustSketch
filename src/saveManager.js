@@ -88,48 +88,56 @@ export class SaveManager {
     /**
      * UPDATED: Saves a sketch with photos to IndexedDB
      */
-    async _performSaveAs(sketchName) {
-        console.log(`Saving sketch with photos as "${sketchName}" to IndexedDB`);
+ async _performSaveAs(sketchName) {
+    console.log(`Saving sketch with photos as "${sketchName}" to IndexedDB`);
+    
+    try {
+        const snapshot = this.getEnhancedStateSnapshot();
         
-        try {
-            const snapshot = this.getEnhancedStateSnapshot();
-            
-            const newSketchEntry = {
-                name: sketchName,
-                savedAt: new Date().toISOString(),
-                data: snapshot,
-                // Add metadata for quick reference without loading full data
-                metadata: {
-                    photoCount: snapshot.photos.length,
-                    totalPhotoSizeKB: Math.round(snapshot.metadata.totalPhotoSize / 1024),
-                    version: snapshot.metadata.exportVersion
-                }
-            };
-
-            // Use Dexie's put() method to add the new sketch.
-            const id = await db.sketches.put(newSketchEntry);
-            
-            // Update the app's state to reflect the newly saved sketch.
-            AppState.currentSketchId = id;
-            AppState.currentSketchName = newSketchEntry.name;
-
-            this.hideSaveModal();
-            
-            const photoInfo = snapshot.photos.length > 0 
-                ? ` (includes ${snapshot.photos.length} photos, ~${Math.round(snapshot.metadata.totalPhotoSize / 1024)}KB)`
-                : '';
-            
-            alert(`Sketch "${sketchName}" saved successfully!${photoInfo}`);
-
-        } catch (error) {
-            console.error('Failed to save sketch with photos to IndexedDB:', error);
-            if (error.name === 'ConstraintError') {
-                alert('A sketch with this name already exists. Please choose a different name.');
-            } else {
-                alert('An error occurred while saving.');
+        const newSketchEntry = {
+            name: sketchName,
+            savedAt: new Date().toISOString(),
+            data: snapshot, // This now includes reportTypes
+            // Add metadata for quick reference without loading full data
+            metadata: {
+                photoCount: snapshot.photos.length,
+                totalPhotoSizeKB: Math.round(snapshot.metadata.totalPhotoSize / 1024),
+                version: snapshot.metadata.exportVersion,
+                reportTypes: snapshot.reportTypes // Store report types in metadata too for easy access
             }
+        };
+
+        // Use Dexie's put() method to add the new sketch.
+        const id = await db.sketches.put(newSketchEntry);
+        
+        // Update the app's state to reflect the newly saved sketch.
+        AppState.currentSketchId = id;
+        AppState.currentSketchName = newSketchEntry.name;
+
+        this.hideSaveModal();
+        
+        const photoInfo = snapshot.photos.length > 0 
+            ? ` (includes ${snapshot.photos.length} photos, ~${Math.round(snapshot.metadata.totalPhotoSize / 1024)}KB)`
+            : '';
+        
+        // Include report types in the success message
+        const reportTypesInfo = [];
+        if (snapshot.reportTypes.exteriorOnly) reportTypesInfo.push('Exterior-Only');
+        if (snapshot.reportTypes.fullInspection) reportTypesInfo.push('Full-Inspection');
+        if (snapshot.reportTypes.fha) reportTypesInfo.push('FHA');
+        const reportTypeText = reportTypesInfo.length > 0 ? ` [${reportTypesInfo.join(', ')}]` : '';
+        
+        alert(`Sketch "${sketchName}" saved successfully!${reportTypeText}${photoInfo}`);
+
+    } catch (error) {
+        console.error('Failed to save sketch with photos to IndexedDB:', error);
+        if (error.name === 'ConstraintError') {
+            alert('A sketch with this name already exists. Please choose a different name.');
+        } else {
+            alert('An error occurred while saving.');
         }
     }
+}
     
     /**
      * UPDATED: Overwrites with photos included

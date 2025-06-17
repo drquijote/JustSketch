@@ -6,18 +6,25 @@ class PhotoHelperButtons {
     constructor() {
         this.helperButtons = new Map();
         this.photoButtonStates = new Map();
+        
+        // --- CONFIGURATION ---
         this.BUTTON_HEIGHT = 16;
         this.HORIZONTAL_PADDING = 8;
+        this.BUTTON_SPACING = 5;
         this.FONT_STYLE = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
         this.BORDER_RADIUS = 4;
         this.COLOR_DEFAULT_BG = '#e74c3c';
         this.COLOR_TAKEN_BG = '#9e9e9e';
         this.COLOR_DEFAULT_TEXT = 'white';
         this.COLOR_TAKEN_TEXT = '#f5f5f5';
+        
+        // --- NEW: Define button groups by position ---
+        this.frontGroupTypes = ['Front', 'AddressVerification', 'StreetView'];
+        this.rearGroupTypes = ['RearView', 'BackYard']; 
     }
 
     initializePhotoHelpers() {
-        console.log('Initializing photo helper buttons with corrected logic...');
+        console.log('Initializing photo helper buttons...');
         this.clearAllHelperButtons();
 
         const polygonsByType = AppState.drawnPolygons.reduce((acc, poly) => {
@@ -31,69 +38,103 @@ class PhotoHelperButtons {
             const typeOption = this.findPolygonTypeOption(type);
             if (!typeOption) continue;
 
-            const needsFrontPic = typeOption.getAttribute('data-pic-Front') === '1';
-            if (!needsFrontPic) continue;
-
             const eachArea = typeOption.getAttribute('data-pics-EachArea') === '1';
+            
+            // --- MODIFIED LOGIC TO HANDLE MULTIPLE GROUPS ---
+            const targetPolygons = eachArea ? polygons : [this.findFirstNumberedPolygon(polygons)].filter(Boolean);
 
-            if (eachArea) {
-                polygons.forEach(poly => this.createAndAddButton(poly, 'Front'));
-            } else {
-                const firstPolygon = this.findFirstNumberedPolygon(polygons);
-                if (firstPolygon) {
-                    this.createAndAddButton(firstPolygon, 'Front');
+            targetPolygons.forEach(poly => {
+                // Check for and create the FRONT group (6 o'clock)
+                const requiredFrontButtons = this.frontGroupTypes.filter(picType => 
+                    typeOption.getAttribute(`data-pic-${picType}`) === '1'
+                );
+                if (requiredFrontButtons.length > 0) {
+                    this.createAndAddButtonGroup(poly, requiredFrontButtons, 'front');
                 }
-            }
+
+                // Check for and create the REAR group (12 o'clock)
+                const requiredRearButtons = this.rearGroupTypes.filter(picType => 
+                    typeOption.getAttribute(`data-pic-${picType}`) === '1'
+                );
+                if (requiredRearButtons.length > 0) {
+                    this.createAndAddButtonGroup(poly, requiredRearButtons, 'rear');
+                }
+            });
         }
         
         this.resolveOverlaps();
         CanvasManager.redraw();
     }
-
-    createAndAddButton(polygon, pictureType) {
-        const button = this.createHelperButton(polygon, pictureType);
-        if (button) {
-            if (!this.helperButtons.has(polygon.id)) {
-                this.helperButtons.set(polygon.id, []);
-            }
-            this.helperButtons.get(polygon.id).push(button);
+    
+    // --- MODIFIED: Creates a group of buttons for a specific position ---
+    createAndAddButtonGroup(polygon, pictureTypes, position) {
+        if (!this.helperButtons.has(polygon.id)) {
+            this.helperButtons.set(polygon.id, []);
         }
+        const buttonGroup = this.helperButtons.get(polygon.id);
+
+        let totalWidth = 0;
+        const buttonDetails = pictureTypes.map(picType => {
+            const width = this.calculateButtonWidth(picType);
+            totalWidth += width;
+            return { picType, width };
+        });
+        totalWidth += Math.max(0, pictureTypes.length - 1) * this.BUTTON_SPACING;
+
+        let currentX = this.calculateGroupStartPosition(polygon, totalWidth);
+        
+        buttonDetails.forEach(({ picType, width }) => {
+            const button = this.createHelperButton(polygon, picType, currentX, width, position);
+            buttonGroup.push(button);
+            currentX += width + this.BUTTON_SPACING;
+        });
     }
 
-    createHelperButton(polygon, pictureType) {
-        const tempCtx = AppState.ctx;
-        tempCtx.font = this.FONT_STYLE;
-        const buttonWidth = tempCtx.measureText(pictureType).width + (this.HORIZONTAL_PADDING * 2);
-        const position = this.calculateButtonPosition(polygon, pictureType, buttonWidth);
-
+    // --- MODIFIED: Creates a single button at a specific position ---
+    createHelperButton(polygon, pictureType, x, width, position) {
+        const buttonPos = this.calculateButtonPosition(polygon, x, position);
+        
         return {
             id: `${polygon.id}_${pictureType}`,
             polygonId: polygon.id,
             pictureType: pictureType,
-            label: pictureType,
-            x: position.x,
-            y: position.y,
-            width: buttonWidth,
+            label: this.formatButtonLabel(pictureType),
+            x: buttonPos.x,
+            y: buttonPos.y,
+            width: width,
             height: this.BUTTON_HEIGHT,
             taken: this.isPhotoTaken(polygon.id, pictureType),
         };
     }
-
-    calculateButtonPosition(polygon, pictureType, buttonWidth) {
-        const bounds = this.getPolygonBounds(polygon);
+    
+    calculateGroupStartPosition(polygon, totalWidth) {
         const centroid = polygon.centroid || this.calculateCentroid(polygon.path);
-        const offset = 15;
-        let x = 0, y = 0;
+        return centroid.x - (totalWidth / 2);
+    }
 
-        switch (pictureType.toLowerCase()) {
-            case 'front':
-                x = centroid.x - (buttonWidth / 2);
+    // --- MODIFIED: Calculates Y position based on group ('front' or 'rear') ---
+    calculateButtonPosition(polygon, x, position) {
+        const bounds = this.getPolygonBounds(polygon);
+        const offset = 15;
+        let y = 0;
+
+        switch (position) {
+            case 'front': // 6 o'clock
                 y = bounds.maxY + offset;
+                break;
+            case 'rear': // 12 o'clock
+                y = bounds.minY - offset - this.BUTTON_HEIGHT;
                 break;
         }
         return { x, y };
     }
     
+    calculateButtonWidth(pictureType) {
+        const tempCtx = AppState.ctx;
+        tempCtx.font = this.FONT_STYLE;
+        return tempCtx.measureText(this.formatButtonLabel(pictureType)).width + (this.HORIZONTAL_PADDING * 2);
+    }
+
     resolveOverlaps() {
         const allButtons = Array.from(this.helperButtons.values()).flat();
         let changed;
@@ -108,32 +149,34 @@ class PhotoHelperButtons {
                     const overlapY = buttonA.y < buttonB.y + buttonB.height && buttonA.y + buttonA.height > buttonB.y;
 
                     if (overlapX && overlapY) {
-                        console.warn(`Overlap detected between button for polygon ${buttonA.polygonId} and ${buttonB.polygonId}. Adjusting...`);
-                        // Move the lower button down to resolve overlap
-                        if (buttonA.y <= buttonB.y) {
-                            buttonB.y = buttonA.y + buttonA.height + 10;
-                        } else {
-                            buttonA.y = buttonB.y + buttonB.height + 10;
-                        }
+                        if (buttonA.polygonId === buttonB.polygonId) continue;
+                        console.warn(`Overlap detected between buttons for polygon ${buttonA.polygonId} and ${buttonB.polygonId}. Adjusting...`);
+                        
+                        const groupToMove = (buttonA.y <= buttonB.y) ? this.helperButtons.get(buttonB.polygonId) : this.helperButtons.get(buttonA.polygonId);
+                        const moveAmount = buttonA.height + 10;
+                        groupToMove.forEach(btn => btn.y += moveAmount);
+                        
                         changed = true; 
                     }
                 }
             }
-        } while (changed); // Repeat until no more overlaps are found in a pass
+        } while (changed);
     }
 
     findFirstNumberedPolygon(polygons) {
         if (!polygons || polygons.length === 0) return null;
         if (polygons.length === 1) return polygons[0];
-
         const extractNumber = (label) => {
             const match = label.match(/\d+$/);
             return match ? parseInt(match[0], 10) : Infinity;
         };
-
         return [...polygons].sort((a, b) => extractNumber(a.label) - extractNumber(b.label))[0];
     }
     
+    formatButtonLabel(pictureType) {
+        return pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+    }
+
     drawHelperButtons(ctx) {
         if (AppState.currentMode !== 'photos' || this.helperButtons.size === 0) return;
         ctx.save();

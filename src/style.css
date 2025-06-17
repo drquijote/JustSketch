@@ -1569,7 +1569,48 @@ body {
 
 
 
+/*
+ * FIX: Sets a fixed height for the bottom photos palette
+ * and makes the vertical label scrollable for long text.
+ */
+
+/* Sets the fixed height for the specific palette */
+.bottom-palette.photos-palette {
+  height: 80px; /* You can adjust this value if needed */
+}
+
+/* Makes the vertical label scrollable instead of growing */
+.photo-palette-label {
+  /* Prevent the label from expanding beyond the palette's height */
+  max-height: 100%; 
+  /* Allow vertical scrolling (which is horizontal in this orientation) */
+  overflow-y: auto; 
+  /* Hide the default scrollbar for a cleaner look */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+}
+/* Hide scrollbar for Chrome, Safari, and Opera */
+.photo-palette-label::-webkit-scrollbar {
+    display: none;
+}
 
 
-
-
+.sketch-title-display {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  padding: 4px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 1001;
+  pointer-events: none; /* Allows clicks to pass through to the canvas */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}

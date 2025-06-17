@@ -248,6 +248,8 @@ init() {
 
  // src/photos.js
 
+ // src/photos.js
+
 async handleFileSelected(event) {
     const file = event.target.files[0];
     if (!file || !this.activeElement) return;
@@ -273,7 +275,6 @@ async handleFileSelected(event) {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
-        // Calculate dimensions while maintaining aspect ratio
         let width = img.width;
         let height = img.height;
         const aspectRatio = width / height;
@@ -294,7 +295,6 @@ async handleFileSelected(event) {
         canvas.height = height;
         ctx.drawImage(img, 0, 0, width, height);
         
-        // Get full-size data for storage
         const fullSizeData = canvas.toDataURL('image/jpeg', this.JPEG_QUALITY);
         
         // Create thumbnail
@@ -303,7 +303,6 @@ async handleFileSelected(event) {
         thumbCanvas.width = this.THUMBNAIL_SIZE;
         thumbCanvas.height = this.THUMBNAIL_SIZE;
         
-        // Center crop for thumbnail
         const size = Math.min(width, height);
         const sx = (width - size) / 2;
         const sy = (height - size) / 2;
@@ -317,9 +316,11 @@ async handleFileSelected(event) {
             elementId: this.activeElement.id,
             elementType: this.activeElement.type,
             elementContent: this.activeElement.content,
-            pictureType: this.activeElement.pictureType || null, // Store picture type if from helper button
-            data: fullSizeData,
-            thumbnailData: thumbnailData, // CORRECTED: Was 'thumbnail', now 'thumbnailData'
+            pictureType: this.activeElement.pictureType || null,
+            // **** THIS IS THE FIX: The property is now named 'imageData' ****
+            imageData: fullSizeData,
+            // **** END FIX ****
+            thumbnailData: thumbnailData,
             timestamp: new Date().toISOString(),
             dimensions: { width, height }
         };
@@ -335,7 +336,6 @@ async handleFileSelected(event) {
         console.log(`Photo added for element ${this.activeElement.id}. Total photos: ${AppState.photos.length}`);
         console.log(`Photo size: ${Math.round(fullSizeData.length / 1024)}KB (300 DPI: ${width}x${height}px)`);
         
-        //this.updatePhotosPalette();
         this.loadAndDisplayThumbnails();
         CanvasManager.redraw();
         
@@ -344,7 +344,6 @@ async handleFileSelected(event) {
         alert('Failed to process the photo. Please try again.');
     }
     
-    // Clear the input so the same file can be selected again
     event.target.value = '';
 }
 
@@ -506,7 +505,9 @@ _syncHelperButtonStates() {
         console.log('✅ Photo successfully saved to AppState!');
     }
 
- loadAndDisplayThumbnails() {
+// src/photos.js
+
+loadAndDisplayThumbnails() {
     console.log('DEBUG: loadAndDisplayThumbnails() called');
     
     const container = document.getElementById('thumbnailContainer');
@@ -524,17 +525,31 @@ _syncHelperButtonStates() {
     console.log('DEBUG: Clearing existing thumbnails...');
     container.innerHTML = '';
 
-    // Filter photos for the current active element
-    const elementPhotos = AppState.photos.filter(p => p.elementId === this.activeElement.id);
-    console.log('DEBUG: Photos for active element:', elementPhotos.length);
+    // --- THIS IS THE FIX ---
+    // First, get all photos associated with the main element ID.
+    let allElementPhotos = AppState.photos.filter(p => p.elementId === this.activeElement.id);
+    let photosToShow = [];
 
-    if (elementPhotos.length === 0) {
-        console.log('DEBUG: No photos found for active element');
+    // If the selected element is from a helper button (it will have a pictureType),
+    // we must further filter the photos to only show ones for that specific type.
+    if (this.activeElement.pictureType) {
+        photosToShow = allElementPhotos.filter(p => p.pictureType === this.activeElement.pictureType);
+        console.log(`DEBUG: Filtering for helper button. Found ${photosToShow.length} photos with pictureType "${this.activeElement.pictureType}".`);
+    } else {
+        // For regular room/icon labels, only show photos that do NOT have a pictureType.
+        // This prevents helper button photos from appearing on regular label selections.
+        photosToShow = allElementPhotos.filter(p => !p.pictureType);
+        console.log(`DEBUG: Filtering for regular element. Found ${photosToShow.length} photos without a pictureType.`);
+    }
+    // --- END FIX ---
+
+    if (photosToShow.length === 0) {
+        console.log('DEBUG: No photos found for this specific selection.');
         return;
     }
 
-    elementPhotos.forEach((photo, index) => {
-        console.log(`DEBUG: Creating thumbnail ${index + 1}/${elementPhotos.length}`);
+    photosToShow.forEach((photo, index) => {
+        console.log(`DEBUG: Creating thumbnail ${index + 1}/${photosToShow.length}`);
         
         const thumbWrapper = document.createElement('div');
         thumbWrapper.className = 'photo-thumbnail-wrapper';
@@ -542,14 +557,7 @@ _syncHelperButtonStates() {
         const img = document.createElement('img');
         img.src = photo.thumbnailData;
         img.className = 'photo-thumbnail-image';
-        img.onload = () => {
-            console.log(`DEBUG: Thumbnail ${index + 1} loaded successfully`);
-        };
-        img.onerror = () => {
-            console.log(`%cDEBUG: ERROR loading thumbnail ${index + 1}`, 'color: red;');
-        };
         
-        // Create expand button container
         const expandBtn = document.createElement('div');
         expandBtn.className = 'thumbnail-expand-btn';
         expandBtn.onclick = (e) => {
@@ -557,14 +565,12 @@ _syncHelperButtonStates() {
             this.expandPhoto(photo);
         };
         
-        // Create expand icon
         const expandIcon = document.createElement('img');
         expandIcon.src = 'public/expand.svg';
         expandIcon.style.width = '100%';
         expandIcon.style.height = '100%';
         expandBtn.appendChild(expandIcon);
         
-        // Create delete button container
         const deleteBtn = document.createElement('div');
         deleteBtn.className = 'thumbnail-delete-btn';
         deleteBtn.onclick = (e) => {
@@ -574,7 +580,6 @@ _syncHelperButtonStates() {
             }
         };
         
-        // Create delete icon
         const deleteIcon = document.createElement('img');
         deleteIcon.src = 'public/delete.svg';
         deleteIcon.style.width = '100%';
@@ -585,8 +590,6 @@ _syncHelperButtonStates() {
         thumbWrapper.appendChild(expandBtn);
         thumbWrapper.appendChild(deleteBtn);
         container.appendChild(thumbWrapper);
-        
-        console.log(`DEBUG: Thumbnail ${index + 1} added to container`);
     });
     
     console.log('DEBUG: All thumbnails processed and added to UI');

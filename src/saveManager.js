@@ -88,7 +88,9 @@ export class SaveManager {
     /**
      * UPDATED: Saves a sketch with photos to IndexedDB
      */
- async _performSaveAs(sketchName) {
+// src/saveManager.js
+
+async _performSaveAs(sketchName) {
     console.log(`Saving sketch with photos as "${sketchName}" to IndexedDB`);
     
     try {
@@ -97,22 +99,27 @@ export class SaveManager {
         const newSketchEntry = {
             name: sketchName,
             savedAt: new Date().toISOString(),
-            data: snapshot, // This now includes reportTypes
-            // Add metadata for quick reference without loading full data
+            data: snapshot,
             metadata: {
                 photoCount: snapshot.photos.length,
                 totalPhotoSizeKB: Math.round(snapshot.metadata.totalPhotoSize / 1024),
                 version: snapshot.metadata.exportVersion,
-                reportTypes: snapshot.reportTypes // Store report types in metadata too for easy access
+                reportTypes: snapshot.reportTypes
             }
         };
 
-        // Use Dexie's put() method to add the new sketch.
         const id = await db.sketches.put(newSketchEntry);
         
-        // Update the app's state to reflect the newly saved sketch.
         AppState.currentSketchId = id;
         AppState.currentSketchName = newSketchEntry.name;
+
+        // --- THIS IS THE FIX ---
+        // Update the title display with the new name
+        const titleElement = document.getElementById('sketchTitleDisplay');
+        if (titleElement) {
+            titleElement.textContent = sketchName;
+        }
+        // --- END FIX ---
 
         this.hideSaveModal();
         
@@ -120,7 +127,6 @@ export class SaveManager {
             ? ` (includes ${snapshot.photos.length} photos, ~${Math.round(snapshot.metadata.totalPhotoSize / 1024)}KB)`
             : '';
         
-        // Include report types in the success message
         const reportTypesInfo = [];
         if (snapshot.reportTypes.exteriorOnly) reportTypesInfo.push('Exterior-Only');
         if (snapshot.reportTypes.fullInspection) reportTypesInfo.push('Full-Inspection');
@@ -138,7 +144,6 @@ export class SaveManager {
         }
     }
 }
-    
     /**
      * UPDATED: Overwrites with photos included
      */
@@ -181,49 +186,50 @@ export class SaveManager {
      */
   // src/saveManager.js
 
-    async loadSketchFromURL() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const sketchIdToLoad = parseInt(urlParams.get('loadSketch'), 10);
+// src/saveManager.js
 
-        if (!sketchIdToLoad) return;
+async loadSketchFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const sketchIdToLoad = parseInt(urlParams.get('loadSketch'), 10);
 
-        try {
-            const sketchToLoad = await db.sketches.get(sketchIdToLoad);
+    if (!sketchIdToLoad) return;
 
-            if (sketchToLoad) {
-                console.log(`Loading sketch with photos: "${sketchToLoad.name}"`);
-                
-                // Restore the enhanced state including photos
-                this.restoreEnhancedStateSnapshot(sketchToLoad.data);
-                
-                // Update app state to know which sketch is loaded
-                AppState.currentSketchId = sketchToLoad.id;
-                AppState.currentSketchName = sketchToLoad.name;
+    try {
+        const sketchToLoad = await db.sketches.get(sketchIdToLoad);
 
-                //
-                // ***** FIX: ADD THIS LINE *****
-                // This synchronizes the visual CSS transform with the newly loaded state.
-                CanvasManager.updateViewportTransform();
-                // ***** END FIX *****
-                //
+        if (sketchToLoad) {
+            console.log(`Loading sketch with photos: "${sketchToLoad.name}"`);
+            
+            this.restoreEnhancedStateSnapshot(sketchToLoad.data);
+            
+            AppState.currentSketchId = sketchToLoad.id;
+            AppState.currentSketchName = sketchToLoad.name;
 
-                CanvasManager.redraw();
-                AppState.emit('app:sketchLoaded');
-                
-                // Log photo loading success
-                const photoCount = AppState.photos ? AppState.photos.length : 0;
-                if (photoCount > 0) {
-                    console.log(`Successfully loaded ${photoCount} photos with sketch.`);
-                }
-                
-            } else {
-                alert(`Error: Could not find sketch with ID: ${sketchIdToLoad}`);
+            // --- THIS IS THE FIX ---
+            // Update the title display with the loaded sketch's name
+            const titleElement = document.getElementById('sketchTitleDisplay');
+            if (titleElement) {
+                titleElement.textContent = sketchToLoad.name;
             }
-        } catch (error) {
-            console.error('Failed to load sketch from DB:', error);
-            alert('An error occurred while loading the sketch.');
+            // --- END FIX ---
+
+            CanvasManager.updateViewportTransform();
+            CanvasManager.redraw();
+            AppState.emit('app:sketchLoaded');
+            
+            const photoCount = AppState.photos ? AppState.photos.length : 0;
+            if (photoCount > 0) {
+                console.log(`Successfully loaded ${photoCount} photos with sketch.`);
+            }
+            
+        } else {
+            alert(`Error: Could not find sketch with ID: ${sketchIdToLoad}`);
         }
+    } catch (error) {
+        console.error('Failed to load sketch from DB:', error);
+        alert('An error occurred while loading the sketch.');
     }
+}
  
 
  getEnhancedStateSnapshot() {

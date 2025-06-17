@@ -156,9 +156,7 @@ function initSketchModule() {
 // MODIFIED: This function now calls drawIconEditHighlight() instead of drawIconEditHandles()
 // REPLACE this function to use the shared AppState.imageCache
 
- // src/sketch.js
-
-function redrawPlacedElements() {
+ function redrawPlacedElements() {
     ctx.save();
     
     AppState.placedElements.forEach((element, index) => {
@@ -175,6 +173,7 @@ function redrawPlacedElements() {
         }
 
         if (element.type === 'room' || element.type === 'area_label') {
+            // Check if we should gray out this element (in photo mode and has photos)
             const shouldGrayOut = AppState.currentMode === 'photos' && elementHasPhotos(element.id);
             
             if (element.type === 'area_label') {
@@ -195,24 +194,25 @@ function redrawPlacedElements() {
                     ctx.fillText(element.content, element.x + element.width / 2, element.y + element.height / 2);
                 }
             } else {
+                // Apply gray background if element has photos and we're in photo mode
                 ctx.fillStyle = shouldGrayOut ? '#9e9e9e' : (element.styling.backgroundColor || '#3498db');
+                ctx.fillRect(element.x, element.y, element.width, element.height);
                 
-                // Rounded corners logic
-                const radius = parseInt(element.styling.borderRadius) || 4;
-                ctx.beginPath();
-                ctx.moveTo(element.x + radius, element.y);
-                ctx.lineTo(element.x + element.width - radius, element.y);
-                ctx.quadraticCurveTo(element.x + element.width, element.y, element.x + element.width, element.y + radius);
-                ctx.lineTo(element.x + element.width, element.y + element.height - radius);
-                ctx.quadraticCurveTo(element.x + element.width, element.y + element.height, element.x + element.width - radius, element.y + element.height);
-                ctx.lineTo(element.x + radius, element.y + element.height);
-                // **** THIS IS THE FIX: Changed 'y' to 'element.y' ****
-                ctx.quadraticCurveTo(element.x, element.y + element.height, element.x, element.y + element.height - radius);
-                // **** END FIX ****
-                ctx.lineTo(element.x, element.y + radius);
-                ctx.quadraticCurveTo(element.x, element.y, element.x + radius, element.y);
-                ctx.closePath();
-                ctx.fill();
+                if (element.styling.borderRadius && element.styling.borderRadius !== '0px') {
+                    const radius = parseInt(element.styling.borderRadius) || 4;
+                    ctx.beginPath();
+                    ctx.moveTo(element.x + radius, element.y);
+                    ctx.lineTo(element.x + element.width - radius, element.y);
+                    ctx.quadraticCurveTo(element.x + element.width, element.y, element.x + element.width, element.y + radius);
+                    ctx.lineTo(element.x + element.width, element.y + element.height - radius);
+                    ctx.quadraticCurveTo(element.x + element.width, element.y + element.height, element.x + element.width - radius, element.y + element.height);
+                    ctx.lineTo(element.x + radius, element.y + element.height);
+                    ctx.quadraticCurveTo(element.x, element.y + element.height, element.x, element.y + element.height - radius);
+                    ctx.lineTo(element.x, element.y + radius);
+                    ctx.quadraticCurveTo(element.x, element.y, element.x + radius, element.y);
+                    ctx.closePath();
+                    ctx.fill();
+                }
                 
                 ctx.fillStyle = shouldGrayOut ? '#f5f5f5' : (element.styling.color || 'white');
                 ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
@@ -224,17 +224,22 @@ function redrawPlacedElements() {
             if (isEditMode && AppState.editSubMode === 'labels' && (element.type === 'room' || element.type === 'area_label')) {
                 const iconSize = 24;
                 const padding = 6;
+                
                 let editX, editY, deleteX, deleteY;
                 
                 if (element.type === 'area_label') {
+                    // For area labels, x/y is the CENTER, so calculate bounds differently
                     const labelLeft = element.x - element.width / 2;
                     const labelRight = element.x + element.width / 2;
                     const labelTop = element.y - element.height / 2;
+                    
+                    // Position icons relative to the actual label bounds
                     editX = labelLeft - iconSize - padding;
                     editY = labelTop;
                     deleteX = labelRight + padding;
                     deleteY = labelTop;
                 } else {
+                    // For room labels, x/y is the TOP-LEFT corner
                     const elementCenterY = element.y + element.height / 2;
                     editX = element.x - iconSize - padding;
                     editY = elementCenterY - (iconSize / 2);
@@ -242,13 +247,29 @@ function redrawPlacedElements() {
                     deleteY = elementCenterY - (iconSize / 2);
                 }
                 
+                // Draw edit.svg icon
                 const editIconPath = 'public/edit.svg';
-                if (AppState.imageCache[editIconPath]) {
+                if (!AppState.imageCache[editIconPath]) {
+                    const editImg = new Image();
+                    editImg.onload = () => { 
+                        AppState.imageCache[editIconPath] = editImg; 
+                        CanvasManager.redraw(); 
+                    };
+                    editImg.src = editIconPath;
+                } else {
                     ctx.drawImage(AppState.imageCache[editIconPath], editX, editY, iconSize, iconSize);
                 }
                 
+                // Draw delete.svg icon
                 const deleteIconPath = 'public/delete.svg';
-                if (AppState.imageCache[deleteIconPath]) {
+                if (!AppState.imageCache[deleteIconPath]) {
+                    const deleteImg = new Image();
+                    deleteImg.onload = () => { 
+                        AppState.imageCache[deleteIconPath] = deleteImg; 
+                        CanvasManager.redraw(); 
+                    };
+                    deleteImg.src = deleteIconPath;
+                } else {
                     ctx.drawImage(AppState.imageCache[deleteIconPath], deleteX, deleteY, iconSize, iconSize);
                 }
             }
@@ -267,7 +288,11 @@ function redrawPlacedElements() {
                 drawIconEditHighlight(element);
             };
             
-            if (AppState.imageCache[element.content]) {
+            if (!AppState.imageCache[element.content]) {
+                const img = new Image();
+                img.onload = () => { AppState.imageCache[element.content] = img; CanvasManager.redraw(); };
+                img.src = element.content;
+            } else {
                 drawRotatedIcon(AppState.imageCache[element.content]);
             }
         }

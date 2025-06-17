@@ -67,6 +67,19 @@ function forceResetCanvasState() {
     }
 }
 
+/**
+ * Helper function to check if an element has any photos
+ * @param {Object} element - The room/icon element to check
+ * @returns {boolean} - True if element has photos
+ */
+ function elementHasPhotos(elementId) {
+    if (!AppState.photos || !Array.isArray(AppState.photos)) {
+        return false;
+    }
+    return AppState.photos.some(photo => photo.elementId === elementId);
+}
+
+
 
  function preloadImages() {
     console.log('Preloading UI images...');
@@ -143,7 +156,8 @@ function initSketchModule() {
 
 // MODIFIED: This function now calls drawIconEditHighlight() instead of drawIconEditHandles()
 // REPLACE this function to use the shared AppState.imageCache
-function redrawPlacedElements() {
+
+ function redrawPlacedElements() {
     ctx.save();
     
     AppState.placedElements.forEach((element, index) => {
@@ -160,61 +174,73 @@ function redrawPlacedElements() {
         }
 
         if (element.type === 'room' || element.type === 'area_label') {
+            // Check if we should gray out this element (in photo mode and has photos)
+            const shouldGrayOut = AppState.currentMode === 'photos' && elementHasPhotos(element.id);
+            
             if (element.type === 'area_label') {
                 const linkedPolygon = AppState.drawnPolygons.find(p => p.id === element.linkedPolygonId);
                 if (linkedPolygon) {
                     element.areaData.sqftText = `${linkedPolygon.area.toFixed(1)} sq ft`;
                     element.areaData.areaText = linkedPolygon.label;
                 }
-                ctx.fillStyle = element.styling.color || '#000';
+                ctx.fillStyle = shouldGrayOut ? '#666666' : (element.styling.color || '#000');
                 ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(element.areaData.areaText, element.x + element.width/2, element.y + element.height/2 - 8);
-                ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-                ctx.fillText(element.areaData.sqftText, element.x + element.width/2, element.y + element.height/2 + 8);
-            } else { 
-                const styling = element.styling;
-                ctx.fillStyle = styling.backgroundColor || styling;
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.roundRect(element.x, element.y, element.width, element.height, 4);
-                ctx.fill();
-                ctx.stroke();
                 
-                if (element !== editingElement) {
-                    ctx.fillStyle = styling.color || 'white';
-                    ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(element.content, element.x + element.width/2, element.y + element.height/2 + 4);
+                if (element.type === 'area_label') {
+                    ctx.fillText(element.areaData.sqftText, element.x, element.y);
+                    ctx.fillText(element.areaData.areaText, element.x, element.y + 16);
+                } else {
+                    ctx.fillText(element.content, element.x + element.width / 2, element.y + element.height / 2);
                 }
+            } else {
+                // Apply gray background if element has photos and we're in photo mode
+                ctx.fillStyle = shouldGrayOut ? '#9e9e9e' : (element.styling.backgroundColor || '#3498db');
+                ctx.fillRect(element.x, element.y, element.width, element.height);
+                
+                if (element.styling.borderRadius && element.styling.borderRadius !== '0px') {
+                    const radius = parseInt(element.styling.borderRadius) || 4;
+                    ctx.beginPath();
+                    ctx.moveTo(element.x + radius, element.y);
+                    ctx.lineTo(element.x + element.width - radius, element.y);
+                    ctx.quadraticCurveTo(element.x + element.width, element.y, element.x + element.width, element.y + radius);
+                    ctx.lineTo(element.x + element.width, element.y + element.height - radius);
+                    ctx.quadraticCurveTo(element.x + element.width, element.y + element.height, element.x + element.width - radius, element.y + element.height);
+                    ctx.lineTo(element.x + radius, element.y + element.height);
+                    ctx.quadraticCurveTo(element.x, element.y + element.height, element.x, element.y + element.height - radius);
+                    ctx.lineTo(element.x, element.y + radius);
+                    ctx.quadraticCurveTo(element.x, element.y, element.x + radius, element.y);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                
+                ctx.fillStyle = shouldGrayOut ? '#f5f5f5' : (element.styling.color || 'white');
+                ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(element.content, element.x + element.width / 2, element.y + element.height / 2);
             }
             
-            if (isEditMode && AppState.editSubMode === 'labels' && element !== editingElement) {
+            if (isEditMode && AppState.editSubMode === 'labels' && (element.type === 'room' || element.type === 'area_label')) {
                 const iconSize = 24;
                 const padding = 6;
                 const elementCenterY = element.y + element.height / 2;
-
                 const editX = element.x - iconSize - padding;
                 const editY = elementCenterY - (iconSize / 2);
-
                 const deleteX = element.x + element.width + padding;
                 const deleteY = elementCenterY - (iconSize / 2);
-
-                const editIcon = AppState.imageCache['public/edit.svg']; // Use AppState.imageCache
-                if (editIcon) {
-                    ctx.globalAlpha = 1.0;
-                    ctx.drawImage(editIcon, editX, editY, iconSize, iconSize);
-                }
-
-                ctx.globalAlpha = 1.0;
-                ctx.fillStyle = '#e74c3c';
-                ctx.beginPath();
-                ctx.arc(deleteX + iconSize/2, deleteY + iconSize/2, iconSize/2, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = 'white';
-                ctx.lineWidth = 2;
+                
+                ctx.fillStyle = '#3498db';
+                ctx.fillRect(editX, editY, iconSize, iconSize);
+                ctx.fillStyle = 'white';
+                ctx.font = '16px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('✏', editX + iconSize/2, editY + iconSize/2);
+                
+                ctx.strokeStyle = '#e74c3c';
+                ctx.lineWidth = 3;
                 ctx.beginPath();
                 ctx.arc(deleteX + iconSize/2, deleteY + iconSize/2, iconSize/2, 0, Math.PI * 2);
                 ctx.stroke();
@@ -246,21 +272,26 @@ function redrawPlacedElements() {
                 drawIconEditHighlight(element);
             };
             
-            if (!AppState.imageCache[element.content]) { // Use AppState.imageCache
+            if (!AppState.imageCache[element.content]) {
                 const img = new Image();
-                img.onload = () => { AppState.imageCache[element.content] = img; CanvasManager.redraw(); }; // Use AppState.imageCache
+                img.onload = () => { AppState.imageCache[element.content] = img; CanvasManager.redraw(); };
                 img.src = element.content;
             } else {
-                drawRotatedIcon(AppState.imageCache[element.content]); // Use AppState.imageCache
+                drawRotatedIcon(AppState.imageCache[element.content]);
             }
         }
+        
         ctx.restore();
     });
     
     ctx.restore();
     updateLegend();
-} 
+}
  
+
+
+
+
 function setupPaletteListeners() {
     console.log('Setting up palette listeners...');
     const roomLabels = document.querySelectorAll('.room-palette-label');

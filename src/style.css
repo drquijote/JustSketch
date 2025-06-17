@@ -1253,3 +1253,72 @@ body {
     font-weight: 500;
     color: #555;
 }
+
+
+<!-- Add this CSS to your index.html inside the <style> tag -->
+
+/* Make the saved sketches container scrollable */
+#savedSketchesList {
+    max-height: calc(100vh - 100px); /* Adjust based on your header/padding */
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 20px;
+}
+
+/* Style the scrollbar for better appearance */
+#savedSketchesList::-webkit-scrollbar {
+    width: 8px;
+}
+
+#savedSketchesList::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+#savedSketchesList::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+#savedSketchesList::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Ensure the list container itself is scrollable */
+#savedSketchesList ul {
+    max-height: calc(100vh - 150px); /* Slightly less to account for the heading */
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Add some padding at the bottom to ensure last item is fully visible */
+#savedSketchesList ul li:last-child {
+    margin-bottom: 20px;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+    #savedSketchesList {
+        max-height: calc(100vh - 80px); /* Less space needed on mobile */
+        padding: 10px;
+    }
+    
+    #savedSketchesList ul {
+        max-height: calc(100vh - 120px);
+    }
+}
+
+.photo-checkmark {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background-color: #27ae60;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}

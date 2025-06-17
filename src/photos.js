@@ -373,67 +373,127 @@ init() {
         console.log('✅ Photo successfully saved to AppState!');
     }
 
-    loadAndDisplayThumbnails() {
-        console.log('DEBUG: loadAndDisplayThumbnails() called');
-        
-        const container = document.getElementById('thumbnailContainer');
-        if (!container) {
-            console.log('%cDEBUG: ERROR - thumbnailContainer not found!', 'color: red;');
-            return;
-        }
-        
-        if (!this.activeElement) {
-            console.log('DEBUG: No active element, clearing container');
-            container.innerHTML = '';
-            return;
-        }
-        
-        console.log('DEBUG: Clearing existing thumbnails...');
-        container.innerHTML = '';
-
-        // Filter photos for the current active element
-        const elementPhotos = AppState.photos.filter(p => p.elementId === this.activeElement.id);
-        console.log('DEBUG: Photos for active element:', elementPhotos.length);
-
-        if (elementPhotos.length === 0) {
-            console.log('DEBUG: No photos found for active element');
-            return;
-        }
-
-        elementPhotos.forEach((photo, index) => {
-            console.log(`DEBUG: Creating thumbnail ${index + 1}/${elementPhotos.length}`);
-            
-            const thumbWrapper = document.createElement('div');
-            thumbWrapper.className = 'photo-thumbnail-wrapper';
-            
-            const img = document.createElement('img');
-            img.src = photo.thumbnailData;
-            img.onload = () => {
-                console.log(`DEBUG: Thumbnail ${index + 1} loaded successfully`);
-            };
-            img.onerror = () => {
-                console.log(`%cDEBUG: ERROR loading thumbnail ${index + 1}`, 'color: red;');
-            };
-            
-            const deleteBtn = document.createElement('div');
-            deleteBtn.className = 'thumbnail-delete-btn';
-            deleteBtn.innerHTML = '&times;';
-            deleteBtn.onclick = (e) => {
-                e.stopPropagation();
-                if (confirm('Are you sure you want to delete this photo?')) {
-                    this.deletePhoto(photo.timestamp);
-                }
-            };
-            
-            thumbWrapper.appendChild(img);
-            thumbWrapper.appendChild(deleteBtn);
-            container.appendChild(thumbWrapper);
-            
-            console.log(`DEBUG: Thumbnail ${index + 1} added to container`);
-        });
-        
-        console.log('DEBUG: All thumbnails processed and added to UI');
+ loadAndDisplayThumbnails() {
+    console.log('DEBUG: loadAndDisplayThumbnails() called');
+    
+    const container = document.getElementById('thumbnailContainer');
+    if (!container) {
+        console.log('%cDEBUG: ERROR - thumbnailContainer not found!', 'color: red;');
+        return;
     }
+    
+    if (!this.activeElement) {
+        console.log('DEBUG: No active element, clearing container');
+        container.innerHTML = '';
+        return;
+    }
+    
+    console.log('DEBUG: Clearing existing thumbnails...');
+    container.innerHTML = '';
+
+    // Filter photos for the current active element
+    const elementPhotos = AppState.photos.filter(p => p.elementId === this.activeElement.id);
+    console.log('DEBUG: Photos for active element:', elementPhotos.length);
+
+    if (elementPhotos.length === 0) {
+        console.log('DEBUG: No photos found for active element');
+        return;
+    }
+
+    elementPhotos.forEach((photo, index) => {
+        console.log(`DEBUG: Creating thumbnail ${index + 1}/${elementPhotos.length}`);
+        
+        const thumbWrapper = document.createElement('div');
+        thumbWrapper.className = 'photo-thumbnail-wrapper';
+        
+        const img = document.createElement('img');
+        img.src = photo.thumbnailData;
+        img.className = 'photo-thumbnail-image';
+        img.onload = () => {
+            console.log(`DEBUG: Thumbnail ${index + 1} loaded successfully`);
+        };
+        img.onerror = () => {
+            console.log(`%cDEBUG: ERROR loading thumbnail ${index + 1}`, 'color: red;');
+        };
+        
+        // Create expand button container
+        const expandBtn = document.createElement('div');
+        expandBtn.className = 'thumbnail-expand-btn';
+        expandBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.expandPhoto(photo);
+        };
+        
+        // Create expand icon
+        const expandIcon = document.createElement('img');
+        expandIcon.src = 'public/expand.svg';
+        expandIcon.style.width = '100%';
+        expandIcon.style.height = '100%';
+        expandBtn.appendChild(expandIcon);
+        
+        // Create delete button container
+        const deleteBtn = document.createElement('div');
+        deleteBtn.className = 'thumbnail-delete-btn';
+        deleteBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (confirm('Are you sure you want to delete this photo?')) {
+                this.deletePhoto(photo.timestamp);
+            }
+        };
+        
+        // Create delete icon
+        const deleteIcon = document.createElement('img');
+        deleteIcon.src = 'public/delete.svg';
+        deleteIcon.style.width = '100%';
+        deleteIcon.style.height = '100%';
+        deleteBtn.appendChild(deleteIcon);
+        
+        thumbWrapper.appendChild(img);
+        thumbWrapper.appendChild(expandBtn);
+        thumbWrapper.appendChild(deleteBtn);
+        container.appendChild(thumbWrapper);
+        
+        console.log(`DEBUG: Thumbnail ${index + 1} added to container`);
+    });
+    
+    console.log('DEBUG: All thumbnails processed and added to UI');
+}
+
+// STEP 2: ADD this new method to photos.js (after loadAndDisplayThumbnails):
+
+expandPhoto(photo) {
+    console.log('Expanding photo:', photo.timestamp);
+    
+    // Create modal overlay
+    const modal = document.createElement('div');
+    modal.className = 'photo-expand-modal';
+    modal.onclick = () => modal.remove(); // Click anywhere to close
+    
+    // Create modal content container
+    const modalContent = document.createElement('div');
+    modalContent.className = 'photo-expand-content';
+    modalContent.onclick = (e) => e.stopPropagation(); // Prevent closing when clicking image
+    
+    // Create the expanded image
+    const expandedImg = document.createElement('img');
+    expandedImg.src = photo.imageData;
+    expandedImg.className = 'photo-expanded';
+    
+    // Create close button
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'photo-expand-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = () => modal.remove();
+    
+    // Assemble modal
+    modalContent.appendChild(expandedImg);
+    modalContent.appendChild(closeBtn);
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+    
+    // Add class after a small delay for animation
+    setTimeout(() => modal.classList.add('active'), 10);
+}
 
     deletePhoto(timestamp) {
         console.log('DEBUG: Deleting photo with timestamp:', timestamp);

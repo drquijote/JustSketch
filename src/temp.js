@@ -88,31 +88,31 @@ function redrawPlacedElements() {
                 const deleteX = element.x + element.width + padding;
                 const deleteY = elementCenterY - (iconSize / 2);
                 
-                ctx.fillStyle = '#3498db';
-                ctx.fillRect(editX, editY, iconSize, iconSize);
-                ctx.fillStyle = 'white';
-                ctx.font = '16px Arial';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('✏', editX + iconSize/2, editY + iconSize/2);
+                // Draw edit.svg icon
+                const editIconPath = 'public/edit.svg';
+                if (!AppState.imageCache[editIconPath]) {
+                    const editImg = new Image();
+                    editImg.onload = () => { 
+                        AppState.imageCache[editIconPath] = editImg; 
+                        CanvasManager.redraw(); 
+                    };
+                    editImg.src = editIconPath;
+                } else {
+                    ctx.drawImage(AppState.imageCache[editIconPath], editX, editY, iconSize, iconSize);
+                }
                 
-                ctx.strokeStyle = '#e74c3c';
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(deleteX + iconSize/2, deleteY + iconSize/2, iconSize/2, 0, Math.PI * 2);
-                ctx.stroke();
-                ctx.strokeStyle = 'white';
-                ctx.lineWidth = 3;
-                ctx.lineCap = 'round';
-                const crossOffset = 7;
-                const crossCenterX = deleteX + iconSize/2;
-                const crossCenterY = deleteY + iconSize/2;
-                ctx.beginPath();
-                ctx.moveTo(crossCenterX - crossOffset, crossCenterY - crossOffset);
-                ctx.lineTo(crossCenterX + crossOffset, crossCenterY + crossOffset);
-                ctx.moveTo(crossCenterX + crossOffset, crossCenterY - crossOffset);
-                ctx.lineTo(crossCenterX - crossOffset, crossCenterY + crossOffset);
-                ctx.stroke();
+                // Draw delete.svg icon
+                const deleteIconPath = 'public/delete.svg';
+                if (!AppState.imageCache[deleteIconPath]) {
+                    const deleteImg = new Image();
+                    deleteImg.onload = () => { 
+                        AppState.imageCache[deleteIconPath] = deleteImg; 
+                        CanvasManager.redraw(); 
+                    };
+                    deleteImg.src = deleteIconPath;
+                } else {
+                    ctx.drawImage(AppState.imageCache[deleteIconPath], deleteX, deleteY, iconSize, iconSize);
+                }
             }
         } else if (element.type === 'icon') {
             const drawRotatedIcon = (img) => {
@@ -138,54 +138,9 @@ function redrawPlacedElements() {
             }
         }
         
-        // DRAW PHOTO CHECKMARK - NEW CODE
-        // Only show checkmark in photos mode and if element has photos
-        if (AppState.currentMode === 'photos' && elementHasPhotos(element.id)) {
-            // Draw checkmark indicator - positioned at upper right corner, just touching
-            const checkSize = 20;
-            const checkX = element.x + element.width - checkSize/2;
-            const checkY = element.y - checkSize/2;
-            
-            // Green circle background
-            ctx.fillStyle = '#27ae60';
-            ctx.beginPath();
-            ctx.arc(checkX, checkY, checkSize/2, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // White checkmark
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 3;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.beginPath();
-            ctx.moveTo(checkX - 5, checkY);
-            ctx.lineTo(checkX - 1, checkY + 5);
-            ctx.lineTo(checkX + 5, checkY - 5);
-            ctx.stroke();
-        }
-        
         ctx.restore();
     });
     
     ctx.restore();
     updateLegend();
 }
-
-// STEP 3: Add this CSS to your style.css file for visual polish (optional but recommended):
-
-/*
-.photo-checkmark {
-    position: absolute;
-    width: 20px;
-    height: 20px;
-    background-color: #27ae60;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-size: 14px;
-    font-weight: bold;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-*/

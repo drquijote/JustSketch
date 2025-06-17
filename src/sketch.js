@@ -80,7 +80,6 @@ function forceResetCanvasState() {
 }
 
 
-
  function preloadImages() {
     console.log('Preloading UI images...');
     const imagesToLoad = {
@@ -225,37 +224,54 @@ function initSketchModule() {
             if (isEditMode && AppState.editSubMode === 'labels' && (element.type === 'room' || element.type === 'area_label')) {
                 const iconSize = 24;
                 const padding = 6;
-                const elementCenterY = element.y + element.height / 2;
-                const editX = element.x - iconSize - padding;
-                const editY = elementCenterY - (iconSize / 2);
-                const deleteX = element.x + element.width + padding;
-                const deleteY = elementCenterY - (iconSize / 2);
                 
-                ctx.fillStyle = '#3498db';
-                ctx.fillRect(editX, editY, iconSize, iconSize);
-                ctx.fillStyle = 'white';
-                ctx.font = '16px Arial';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('✏', editX + iconSize/2, editY + iconSize/2);
+                let editX, editY, deleteX, deleteY;
                 
-                ctx.strokeStyle = '#e74c3c';
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(deleteX + iconSize/2, deleteY + iconSize/2, iconSize/2, 0, Math.PI * 2);
-                ctx.stroke();
-                ctx.strokeStyle = 'white';
-                ctx.lineWidth = 3;
-                ctx.lineCap = 'round';
-                const crossOffset = 7;
-                const crossCenterX = deleteX + iconSize/2;
-                const crossCenterY = deleteY + iconSize/2;
-                ctx.beginPath();
-                ctx.moveTo(crossCenterX - crossOffset, crossCenterY - crossOffset);
-                ctx.lineTo(crossCenterX + crossOffset, crossCenterY + crossOffset);
-                ctx.moveTo(crossCenterX + crossOffset, crossCenterY - crossOffset);
-                ctx.lineTo(crossCenterX - crossOffset, crossCenterY + crossOffset);
-                ctx.stroke();
+                if (element.type === 'area_label') {
+                    // For area labels, x/y is the CENTER, so calculate bounds differently
+                    const labelLeft = element.x - element.width / 2;
+                    const labelRight = element.x + element.width / 2;
+                    const labelTop = element.y - element.height / 2;
+                    
+                    // Position icons relative to the actual label bounds
+                    editX = labelLeft - iconSize - padding;
+                    editY = labelTop;
+                    deleteX = labelRight + padding;
+                    deleteY = labelTop;
+                } else {
+                    // For room labels, x/y is the TOP-LEFT corner
+                    const elementCenterY = element.y + element.height / 2;
+                    editX = element.x - iconSize - padding;
+                    editY = elementCenterY - (iconSize / 2);
+                    deleteX = element.x + element.width + padding;
+                    deleteY = elementCenterY - (iconSize / 2);
+                }
+                
+                // Draw edit.svg icon
+                const editIconPath = 'public/edit.svg';
+                if (!AppState.imageCache[editIconPath]) {
+                    const editImg = new Image();
+                    editImg.onload = () => { 
+                        AppState.imageCache[editIconPath] = editImg; 
+                        CanvasManager.redraw(); 
+                    };
+                    editImg.src = editIconPath;
+                } else {
+                    ctx.drawImage(AppState.imageCache[editIconPath], editX, editY, iconSize, iconSize);
+                }
+                
+                // Draw delete.svg icon
+                const deleteIconPath = 'public/delete.svg';
+                if (!AppState.imageCache[deleteIconPath]) {
+                    const deleteImg = new Image();
+                    deleteImg.onload = () => { 
+                        AppState.imageCache[deleteIconPath] = deleteImg; 
+                        CanvasManager.redraw(); 
+                    };
+                    deleteImg.src = deleteIconPath;
+                } else {
+                    ctx.drawImage(AppState.imageCache[deleteIconPath], deleteX, deleteY, iconSize, iconSize);
+                }
             }
         } else if (element.type === 'icon') {
             const drawRotatedIcon = (img) => {

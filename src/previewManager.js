@@ -614,11 +614,17 @@ _generatePreviewHTML(state) {
                                     div.textContent = el.content;
                                 }
                             } else if (el.type === 'icon') {
+                                div.className = 'icon-container';
                                 const img = new Image();
                                 img.src = el.content;
                                 img.style.width = '100%'; 
                                 img.style.height = '100%';
-                                if (el.rotation) img.style.transform = \`rotate(\${el.rotation}rad)\`;
+                                img.style.display = 'block';
+                                img.style.objectFit = 'contain';
+                                if (el.rotation) {
+                                    // Apply rotation to container, not image
+                                    div.style.transform = \`rotate(\${el.rotation}rad)\`;
+                                }
                                 div.appendChild(img);
                             }
                             overlayContainer.appendChild(div);
@@ -642,6 +648,26 @@ _generatePreviewHTML(state) {
                         const buttons = document.querySelectorAll('button');
                         buttons.forEach(btn => btn.style.display = 'none');
                         
+                        // Wait for all images to load
+                        const images = pageContainer.querySelectorAll('img');
+                        const imagePromises = Array.from(images).map(img => {
+                            if (img.complete) return Promise.resolve();
+                            return new Promise((resolve, reject) => {
+                                img.onload = resolve;
+                                img.onerror = resolve; // Continue even if image fails
+                                // Force reload if needed
+                                if (!img.src) return resolve();
+                                const tempSrc = img.src;
+                                img.src = '';
+                                img.src = tempSrc;
+                            });
+                        });
+                        
+                        await Promise.all(imagePromises);
+                        
+                        // Small delay to ensure rendering is complete
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        
                         // Generate canvas from HTML with optimized settings
                         const canvas = await html2canvas(pageContainer, {
                             scale: 1.5, // Reduced from 2 to 1.5 for smaller file size
@@ -649,16 +675,28 @@ _generatePreviewHTML(state) {
                             logging: false,
                             width: 1020,
                             height: 1560,
-                            imageTimeout: 0,
+                            imageTimeout: 15000, // Increased timeout
                             allowTaint: true,
-                            backgroundColor: '#ffffff'
+                            backgroundColor: '#ffffff',
+                            onclone: (clonedDoc) => {
+                                // Fix icon positioning in cloned document
+                                const clonedIcons = clonedDoc.querySelectorAll('.html-overlay div');
+                                clonedIcons.forEach(div => {
+                                    const img = div.querySelector('img');
+                                    if (img && img.style.transform) {
+                                        // Apply transform directly to container instead
+                                        div.style.transform = img.style.transform;
+                                        img.style.transform = 'none';
+                                    }
+                                });
+                            }
                         });
                         
                         // Show buttons again
                         buttons.forEach(btn => btn.style.display = '');
                         
                         // Convert canvas to JPEG for better compression
-                        const imgData = canvas.toDataURL('image/jpeg', 0.8); // 80% quality JPEG
+                        const imgData = canvas.toDataURL('image/jpeg', 0.85); // Slightly higher quality
                         
                         // Create PDF with compression
                         const { jsPDF } = window.jspdf;

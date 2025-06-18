@@ -76,93 +76,37 @@ _generatePreviewHTML(state) {
         }
     });
 
-    // --- MODIFIED: SPECIAL PHOTO HANDLING FOR IMPORTANT VIEWS ---
+    // --- NEW: PHOTO PAGE GENERATION LOGIC ---
     let photoPagesHTML = '';
     if (state.photos && state.photos.length > 0) {
         // Identify element IDs of "gray" rooms to exclude their photos.
+        // The 'perm-palette' class is used for these gray labels in sketcher.html.
         const grayElementIds = new Set(
             state.placedElements
                 .filter(el => el.type === 'room' && el.styling?.className?.includes('perm-palette'))
                 .map(el => el.id)
         );
 
-        // Filter out photos linked to gray elements
+        // Filter photos, excluding those linked to the gray elements.
         const validPhotos = state.photos.filter(photo => !grayElementIds.has(photo.elementId));
 
-        // NEW: Function to check if a photo is "important"
-        const isImportantPhoto = (photo) => {
-            const content = (photo.elementContent || '').toLowerCase();
-            
-            // Check for important views with proper context
-            const isFloorFront = content.includes('floor') && content.includes('front') && !content.includes('patio') && !content.includes('deck') && !content.includes('porch');
-            const isSubjectFront = content.includes('subject') && content.includes('front');
-            const isFrontView = content.includes('front view');
-            
-            const isFloorStreet = content.includes('floor') && content.includes('street');
-            const isSubjectStreet = content.includes('subject') && content.includes('street');
-            const isStreetView = content.includes('street view');
-            
-            const isFloorRear = content.includes('floor') && content.includes('rear');
-            const isSubjectRear = content.includes('subject') && content.includes('rear');
-            const isRearView = content.includes('rear view');
-            
-            return isFloorFront || isSubjectFront || isFrontView ||
-                   isFloorStreet || isSubjectStreet || isStreetView ||
-                   isFloorRear || isSubjectRear || isRearView;
-        };
-
-        const getPreviewCaption = (photo) => {
-            let caption = photo.elementContent || 'Attached Photo';
-            
-            // Replace "Floor 1" with "Subject" for important photos in preview only
-            if (isImportantPhoto(photo)) {
-                caption = caption.replace(/floor\s*1/gi, 'Subject');
-            }
-            
-            return caption;
-        };
-
-        // Separate important photos from regular photos
-        const importantPhotos = validPhotos.filter(isImportantPhoto);
-        const regularPhotos = validPhotos.filter(photo => !isImportantPhoto(photo));
-
-        // Sort important photos to ensure Front View comes first
-        const sortedImportantPhotos = importantPhotos.sort((a, b) => {
-            const aContent = (a.elementContent || '').toLowerCase();
-            const bContent = (b.elementContent || '').toLowerCase();
-            
-            // Front view gets highest priority (0) - matches both "front view" and "front"
-            if (aContent.includes('front')) return -1;
-            if (bContent.includes('front')) return 1;
-            
-            // Street view gets second priority (1) - matches both "street view" and "street"
-            if (aContent.includes('street')) return -1;
-            if (bContent.includes('street')) return 1;
-            
-            // Rear view gets third priority (2) - matches both "rear view" and "rear"
-            if (aContent.includes('rear')) return -1;
-            if (bContent.includes('rear')) return 1;
-            
-            return 0;
-        });
-
-        // IMPORTANT PHOTOS: Always 3-per-page, always visible, ALWAYS FIRST
-        let importantPhotosHTML = '';
-        const importantPhotoPages = [];
-        for (let i = 0; i < sortedImportantPhotos.length; i += 3) {
-            importantPhotoPages.push(sortedImportantPhotos.slice(i, i + 3));
+        // Group the valid photos into pages of 3.
+        const photoPages = [];
+        for (let i = 0; i < validPhotos.length; i += 3) {
+            photoPages.push(validPhotos.slice(i, i + 3));
         }
 
-        importantPhotoPages.forEach((page, pageIndex) => {
+        // Generate HTML for each photo page.
+        photoPages.forEach((page, pageIndex) => {
             const photoItemsHTML = page.map(photo => `
                 <div class="photo-item-vertical">
-                    <img src="${photo.imageData}" alt="${getPreviewCaption(photo)}">
-                    <div class="caption">${getPreviewCaption(photo)}</div>
+                    <img src="${photo.imageData}" alt="${photo.elementContent || 'Photo'}">
+                    <div class="caption">${photo.elementContent || 'Attached Photo'}</div>
                 </div>
             `).join('');
 
-            importantPhotosHTML += `
-                <div class="page-container photo-page important-photos">
+            photoPagesHTML += `
+                <div class="page-container photo-page">
                     <div class="page-title">Photos (Page ${pageIndex + 1})</div>
                     <div class="photo-grid-vertical">
                         ${photoItemsHTML}
@@ -170,58 +114,6 @@ _generatePreviewHTML(state) {
                 </div>
             `;
         });
-
-        // REGULAR PHOTOS: 3-per-page layout (default)
-        let regularPhotosHTML = '';
-        const regularPhotoPages3 = [];
-        for (let i = 0; i < regularPhotos.length; i += 3) {
-            regularPhotoPages3.push(regularPhotos.slice(i, i + 3));
-        }
-
-        regularPhotoPages3.forEach((page, pageIndex) => {
-            const photoItemsHTML = page.map(photo => `
-                <div class="photo-item-vertical">
-                    <img src="${photo.imageData}" alt="${getPreviewCaption(photo)}">
-                    <div class="caption">${getPreviewCaption(photo)}</div>
-                </div>
-            `).join('');
-
-            regularPhotosHTML += `
-                <div class="page-container photo-page layout-3">
-                    <div class="page-title">Photos (Page ${pageIndex + 1})</div>
-                    <div class="photo-grid-vertical">
-                        ${photoItemsHTML}
-                    </div>
-                </div>
-            `;
-        });
-
-        // REGULAR PHOTOS: 6-per-page layout (initially hidden)
-        const regularPhotoPages6 = [];
-        for (let i = 0; i < regularPhotos.length; i += 6) {
-            regularPhotoPages6.push(regularPhotos.slice(i, i + 6));
-        }
-
-        regularPhotoPages6.forEach((page, pageIndex) => {
-            const photoItemsHTML = page.map(photo => `
-                <div class="photo-item-grid">
-                    <img src="${photo.imageData}" alt="${getPreviewCaption(photo)}">
-                    <div class="caption">${getPreviewCaption(photo)}</div>
-                </div>
-            `).join('');
-
-            regularPhotosHTML += `
-                <div class="page-container photo-page layout-6" style="display: none;">
-                    <div class="page-title">Photos (Page ${pageIndex + 1})</div>
-                    <div class="photo-grid-6">
-                        ${photoItemsHTML}
-                    </div>
-                </div>
-            `;
-        });
-
-        // COMBINE: Important photos FIRST, then regular photos
-        photoPagesHTML = importantPhotosHTML + regularPhotosHTML;
     }
     // --- END: PHOTO PAGE GENERATION LOGIC ---
     
@@ -275,105 +167,214 @@ _generatePreviewHTML(state) {
                     margin-bottom: 20px;
                 }
 
-                /* --- STYLES FOR PHOTO PAGES --- */
+                /* --- NEW: STYLES FOR PHOTO PAGES --- */
                 .photo-page {
                     justify-content: flex-start;
                     padding: 40px;
                     box-sizing: border-box;
                     height: 1560px; /* Enforce same height as sketch page */
                 }
-                
-                /* 3-per-page vertical layout */
-                .photo-grid-vertical {
+                .photo-grid {
                     display: flex;
-                    flex-direction: column; /* Stack photos vertically */
-                    align-items: center; /* Center photos horizontally */
+                    justify-content: space-around;
+                    align-items: flex-start;
                     width: 100%;
-                    margin-top: 20px;
-                    flex-grow: 1; /* ADDED: Fill available vertical space */
-                    min-height: 0; /* ADDED: Allow shrinking */
-                    justify-content: space-between; /* ADDED: Distribute photo items */
-                }
-                
-                .photo-item-vertical {
-                    display: flex;
-                    padding: 15px;
-                    flex-direction: column;
-                    align-items: center;
-                    width: 100%;
-                    background: lightgrey;
-                    border: 5px solid lightblue;
-                    border-radius: 15px;
-                    max-width: 780px; /* 6.5 inches at 120 DPI */
-                    min-width: 720px; /* 6 inches at 120 DPI */
-                    height: 32%; /* ADDED: Set relative height for 3 items */
-                    box-sizing: border-box; /* ADDED: Include padding/border in height */
-                }
-                
-                .photo-item-vertical img {
-                    width: 100%;
-                    border: 1px solid #ccc;
-                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-                    margin-bottom: 10px;
-                    object-fit: contain;
-                    flex: 1; /* ADDED: Allow image to fill space flexibly */
-                    min-height: 0; /* ADDED: Allow image to shrink */
-                }
-                
-                .photo-item-vertical .caption {
-                    font-size: 16px; /* Slightly larger for better readability */
-                    font-weight: 500;
-                    text-align: center;
-                    color: #333;
-                    margin-top: 5px;
-                }
-
-                /* 6-per-page grid layout (3 rows x 2 columns) */
-                .photo-grid-6 {
-                    display: grid;
-                    grid-template-columns: 1fr 1fr; /* 2 columns */
-                    grid-template-rows: 1fr 1fr 1fr; /* 3 rows */
                     gap: 20px;
-                    width: 100%;
-                    height: 100%;
                     margin-top: 20px;
-                    padding: 0 20px;
-                    box-sizing: border-box;
                 }
-                
-                .photo-item-grid {
+                .photo-item {
                     display: flex;
                     flex-direction: column;
                     align-items: center;
-                    background: lightgrey;
-                    border: 3px solid lightblue;
-                    border-radius: 10px;
-                    padding: 10px;
-                    box-sizing: border-box;
-                    height: 100%;
+                    width: 31%; /* For 3-across layout */
                 }
-                
-                .photo-item-grid img {
+                .photo-item img {
                     width: 100%;
                     height: auto;
                     border: 1px solid #ccc;
                     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-                    margin-bottom: 8px;
+                    margin-bottom: 10px;
                     object-fit: contain;
-                    flex: 1;
-                    min-height: 0;
-                    max-height: calc(100% - 40px); /* Leave space for caption */
+                    max-height: 400px; /* Prevent huge images */
                 }
-                
-                .photo-item-grid .caption {
-                    font-size: 12px;
+                .photo-item .caption {
+                    font-size: 14px;
                     font-weight: 500;
                     text-align: center;
                     color: #333;
-                    margin-top: 5px;
-                    flex-shrink: 0;
                 }
 
+
+                    .page-container { 
+                        width: 1020px;
+                        /* MODIFIED: Use max-height to not constrain content vertically */
+                        max-height: 1560px;
+                        display: flex; 
+                        flex-direction: column; 
+                        background: white;
+                        box-shadow: 0 0 20px rgba(0,0,0,0.3);
+                        overflow: hidden;
+                        aspect-ratio: 8.5 / 13;
+                        transform-origin: top center;
+                        /* MODIFIED: Add scroll-snap alignment and margin */
+                        scroll-snap-align: start;
+                        flex-shrink: 0;
+                        margin-bottom: 20px;
+                    }
+
+                    /* --- NEW: STYLES FOR PHOTO PAGES --- */
+                    .photo-page {
+                        justify-content: flex-start;
+                        padding: 40px;
+                        box-sizing: border-box;
+                        height: 1560px; /* Enforce same height as sketch page */
+                    }
+                    
+                    /* MODIFIED: Changed from horizontal to vertical layout */
+                    .photo-grid-vertical {
+                        display: flex;
+                        flex-direction: column; /* Stack photos vertically */
+                        align-items: center; /* Center photos horizontally */
+                        width: 100%;
+                        margin-top: 20px;
+                        flex-grow: 1; /* ADDED: Fill available vertical space */
+                        min-height: 0; /* ADDED: Allow shrinking */
+                        justify-content: space-between; /* ADDED: Distribute photo items */
+                    }
+                    
+                    /* MODIFIED: Individual photo item for vertical layout */
+                    .photo-item-vertical {
+                        display: flex;
+                        padding: 15px;
+                        flex-direction: column;
+                        align-items: center;
+                        width: 100%;
+                        background: lightgrey;
+                        border: 5px solid lightblue;
+                        border-radius: 15px;
+                        max-width: 780px; /* 6.5 inches at 120 DPI */
+                        min-width: 720px; /* 6 inches at 120 DPI */
+                        height: 32%; /* ADDED: Set relative height for 3 items */
+                        box-sizing: border-box; /* ADDED: Include padding/border in height */
+                    }
+                    
+                    .photo-item-vertical img {
+                        width: 100%;
+                        border: 1px solid #ccc;
+                        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                        margin-bottom: 10px;
+                        object-fit: contain;
+                        flex: 1; /* ADDED: Allow image to fill space flexibly */
+                        min-height: 0; /* ADDED: Allow image to shrink */
+                    }
+                    
+                    .photo-item-vertical .caption {
+                        font-size: 16px; /* Slightly larger for better readability */
+                        font-weight: 500;
+                        text-align: center;
+                        color: #333;
+                        margin-top: 5px;
+                    }
+                    
+                    /* Original horizontal photo styles kept for reference */
+                    .photo-grid {
+                        display: flex;
+                        justify-content: space-around;
+                        align-items: flex-start;
+                        width: 100%;
+                        gap: 20px;
+                        margin-top: 20px;
+                    }
+                    .photo-item {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        width: 31%; /* For 3-across layout */
+                    }
+                    .photo-item img {
+                        width: 100%;
+                        height: auto;
+                        border: 1px solid #ccc;
+                        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                        margin-bottom: 10px;
+                        object-fit: contain;
+                        max-height: 400px; /* Prevent huge images */
+                    }
+                    .photo-item .caption {
+                        font-size: 14px;
+                        font-weight: 500;
+                        text-align: center;
+                        color: #333;
+                    }
+                    /* --- END: NEW PHOTO STYLES --- */
+                    
+                                      /* MODIFIED: Individual photo item for vertical layout */
+                    .photo-item-vertical {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        width: 100%;
+                        max-width: 780px; /* 6.5 inches at 120 DPI */
+                        min-width: 720px; /* 6 inches at 120 DPI */
+                    }
+                    
+                    .photo-item-vertical img {
+                        width: 100%;
+                        height: auto;
+                        border: 1px solid #ccc;
+                        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                        margin-bottom: 10px;
+                        object-fit: contain;
+                        max-height: 480px; /* Increased max height for larger photos */
+                    }
+                    
+                    .photo-item-vertical .caption {
+                        font-size: 16px; /* Slightly larger for better readability */
+                        font-weight: 500;
+                        text-align: center;
+                        color: #333;
+                        margin-top: 5px;
+                    }
+
+                    /* Mobile responsive scaling */
+                    @media (max-width: 1060px) {
+                        .page-wrapper {
+                            padding: 10px 0;
+                        }
+                        .page-container {
+                            transform: scale(calc((100vw - 40px) / 1020px));
+                            margin-bottom: calc(1580px * (1 - (100vw - 40px) / 1020px) * -1);
+                        }
+                        /* Adjust photo widths for mobile */
+                        .photo-item-vertical {
+                            max-width: calc(780px * ((100vw - 40px) / 1020px));
+                            min-width: calc(720px * ((100vw - 40px) / 1020px));
+                        }
+                    }
+                    
+                    /* Mobile notice */
+                    .mobile-notice {
+                        display: none;
+                        position: fixed;
+                        top: 10px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        background: rgba(0,0,0,0.8);
+                        color: white;
+                        padding: 10px 20px;
+                        border-radius: 5px;
+                        font-size: 14px;
+                        z-index: 1000;
+                    }
+
+                    @media (max-width: 768px) {
+                        .mobile-notice {
+                            display: block;
+                        }
+                    }
+                    
+                /* --- END: NEW PHOTO STYLES --- */
+                
                 /* Mobile responsive scaling */
                 @media (max-width: 1060px) {
                     .page-wrapper {
@@ -382,11 +383,6 @@ _generatePreviewHTML(state) {
                     .page-container {
                         transform: scale(calc((100vw - 40px) / 1020px));
                         margin-bottom: calc(1580px * (1 - (100vw - 40px) / 1020px) * -1);
-                    }
-                    /* Adjust photo widths for mobile */
-                    .photo-item-vertical {
-                        max-width: calc(780px * ((100vw - 40px) / 1020px));
-                        min-width: calc(720px * ((100vw - 40px) / 1020px));
                     }
                 }
                 
@@ -458,14 +454,12 @@ _generatePreviewHTML(state) {
                     width: 100%; 
                     height: 100%; 
                 }
-                
-                /* Layout toggle button */
-                .layout-btn { 
+                .print-btn { 
                     position: fixed; 
                     top: 15px; 
                     right: 20px; 
                     padding: 10px 18px; 
-                    background: #6c757d; 
+                    background: #007bff; 
                     color: white; 
                     border: none; 
                     border-radius: 5px; 
@@ -488,7 +482,7 @@ _generatePreviewHTML(state) {
                     font-size: 1em;
                 }
                 
-                .pdf-btn:hover, .layout-btn:hover {
+                .pdf-btn:hover, .print-btn:hover {
                     opacity: 0.9;
                 }
                 
@@ -520,7 +514,7 @@ _generatePreviewHTML(state) {
                     .mobile-notice {
                         display: block;
                     }
-                    .layout-btn, .pdf-btn {
+                    .print-btn, .pdf-btn {
                         top: 10px;
                         right: 10px;
                         padding: 8px 14px;
@@ -542,7 +536,7 @@ _generatePreviewHTML(state) {
                         overflow: visible;
                         height: auto;
                     }
-                    .layout-btn, .pdf-btn, .mobile-notice { 
+                    .print-btn, .pdf-btn, .mobile-notice { 
                         display: none !important; 
                     } 
                     .page-container {
@@ -567,7 +561,7 @@ _generatePreviewHTML(state) {
             <div class="page-wrapper">
                 <div class="page-container">
                     <button class="pdf-btn" onclick="generatePDF()">PDF</button>
-                    <button class="layout-btn" onclick="togglePhotoLayout()">6/Page</button>
+                    <button class="print-btn" onclick="window.print()">PDF(x6)</button>
                     <div class="page-title">Subject Sketch</div>
                     <div class="canvas-section">
                         <canvas id="previewCanvas"></canvas>
@@ -602,20 +596,9 @@ _generatePreviewHTML(state) {
             </div>
 
             <script>
-                // Global variable to track current layout for regular photos only
-                let previewCurrentLayout = 3; // Start with 3-per-page layout
-
                 window.onload = () => {
                     const state = window.appStateData;
                     const canvas = document.getElementById('previewCanvas');
-                    
-                    // DEBUG: Check if state data is available
-                    console.log('State data:', state);
-                    console.log('Canvas element:', canvas);
-                    if (state) {
-                        console.log('Polygons:', state.drawnPolygons?.length);
-                        console.log('Elements:', state.placedElements?.length);
-                    }
                     
                     // Only try to render canvas if the canvas element exists on the first page
                     if (canvas) {
@@ -905,29 +888,6 @@ _generatePreviewHTML(state) {
                     }
                 }
                 
-                // Function to toggle between photo layouts (ONLY affects regular photos)
-                window.togglePhotoLayout = function() {
-                    const layout3Pages = document.querySelectorAll('.layout-3'); // Regular photos only
-                    const layout6Pages = document.querySelectorAll('.layout-6'); // Regular photos only
-                    const toggleBtn = document.querySelector('.layout-btn');
-                    
-                    // Important photos are NOT affected by this toggle
-                    
-                    if (previewCurrentLayout === 3) {
-                        // Switch to 6-per-page layout for regular photos
-                        layout3Pages.forEach(page => page.style.display = 'none');
-                        layout6Pages.forEach(page => page.style.display = 'flex');
-                        toggleBtn.textContent = '3/Page';
-                        previewCurrentLayout = 6;
-                    } else {
-                        // Switch to 3-per-page layout for regular photos
-                        layout6Pages.forEach(page => page.style.display = 'none');
-                        layout3Pages.forEach(page => page.style.display = 'flex');
-                        toggleBtn.textContent = '6/Page';
-                        previewCurrentLayout = 3;
-                    }
-                }
-                
                 // PDF generation using html2canvas
                 window.generatePDF = async function() {
                     try {
@@ -943,8 +903,7 @@ _generatePreviewHTML(state) {
                             compress: true
                         });
                         
-                        // Only include visible pages in PDF (important photos always included)
-                        const pageContainers = document.querySelectorAll('.page-container:not([style*="display: none"])');
+                        const pageContainers = document.querySelectorAll('.page-container');
 
                         for (let i = 0; i < pageContainers.length; i++) {
                             const container = pageContainers[i];

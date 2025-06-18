@@ -113,6 +113,7 @@ function initSketchModule() {
     ctx = AppState.ctx;
     
     preloadImages();
+    preloadPaletteIcons(); // Add this line
     
     AppState.placedElements = placedElements;
     AppState.actionHistory = actionHistory;
@@ -532,6 +533,31 @@ function finishIconEditing() {
     CanvasManager.redraw();
 }
 
+
+function preloadPaletteIcons() {
+    console.log('Preloading palette icon images...');
+    
+    // Find all icon images in the palette
+    const iconImages = document.querySelectorAll('.icon-palette-item img');
+    
+    iconImages.forEach(img => {
+        if (img.src && !AppState.imageCache[img.src]) {
+            const preloadImg = new Image();
+            preloadImg.src = img.src;
+            preloadImg.onload = () => {
+                AppState.imageCache[img.src] = preloadImg;
+                console.log(`Palette icon preloaded: ${img.src}`);
+            };
+            preloadImg.onerror = () => {
+                console.error(`Failed to preload palette icon: ${img.src}`);
+            };
+        }
+    });
+}
+
+// Call this function in initSketchModule after preloadImages()
+// Add this line after the preloadImages() call:
+// preloadPaletteIcons();
 function selectElement(type, content, styling, alt = '') {
     selectedElement = { type, content, styling, alt };
     
@@ -548,6 +574,21 @@ function selectElement(type, content, styling, alt = '') {
         const textWidth = Math.max(58, selectedElement.content.length * 8 + 8);
         customCursor.innerHTML = `<div style="background-color: ${styling.backgroundColor}; color: ${styling.color || 'white'}; padding: 2px 4px; border-radius: 4px; font: 600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; white-space: nowrap; border: 1px solid rgba(255,255,255,0.2); pointer-events: none; width: ${textWidth}px; height: 16px; display: flex; align-items: center; justify-content: center;">${content}</div>`;
     } else {
+        // For icons, preload the image if it's not already cached
+        if (!AppState.imageCache[content]) {
+            const img = new Image();
+            img.src = content;
+            img.onload = () => {
+                AppState.imageCache[content] = img;
+                console.log(`Icon image cached: ${content}`);
+                // Redraw canvas to show any icons that were waiting for this image
+                CanvasManager.redraw();
+            };
+            img.onerror = () => {
+                console.error(`Failed to load icon image: ${content}`);
+            };
+        }
+        
         customCursor.innerHTML = `<img src="${content}" alt="${alt}" style="width: 45px; height: 45px; pointer-events: none;">`;
     }
     
@@ -556,6 +597,9 @@ function selectElement(type, content, styling, alt = '') {
     canvas.style.cursor = 'none';
     document.addEventListener('mousemove', updateCustomCursor);
 }
+
+
+
 
 function getEventPos(e) {
     const viewport = document.getElementById('canvasViewport');
@@ -582,9 +626,22 @@ function getEventPos(e) {
 function placeElement(x, y) {
     if (!selectedElement) return;
 
-    const textWidth = selectedElement.type === 'room' ? Math.max(58, selectedElement.content.length * 8 + 8) : 45;
-    const elemWidth = selectedElement.type === 'icon' ? 45 : textWidth;
-    const elemHeight = selectedElement.type === 'icon' ? 45 : 16;
+    let elemWidth, elemHeight;
+
+    // Unified logic to determine element dimensions based on its type
+    if (selectedElement.type === 'icon') {
+        // Icons have a fixed, square size
+        elemWidth = 45;
+        elemHeight = 45;
+    } else if (selectedElement.type === 'room') {
+        // Room labels have a dynamic width to fit the text and a fixed height
+        elemWidth = Math.max(58, selectedElement.content.length * 8 + 8);
+        elemHeight = 16;
+    } else {
+        // A sensible fallback for any other potential element types
+        elemWidth = 45;
+        elemHeight = 45;
+    }
 
     const newElement = {
         id: Date.now(),
@@ -592,6 +649,8 @@ function placeElement(x, y) {
         content: selectedElement.content,
         styling: selectedElement.styling,
         alt: selectedElement.alt,
+        // This placement logic is now identical for all types.
+        // It correctly centers the element on the cursor's canvas coordinates.
         x: x - elemWidth / 2,
         y: y - elemHeight / 2,
         width: elemWidth,

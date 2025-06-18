@@ -1,113 +1,145 @@
-// UPDATE the displaySavedSketches function in index.html to show report types:
+// This is just the PDF export functionality to add to your existing previewManager.js
+// Add this method to your PreviewManager class, keeping all your existing code unchanged
 
-async function displaySavedSketches() {
-    const listContainer = document.getElementById('savedSketchesList');
-    
-    try {
-        // Fetch all sketches from the 'sketches' object store, order by savedAt descending.
-        const allSketches = await db.sketches.orderBy('savedAt').reverse().toArray();
+// First, update just the HTML generation to add the PDF button and libraries
+// In your existing _generatePreviewHTML method, make these minimal changes:
 
-        if (allSketches.length === 0) {
-            listContainer.innerHTML = '<h2 style="text-align: center; margin-bottom: 1rem; color: #555;">Saved Sketches</h2><p style="text-align: center; color: #888;">No saved sketches found.</p>';
-            return;
-        }
+// 1. Add these two script tags in the <head> section after your existing styles:
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-        let html = '<h2 style="text-align: center; margin-bottom: 1rem; color: #555;">Saved Sketches</h2>';
-        html += '<ul style="list-style: none; padding: 0; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">';
+// 2. Replace your existing print button:
+        // REPLACE: <button class="print-btn" onclick="window.print()">Print</button>
+        // WITH: <button class="print-btn" onclick="generatePDF()">Export PDF</button>
 
-        for (const sketch of allSketches) {
-            const savedDate = new Date(sketch.savedAt).toLocaleString();
-            const loadUrl = `sketcher.html?loadSketch=${sketch.id}`;
-            
-            // Get report types from the sketch data
-            let reportTypes = [];
-            if (sketch.data && sketch.data.reportTypes) {
-                if (sketch.data.reportTypes.exteriorOnly) reportTypes.push('Exterior-Only');
-                if (sketch.data.reportTypes.fullInspection) reportTypes.push('Full-Inspection');
-                if (sketch.data.reportTypes.fha) reportTypes.push('FHA');
+// 3. Add this PDF generation function in the <script> section before your existing window.onload:
+        <script>
+            // PDF generation function - single page layout
+            async function generatePDF() {
+                const button = document.querySelector('.print-btn');
+                const originalText = button.textContent;
+                button.disabled = true;
+                button.textContent = 'Generating PDF...';
+                
+                try {
+                    console.log('Starting PDF generation...');
+                    
+                    const { jsPDF } = window.jspdf;
+                    
+                    // Capture the canvas section
+                    const canvasSection = document.querySelector('.canvas-section');
+                    const canvasImage = await html2canvas(canvasSection, {
+                        scale: 2,
+                        backgroundColor: '#ffffff',
+                        logging: false,
+                        allowTaint: true,
+                        useCORS: true
+                    });
+                    
+                    // Capture the legend section
+                    const legendSection = document.querySelector('.legend-section');
+                    const legendImage = await html2canvas(legendSection, {
+                        scale: 2,
+                        backgroundColor: '#ffffff',
+                        logging: false
+                    });
+                    
+                    // Detect best orientation
+                    const canvasAspectRatio = canvasImage.width / canvasImage.height;
+                    const orientation = canvasAspectRatio > 1.2 ? 'landscape' : 'portrait';
+                    
+                    const pdf = new jsPDF({
+                        orientation: orientation,
+                        unit: 'mm',
+                        format: 'letter'
+                    });
+                    
+                    const pageWidth = pdf.internal.pageSize.getWidth();
+                    const pageHeight = pdf.internal.pageSize.getHeight();
+                    const margin = 10;
+                    
+                    const availableWidth = pageWidth - (2 * margin);
+                    const availableHeight = pageHeight - (2 * margin);
+                    
+                    const legendAspectRatio = legendImage.width / legendImage.height;
+                    
+                    if (orientation === 'landscape') {
+                        // Landscape: floor plan left, legend right
+                        const floorPlanWidth = availableWidth * 0.65;
+                        const legendWidth = availableWidth * 0.33;
+                        const gap = availableWidth * 0.02;
+                        
+                        let fpWidth = floorPlanWidth;
+                        let fpHeight = fpWidth / canvasAspectRatio;
+                        
+                        if (fpHeight > availableHeight) {
+                            fpHeight = availableHeight;
+                            fpWidth = fpHeight * canvasAspectRatio;
+                        }
+                        
+                        let lgWidth = legendWidth;
+                        let lgHeight = lgWidth / legendAspectRatio;
+                        
+                        if (lgHeight > availableHeight * 0.6) {
+                            lgHeight = availableHeight * 0.6;
+                            lgWidth = lgHeight * legendAspectRatio;
+                        }
+                        
+                        const fpX = margin;
+                        const fpY = margin + (availableHeight - fpHeight) / 2;
+                        
+                        const lgX = margin + floorPlanWidth + gap;
+                        const lgY = margin + (availableHeight - lgHeight) / 2;
+                        
+                        pdf.addImage(canvasImage.toDataURL('image/png'), 'PNG', fpX, fpY, fpWidth, fpHeight);
+                        pdf.addImage(legendImage.toDataURL('image/png'), 'PNG', lgX, lgY, lgWidth, lgHeight);
+                        
+                    } else {
+                        // Portrait: floor plan top, legend bottom
+                        const floorPlanHeight = availableHeight * 0.65;
+                        const legendHeight = availableHeight * 0.33;
+                        const gap = availableHeight * 0.02;
+                        
+                        let fpHeight = floorPlanHeight;
+                        let fpWidth = fpHeight * canvasAspectRatio;
+                        
+                        if (fpWidth > availableWidth) {
+                            fpWidth = availableWidth;
+                            fpHeight = fpWidth / canvasAspectRatio;
+                        }
+                        
+                        let lgHeight = legendHeight;
+                        let lgWidth = lgHeight * legendAspectRatio;
+                        
+                        if (lgWidth > availableWidth) {
+                            lgWidth = availableWidth;
+                            lgHeight = lgWidth / legendAspectRatio;
+                        }
+                        
+                        const fpX = margin + (availableWidth - fpWidth) / 2;
+                        const fpY = margin;
+                        
+                        const lgX = margin + (availableWidth - lgWidth) / 2;
+                        const lgY = margin + floorPlanHeight + gap;
+                        
+                        pdf.addImage(canvasImage.toDataURL('image/png'), 'PNG', fpX, fpY, fpWidth, fpHeight);
+                        pdf.addImage(legendImage.toDataURL('image/png'), 'PNG', lgX, lgY, lgWidth, lgHeight);
+                    }
+                    
+                    const timestamp = new Date().toISOString().slice(0, 10);
+                    const filename = `floor-plan-${timestamp}.pdf`;
+                    
+                    pdf.save(filename);
+                    console.log('PDF generated successfully:', filename);
+                    
+                } catch (error) {
+                    console.error('Error generating PDF:', error);
+                    alert('Error generating PDF: ' + error.message);
+                } finally {
+                    button.disabled = false;
+                    button.textContent = originalText;
+                }
             }
             
-            // Format report types display
-            let reportTypeDisplay = '';
-            if (reportTypes.length > 0) {
-                reportTypeDisplay = `<div style="font-size: 11px; color: #3498db; font-weight: 500; margin-top: 2px;">
-                    ${reportTypes.join(' • ')}
-                </div>`;
-            }
-
-            html += `<li style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid #eee;">
-                        <div>
-                            <strong style="color: #333;">${sketch.name}</strong>
-                            <div style="font-size: 12px; color: #777;">Saved: ${savedDate}</div>
-                            ${reportTypeDisplay}
-                        </div>
-                        <div style="display: flex; gap: 10px; align-items: center;">
-                            <a href="#" onclick="loadApp('${loadUrl}'); return false;" class="list-btn load-btn">Load</a>
-                            <button onclick="exportSketch(${sketch.id}, '${sketch.name}')" class="list-btn export-btn">Save to Device</button>
-                            <button onclick="deleteSketch(${sketch.id})" class="list-btn delete-btn">Delete</button>
-                        </div>
-                    </li>`;
-        }
-
-        html += '</ul>';
-        listContainer.innerHTML = html;
-
-    } catch (error) {
-        console.error("Failed to display sketches from IndexedDB:", error);
-        listContainer.innerHTML = '<h2 style="text-align: center; margin-bottom: 1rem; color: #555;">Error</h2><p style="text-align: center; color: #c00;">Could not load saved sketches from the database.</p>';
-    }
-}
-
-// Also update the SaveManager to ensure report types are properly saved
-// Add this to the _performSaveAs method in SaveManager:
-
-async _performSaveAs(sketchName) {
-    console.log(`Saving sketch with photos as "${sketchName}" to IndexedDB`);
-    
-    try {
-        const snapshot = this.getEnhancedStateSnapshot();
-        
-        const newSketchEntry = {
-            name: sketchName,
-            savedAt: new Date().toISOString(),
-            data: snapshot, // This now includes reportTypes
-            // Add metadata for quick reference without loading full data
-            metadata: {
-                photoCount: snapshot.photos.length,
-                totalPhotoSizeKB: Math.round(snapshot.metadata.totalPhotoSize / 1024),
-                version: snapshot.metadata.exportVersion,
-                reportTypes: snapshot.reportTypes // Store report types in metadata too for easy access
-            }
-        };
-
-        // Use Dexie's put() method to add the new sketch.
-        const id = await db.sketches.put(newSketchEntry);
-        
-        // Update the app's state to reflect the newly saved sketch.
-        AppState.currentSketchId = id;
-        AppState.currentSketchName = newSketchEntry.name;
-
-        this.hideSaveModal();
-        
-        const photoInfo = snapshot.photos.length > 0 
-            ? ` (includes ${snapshot.photos.length} photos, ~${Math.round(snapshot.metadata.totalPhotoSize / 1024)}KB)`
-            : '';
-        
-        // Include report types in the success message
-        const reportTypesInfo = [];
-        if (snapshot.reportTypes.exteriorOnly) reportTypesInfo.push('Exterior-Only');
-        if (snapshot.reportTypes.fullInspection) reportTypesInfo.push('Full-Inspection');
-        if (snapshot.reportTypes.fha) reportTypesInfo.push('FHA');
-        const reportTypeText = reportTypesInfo.length > 0 ? ` [${reportTypesInfo.join(', ')}]` : '';
-        
-        alert(`Sketch "${sketchName}" saved successfully!${reportTypeText}${photoInfo}`);
-
-    } catch (error) {
-        console.error('Failed to save sketch with photos to IndexedDB:', error);
-        if (error.name === 'ConstraintError') {
-            alert('A sketch with this name already exists. Please choose a different name.');
-        } else {
-            alert('An error occurred while saving.');
-        }
-    }
-}
+            // Your existing window.onload code goes here...
+        </script>

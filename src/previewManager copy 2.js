@@ -1,4 +1,4 @@
-// src/previewManager.js - FIXED to correctly load photos into the preview AND properly center sketches.
+// src/previewManager.js - FIXED to correctly load photos into the preview.
 
 import { AppState } from './state.js';
 
@@ -236,36 +236,28 @@ _generatePreviewHTML(state) {
                         flex-direction: column; /* Stack photos vertically */
                         align-items: center; /* Center photos horizontally */
                         width: 100%;
+                        gap: 30px; /* Space between photos */
                         margin-top: 20px;
-                        flex-grow: 1; /* ADDED: Fill available vertical space */
-                        min-height: 0; /* ADDED: Allow shrinking */
-                        justify-content: space-between; /* ADDED: Distribute photo items */
                     }
                     
                     /* MODIFIED: Individual photo item for vertical layout */
                     .photo-item-vertical {
                         display: flex;
-                        padding: 15px;
                         flex-direction: column;
                         align-items: center;
                         width: 100%;
-                        background: lightgrey;
-                        border: 5px solid lightblue;
-                        border-radius: 15px;
                         max-width: 780px; /* 6.5 inches at 120 DPI */
                         min-width: 720px; /* 6 inches at 120 DPI */
-                        height: 32%; /* ADDED: Set relative height for 3 items */
-                        box-sizing: border-box; /* ADDED: Include padding/border in height */
                     }
                     
                     .photo-item-vertical img {
                         width: 100%;
+                        height: auto;
                         border: 1px solid #ccc;
                         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
                         margin-bottom: 10px;
                         object-fit: contain;
-                        flex: 1; /* ADDED: Allow image to fill space flexibly */
-                        min-height: 0; /* ADDED: Allow image to shrink */
+                        max-height: 480px; /* Increased max height for larger photos */
                     }
                     
                     .photo-item-vertical .caption {
@@ -640,7 +632,6 @@ _generatePreviewHTML(state) {
                             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
                             if (state.drawnPolygons.length === 0 && state.placedElements.length === 0) return;
 
-                            // FIXED: Calculate bounding box properly
                             state.drawnPolygons.forEach(p => p.path.forEach(pt => {
                                 minX = Math.min(minX, pt.x); maxX = Math.max(maxX, pt.x);
                                 minY = Math.min(minY, pt.y); maxY = Math.max(maxY, pt.y);
@@ -670,14 +661,8 @@ _generatePreviewHTML(state) {
                             const scaledSketchWidth = sketchWidth * scale;
                             const scaledSketchHeight = sketchHeight * scale;
 
-                            // FIXED: Improved centering calculation - centers the actual content, not just coordinates
-                            const contentCenterX = (minX + maxX) / 2;
-                            const contentCenterY = (minY + maxY) / 2;
-                            const canvasCenterX = canvasWidth / 2;
-                            const canvasCenterY = canvasHeight / 2;
-                            
-                            const offsetX = canvasCenterX - (contentCenterX * scale);
-                            const offsetY = canvasCenterY - (contentCenterY * scale);
+                            const offsetX = (canvasWidth - scaledSketchWidth) / 2 - (minX * scale);
+                            const offsetY = (canvasHeight - scaledSketchHeight) / 2 - (minY * scale);
 
                             const toPreviewCoords = (p) => ({ x: p.x * scale + offsetX, y: p.y * scale + offsetY });
                             
@@ -925,29 +910,9 @@ _generatePreviewHTML(state) {
                             const imgData = canvas.toDataURL('image/jpeg', 0.85);
                             pdf.addImage(imgData, 'JPEG', 0, 0, 8.5, 13, undefined, 'FAST');
                         }
-
+ 
                         buttons.forEach(btn => btn.style.display = '');
-                        
-                        // MODIFIED: Generate filename based on property address or sketch name
-                        const state = window.appStateData;
-                        let filename = 'subject-sketch-with-photos.pdf'; // fallback
-                        
-                        if (state) {
-                            // Try to get address from currentSketchName first
-                            if (state.currentSketchName && state.currentSketchName.trim()) {
-                                filename = \`\${state.currentSketchName.replace(/[^a-z0-9\\s\\-]/gi, '').replace(/\\s+/g, '-')}-sketch.pdf\`;
-                            }
-                            // Or try to get it from any saved address field
-                            else if (state.propertyAddress && state.propertyAddress.trim()) {
-                                filename = \`\${state.propertyAddress.replace(/[^a-z0-9\\s\\-]/gi, '').replace(/\\s+/g, '-')}-sketch.pdf\`;
-                            }
-                            // Or look for address in metadata
-                            else if (state.metadata && state.metadata.address && state.metadata.address.trim()) {
-                                filename = \`\${state.metadata.address.replace(/[^a-z0-9\\s\\-]/gi, '').replace(/\\s+/g, '-')}-sketch.pdf\`;
-                            }
-                        }
-                        
-                        pdf.save(filename);
+                        pdf.save('subject-sketch-with-photos.pdf'); 
                     } catch (error) {
                         console.error('Error generating PDF:', error);
                         alert('Error generating PDF. Please try again.');
@@ -959,4 +924,4 @@ _generatePreviewHTML(state) {
         </html>
     `;
 }  
-}
+}  

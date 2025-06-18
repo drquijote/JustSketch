@@ -1,13 +1,13 @@
 git add .
-git commit -m "next lets fix too many purple dots"
+git commit -m "pdf now working"
 git push origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
 
 
 
 
 
-
-git pull origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
+cd ../../../../../var/www/bold/w/
+sudo git pull origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
 git log -1
 
 

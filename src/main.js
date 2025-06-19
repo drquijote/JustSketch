@@ -117,6 +117,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const photoManager = new PhotoManager();
     photoManager.init();  
     window.photoManager = photoManager;
+
+
+window.updatePhotoCaption = (photoId, newCaption) => {
+        if (window.photoManager && typeof window.photoManager.updatePhotoCaption === 'function') {
+            return window.photoManager.updatePhotoCaption(photoId, newCaption);
+        } else {
+            console.error('PhotoManager not available');
+            return false;
+        }
+    };
+
+
+    
     
     console.log("App loaded - initializing modular architecture");
 

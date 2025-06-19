@@ -64,6 +64,57 @@ export class PhotoManager {
         console.log('Deactivating Photos Mode.');
     }
 
+updatePhotoCaption(photoId, newCaption) {
+    try {
+        console.log('Updating photo caption:', { photoId, newCaption });
+        
+        let photo = null;
+        let photoIndex = -1;
+        
+        // First try to find by direct ID
+        photoIndex = AppState.photos.findIndex(p => p.id && p.id.toString() === photoId);
+        
+        // If not found, try elementId + index combination
+        if (photoIndex === -1) {
+            const parts = photoId.split('_');
+            if (parts.length >= 2) {
+                const elementId = parts[0];
+                const index = parseInt(parts[1]);
+                const photosForElement = AppState.photos.filter(p => p.elementId === elementId);
+                if (photosForElement[index]) {
+                    photo = photosForElement[index];
+                    photoIndex = AppState.photos.indexOf(photo);
+                }
+            }
+        } else {
+            photo = AppState.photos[photoIndex];
+        }
+        
+        if (!photo || photoIndex === -1) {
+            console.error('Photo not found:', photoId);
+            return false;
+        }
+        
+        // Update the photo's caption
+        photo.elementContent = newCaption;
+        
+        // Save the changes
+        CanvasManager.saveAction();
+        
+        // Refresh thumbnails if needed
+        if (this.activeElement && this.activeElement.id === photo.elementId) {
+            this.loadAndDisplayThumbnails();
+        }
+        
+        console.log('Photo caption updated successfully');
+        return true;
+        
+    } catch (error) {
+        console.error('Error updating photo caption:', error);
+        return false;
+    }
+}
+
     handleCanvasClick(event) {
         const viewport = document.getElementById('canvasViewport');
         const rect = viewport.getBoundingClientRect();

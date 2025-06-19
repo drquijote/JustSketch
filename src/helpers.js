@@ -61,59 +61,50 @@ export class HelperPointManager {
      * It now uses getRelevantPolygons() to generate a much smaller, more useful
      * set of helper points, preventing screen clutter.
      */
-    static updateHelperPoints() {
-        const points = AppState.currentPolygonPoints;
-        AppState.helperPoints = [];
+  static updateHelperPoints() {
+    const points = AppState.currentPolygonPoints;
+    AppState.helperPoints = [];
 
-        if (!points || points.length < 1) {
-            return; // No drawing in progress, so no temporary helpers needed.
-        }
+    if (!points || points.length < 1) {
+        return; // No drawing in progress, so no temporary helpers needed.
+    }
 
-        const uniqueHelpers = new Map();
-        const lastPoint = points[points.length - 1];
+    const uniqueHelpers = new Map();
+    const lastPoint = points[points.length - 1];
 
-        // --- STEP 1: Generate helpers from the current drawing path ---
-        // This is essential for aligning the current shape.
-        for (const p of points.slice(0, -1)) { // Exclude the last point itself
-            uniqueHelpers.set(`${p.x},${lastPoint.y}`, { x: p.x, y: lastPoint.y });
-            uniqueHelpers.set(`${lastPoint.x},${p.y}`, { x: lastPoint.x, y: p.y });
-        }
-        
-        // This special case for the p0-p1 segment is also important.
-        if (points.length >= 2) {
-            const p0 = points[0];
-            const p1 = points[1];
-            uniqueHelpers.set(`${p0.x},${p1.y}`, { x: p0.x, y: p1.y });
-        }
+    // --- STEP 1: (KEPT) Generate alignment helpers from the CURRENT drawing path ---
+    // This provides alignment lines only for the shape you are actively drawing.
+    for (const p of points.slice(0, -1)) {
+        uniqueHelpers.set(`${p.x},${lastPoint.y}`, { x: p.x, y: lastPoint.y });
+        uniqueHelpers.set(`${lastPoint.x},${p.y}`, { x: lastPoint.x, y: p.y });
+    }
+    if (points.length >= 2) {
+        const p0 = points[0];
+        const p1 = points[1];
+        uniqueHelpers.set(`${p0.x},${p1.y}`, { x: p0.x, y: p1.y });
+    }
 
-        // --- STEP 2: Get only RELEVANT polygons (nearby or attached) ---
-        const relevantPolygons = this.getRelevantPolygons();
-        console.log(`HELPER DEBUG: Found ${relevantPolygons.length} relevant polygons for helper points.`);
-
-        // --- STEP 3: Generate helpers ONLY from the relevant polygons ---
-        relevantPolygons.forEach(polygon => {
+    // --- STEP 2: (NEW) Add the ACTUAL vertices from all existing polygons ---
+    // This adds a helper point only on the exact corner of existing shapes.
+    if (AppState.drawnPolygons) {
+        AppState.drawnPolygons.forEach(polygon => {
             polygon.path.forEach(vertex => {
-                // Projection of lastPoint.y onto the completed vertex's x-axis
-                uniqueHelpers.set(`${vertex.x},${lastPoint.y}`, { x: vertex.x, y: lastPoint.y });
-                // Projection of lastPoint.x onto the completed vertex's y-axis
-                uniqueHelpers.set(`${lastPoint.x},${vertex.y}`, { x: lastPoint.x, y: vertex.y });
+                uniqueHelpers.set(`${vertex.x.toFixed(1)},${vertex.y.toFixed(1)}`, vertex);
             });
         });
-
-        // --- STEP 4: Generate helpers from permanent snap points ---
-        // These are always important and should be included.
-        if (AppState.permanentHelperPoints && AppState.permanentHelperPoints.length > 0) {
-            AppState.permanentHelperPoints.forEach(permanentPoint => {
-                // Project last point onto permanent point axes
-                uniqueHelpers.set(`${permanentPoint.x},${lastPoint.y}`, { x: permanentPoint.x, y: lastPoint.y, fromPermanent: true });
-                uniqueHelpers.set(`${lastPoint.x},${permanentPoint.y}`, { x: lastPoint.x, y: permanentPoint.y, fromPermanent: true });
-            });
-        }
-
-        // --- STEP 5: Finalize the list ---
-        AppState.helperPoints = Array.from(uniqueHelpers.values());
-        console.log(`HELPER DEBUG: Generated ${AppState.helperPoints.length} smart helper points.`);
     }
+
+    // --- STEP 3: (NEW) Add the ACTUAL permanent helper points from previous snaps ---
+    if (AppState.permanentHelperPoints) {
+        AppState.permanentHelperPoints.forEach(permanentPoint => {
+            uniqueHelpers.set(`${permanentPoint.x.toFixed(1)},${permanentPoint.y.toFixed(1)}`, permanentPoint);
+        });
+    }
+
+    // --- STEP 4: Finalize the list ---
+    AppState.helperPoints = Array.from(uniqueHelpers.values());
+    console.log(`HELPER POINTS: Generated ${AppState.helperPoints.length} points (Vertices + Alignment).`);
+}
 
     // --- The rest of the functions in this class are unchanged ---
 

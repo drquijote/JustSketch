@@ -922,26 +922,12 @@ export class AreaManager {
 
     // --- Standard Area Logic ---
 
- handleCycleClosed(event) {
-    // CRITICAL: Check if this event was already handled by the splitter
-    if (event.splitHandled) {
-        console.log('🔍 AREA: Event already handled by splitter, skipping AreaManager processing');
-        return;
+    handleCycleClosed(event) {
+        const path = event.detail.path;
+        if (!path || path.length < 3) return;
+        this.activePathForModal = path;
+        this.showAreaModal();
     }
-    
-    const path = event.detail.path;
-    if (!path || path.length < 3) {
-        console.log('🔍 AREA: Invalid path, skipping');
-        return;
-    }
-    
-    console.log('🔍 AREA: Processing cycle closure for new area creation');
-    this.activePathForModal = path;
-    this.showAreaModal();
-}
-
-
-
 
     static generateAreaLabel(areaType) {
         const typeSelect = document.getElementById('polygonType');

@@ -1,15 +1,15 @@
-// src/previewManager.js - FIXED to correctly load photos into the preview AND properly center sketches.
+// src/previewManager.js - UPDATED: Removed floodmap functionality
 
 import { AppState } from './state.js';
 
 /**
  * Manages the creation of a high-quality preview of the entire sketch in a new window.
  * Updated to use 120 DPI resolution for custom size paper (8.5" x 13")
- * ADDED: Now includes subsequent pages for photos, with scrolling.
+ * FLOODMAP FUNCTIONALITY REMOVED
  */
 export class PreviewManager {
     constructor() {
-        console.log('PreviewManager initialized.');
+        console.log('PreviewManager initialized (floodmap removed).');
     }
 
     /**
@@ -19,11 +19,8 @@ export class PreviewManager {
     showPreview() {
         const stateSnapshot = AppState.getStateSnapshot();
 
-        // --- THIS IS THE FIX ---
-        // Manually add the photos to the snapshot. The standard snapshot doesn't include them,
-        // which is why they were not appearing in the preview.
+        // Add the photos to the snapshot
         stateSnapshot.photos = AppState.photos || [];
-        // --- END FIX ---
 
         // Updated dimensions for 120 DPI custom size
         const previewWindow = window.open('', 'FloorplanPreview', 'width=1020,height=1560,scrollbars=yes,resizable=yes');
@@ -76,7 +73,7 @@ _generatePreviewHTML(state) {
         }
     });
 
-    // --- MODIFIED: SPECIAL PHOTO HANDLING FOR IMPORTANT VIEWS ---
+    // --- PHOTO HANDLING (FLOODMAP REMOVED) ---
     let photoPagesHTML = '';
     if (state.photos && state.photos.length > 0) {
         // Identify element IDs of "gray" rooms to exclude their photos.
@@ -89,7 +86,7 @@ _generatePreviewHTML(state) {
         // Filter out photos linked to gray elements
         const validPhotos = state.photos.filter(photo => !grayElementIds.has(photo.elementId));
 
-        // NEW: Function to check if a photo is "important"
+        // Function to check if a photo is "important"
         const isImportantPhoto = (photo) => {
             const content = (photo.elementContent || '').toLowerCase();
             
@@ -114,11 +111,53 @@ _generatePreviewHTML(state) {
         const getPreviewCaption = (photo) => {
             let caption = photo.elementContent || 'Attached Photo';
             
-            // Replace "Floor 1" with "Subject" for important photos in preview only
-            if (isImportantPhoto(photo)) {
-                caption = caption.replace(/floor\s*1/gi, 'Subject');
+            // Replace "Floor 1" with "Subject" for ALL photos in preview
+            caption = caption.replace(/floor\s*1/gi, 'Subject');
+            
+            // Debug logging to see what's happening
+            console.log('Photo debug:', {
+                elementId: photo.elementId,
+                originalCaption: photo.elementContent,
+                afterFloorReplace: caption
+            });
+            
+            // Check if photo came from an ADU element and prepend ADU identifier
+            if (photo.elementId) {
+                // Find the source element this photo is attached to
+                const sourceElement = state.placedElements.find(el => el.id === photo.elementId);
+                console.log('Source element found:', sourceElement);
+                
+                if (sourceElement && sourceElement.content) {
+                    const sourceContent = sourceElement.content.toLowerCase();
+                    console.log('Source content:', sourceContent);
+                    
+                    // Check if source element is an ADU (broader check)
+                    if (sourceContent.includes('adu')) {
+                        // Extract ADU number if present (e.g., "ADU 1", "ADU 2") 
+                        const aduMatch = sourceContent.match(/adu\s*(\d+)/i);
+                        if (aduMatch) {
+                            const aduNumber = aduMatch[1];
+                            console.log('ADU number found:', aduNumber);
+                            // Only prepend if caption doesn't already include ADU reference
+                            if (!caption.toLowerCase().includes('adu')) {
+                                caption = `ADU ${aduNumber} ${caption}`;
+                                console.log('Updated caption with ADU number:', caption);
+                            }
+                        } else {
+                            // Generic ADU without number
+                            console.log('Generic ADU found, no number');
+                            if (!caption.toLowerCase().includes('adu')) {
+                                caption = `ADU ${caption}`;
+                                console.log('Updated caption with generic ADU:', caption);
+                            }
+                        }
+                    }
+                }
+            } else {
+                console.log('No elementId found for photo');
             }
             
+            console.log('Final caption:', caption);
             return caption;
         };
 
@@ -146,6 +185,13 @@ _generatePreviewHTML(state) {
             return 0;
         });
 
+        // Sort regular photos alphabetically by their caption
+        const sortedRegularPhotos = regularPhotos.sort((a, b) => {
+            const captionA = getPreviewCaption(a).toLowerCase();
+            const captionB = getPreviewCaption(b).toLowerCase();
+            return captionA.localeCompare(captionB);
+        });
+
         // IMPORTANT PHOTOS: Always 3-per-page, always visible, ALWAYS FIRST
         let importantPhotosHTML = '';
         const importantPhotoPages = [];
@@ -154,16 +200,21 @@ _generatePreviewHTML(state) {
         }
 
         importantPhotoPages.forEach((page, pageIndex) => {
-            const photoItemsHTML = page.map(photo => `
+            const photoItemsHTML = page.map((photo, photoIndex) => `
                 <div class="photo-item-vertical">
                     <img src="${photo.imageData}" alt="${getPreviewCaption(photo)}">
-                    <div class="caption">${getPreviewCaption(photo)}</div>
+                    <div class="caption editable-caption" 
+                         data-photo-id="${photo.id || photo.elementId + '_' + photoIndex}" 
+                         onclick="editCaption(this)">
+                        ${getPreviewCaption(photo)}
+                        <div class="edit-hint">Click to edit</div>
+                    </div>
                 </div>
             `).join('');
 
             importantPhotosHTML += `
                 <div class="page-container photo-page important-photos">
-                    <div class="page-title">Photos (Page ${pageIndex + 1})</div>
+                    <div class="page-title">Photos (Page ${pageIndex + 1})<span class="edit-instruction"> - Click captions to edit</span></div>
                     <div class="photo-grid-vertical">
                         ${photoItemsHTML}
                     </div>
@@ -174,21 +225,26 @@ _generatePreviewHTML(state) {
         // REGULAR PHOTOS: 3-per-page layout (default)
         let regularPhotosHTML = '';
         const regularPhotoPages3 = [];
-        for (let i = 0; i < regularPhotos.length; i += 3) {
-            regularPhotoPages3.push(regularPhotos.slice(i, i + 3));
+        for (let i = 0; i < sortedRegularPhotos.length; i += 3) {
+            regularPhotoPages3.push(sortedRegularPhotos.slice(i, i + 3));
         }
 
         regularPhotoPages3.forEach((page, pageIndex) => {
-            const photoItemsHTML = page.map(photo => `
+            const photoItemsHTML = page.map((photo, photoIndex) => `
                 <div class="photo-item-vertical">
                     <img src="${photo.imageData}" alt="${getPreviewCaption(photo)}">
-                    <div class="caption">${getPreviewCaption(photo)}</div>
+                    <div class="caption editable-caption" 
+                         data-photo-id="${photo.id || photo.elementId + '_' + photoIndex}" 
+                         onclick="editCaption(this)">
+                        ${getPreviewCaption(photo)}
+                        <div class="edit-hint">Click to edit</div>
+                    </div>
                 </div>
             `).join('');
 
             regularPhotosHTML += `
                 <div class="page-container photo-page layout-3">
-                    <div class="page-title">Photos (Page ${pageIndex + 1})</div>
+                    <div class="page-title">Photos (Page ${pageIndex + 1})<span class="edit-instruction"> - Click captions to edit</span></div>
                     <div class="photo-grid-vertical">
                         ${photoItemsHTML}
                     </div>
@@ -198,21 +254,26 @@ _generatePreviewHTML(state) {
 
         // REGULAR PHOTOS: 6-per-page layout (initially hidden)
         const regularPhotoPages6 = [];
-        for (let i = 0; i < regularPhotos.length; i += 6) {
-            regularPhotoPages6.push(regularPhotos.slice(i, i + 6));
+        for (let i = 0; i < sortedRegularPhotos.length; i += 6) {
+            regularPhotoPages6.push(sortedRegularPhotos.slice(i, i + 6));
         }
 
         regularPhotoPages6.forEach((page, pageIndex) => {
-            const photoItemsHTML = page.map(photo => `
+            const photoItemsHTML = page.map((photo, photoIndex) => `
                 <div class="photo-item-grid">
                     <img src="${photo.imageData}" alt="${getPreviewCaption(photo)}">
-                    <div class="caption">${getPreviewCaption(photo)}</div>
+                    <div class="caption editable-caption" 
+                         data-photo-id="${photo.id || photo.elementId + '_' + photoIndex}" 
+                         onclick="editCaption(this)">
+                        ${getPreviewCaption(photo)}
+                        <div class="edit-hint">Click to edit</div>
+                    </div>
                 </div>
             `).join('');
 
             regularPhotosHTML += `
                 <div class="page-container photo-page layout-6" style="display: none;">
-                    <div class="page-title">Photos (Page ${pageIndex + 1})</div>
+                    <div class="page-title">Photos (Page ${pageIndex + 1})<span class="edit-instruction"> - Click captions to edit</span></div>
                     <div class="photo-grid-6">
                         ${photoItemsHTML}
                     </div>
@@ -220,7 +281,7 @@ _generatePreviewHTML(state) {
             `;
         });
 
-        // COMBINE: Important photos FIRST, then regular photos
+        // COMBINE: Important photos FIRST, then regular photos (NO FLOOD MAP)
         photoPagesHTML = importantPhotosHTML + regularPhotosHTML;
     }
     // --- END: PHOTO PAGE GENERATION LOGIC ---
@@ -232,21 +293,20 @@ _generatePreviewHTML(state) {
         <head>
             <meta charset="UTF-8">
             <title>Sketch Preview - Custom Size</title>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>
             <style>
                 html, body { 
                     height: 100%; 
                     margin: 0; 
                     padding: 0; 
-                    /* MODIFIED: Changed overflow to hidden to prevent double scrollbars */
                     overflow: hidden; 
                     background: #e8e8e8; 
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
                     scroll-behavior: smooth;
                 }
                 
-                /* MODIFIED: Wrapper to enable vertical page scrolling and snapping */
+                /* Wrapper to enable vertical page scrolling and snapping */
                 .page-wrapper {
                     height: 100vh;
                     overflow-y: auto;
@@ -260,7 +320,6 @@ _generatePreviewHTML(state) {
                 
                 .page-container { 
                     width: 1020px;
-                    /* MODIFIED: Use max-height to not constrain content vertically */
                     max-height: 1560px;
                     display: flex; 
                     flex-direction: column; 
@@ -269,7 +328,6 @@ _generatePreviewHTML(state) {
                     overflow: hidden;
                     aspect-ratio: 8.5 / 13;
                     transform-origin: top center;
-                    /* MODIFIED: Add scroll-snap alignment and margin */
                     scroll-snap-align: start;
                     flex-shrink: 0;
                     margin-bottom: 20px;
@@ -290,9 +348,9 @@ _generatePreviewHTML(state) {
                     align-items: center; /* Center photos horizontally */
                     width: 100%;
                     margin-top: 20px;
-                    flex-grow: 1; /* ADDED: Fill available vertical space */
-                    min-height: 0; /* ADDED: Allow shrinking */
-                    justify-content: space-between; /* ADDED: Distribute photo items */
+                    flex-grow: 1; /* Fill available vertical space */
+                    min-height: 0; /* Allow shrinking */
+                    justify-content: space-between; /* Distribute photo items */
                 }
                 
                 .photo-item-vertical {
@@ -300,24 +358,28 @@ _generatePreviewHTML(state) {
                     padding: 15px;
                     flex-direction: column;
                     align-items: center;
-                    width: 100%;
-                    background: lightgrey;
-                    border: 5px solid lightblue;
-                    border-radius: 15px;
+                    background: #e9ecef;
+                    border: 1px solid lightblue;
+                    border-radius: 5px;
                     max-width: 780px; /* 6.5 inches at 120 DPI */
                     min-width: 720px; /* 6 inches at 120 DPI */
-                    height: 32%; /* ADDED: Set relative height for 3 items */
-                    box-sizing: border-box; /* ADDED: Include padding/border in height */
+                    height: 32%; /* Set relative height for 3 items */
+                    box-sizing: border-box; /* Include padding/border in height */
                 }
                 
+
+
+
+
+
                 .photo-item-vertical img {
-                    width: 100%;
+                     
                     border: 1px solid #ccc;
                     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
                     margin-bottom: 10px;
                     object-fit: contain;
-                    flex: 1; /* ADDED: Allow image to fill space flexibly */
-                    min-height: 0; /* ADDED: Allow image to shrink */
+                    flex: 1; /* Allow image to fill space flexibly */
+                    min-height: 0; /* Allow image to shrink */
                 }
                 
                 .photo-item-vertical .caption {
@@ -345,12 +407,11 @@ _generatePreviewHTML(state) {
                     display: flex;
                     flex-direction: column;
                     align-items: center;
-                    background: lightgrey;
+                    background: #e9ecef;
                     border: 3px solid lightblue;
-                    border-radius: 10px;
+                    border-radius: 4px;
                     padding: 10px;
                     box-sizing: border-box;
-                    height: 100%;
                 }
                 
                 .photo-item-grid img {
@@ -531,6 +592,10 @@ _generatePreviewHTML(state) {
                     }
                 }
                 
+
+
+
+
                 /* Print styles optimized for custom size at 120 DPI */
                 @media print { 
                     @page {
@@ -545,6 +610,10 @@ _generatePreviewHTML(state) {
                     .layout-btn, .pdf-btn, .mobile-notice { 
                         display: none !important; 
                     } 
+
+                    .edit-instruction {
+                        display: none !important;
+                    }
                     .page-container {
                         box-shadow: none;
                         border: 1px solid #ccc;
@@ -570,36 +639,36 @@ _generatePreviewHTML(state) {
                     <button class="layout-btn" onclick="togglePhotoLayout()">6/Page</button>
                     <div class="page-title">Subject Sketch</div>
                     <div class="canvas-section">
-                        <canvas id="previewCanvas"></canvas>
-                        <div id="htmlOverlayContainer" class="html-overlay"></div>
+                        <canvas id="previewCanvas"><\/canvas>
+                        <div id="htmlOverlayContainer" class="html-overlay"><\/div>
                     </div>
                     <div class="legend-section">
                         <div class="legend-title">Floor Plan Summary</div>
                         <div class="legend-grid">
                             <div class="summary-column">
-                                <div class="summary-item"><strong>Bedrooms:</strong> <span>${bedrooms}</span></div>
-                                <div class="summary-item"><strong>Bathrooms:</strong> <span>${bathrooms}</span></div>
-                                <div class="summary-item"><strong>Total GLA:</strong> <span>${totalGLA.toFixed(1)} sq ft</span></div>
-                                <div class="summary-item"><strong>Total Non-GLA:</strong> <span>${nonGLA.toFixed(1)} sq ft</span></div>
-                            </div>
+                                <div class="summary-item"><strong>Bedrooms:</strong> <span>${bedrooms}<\/span><\/div>
+                                <div class="summary-item"><strong>Bathrooms:</strong> <span>${bathrooms}<\/span><\/div>
+                                <div class="summary-item"><strong>Total GLA:</strong> <span>${totalGLA.toFixed(1)} sq ft<\/span><\/div>
+                                <div class="summary-item"><strong>Total Non-GLA:</strong> <span>${nonGLA.toFixed(1)} sq ft<\/span><\/div>
+                            <\/div>
                             <div class="breakdown-column">
-                                <div class="breakdown-title">GLA Breakdown:</div>
+                                <div class="breakdown-title">GLA Breakdown:<\/div>
                                 ${glaBreakdownHTML || '<div>None</div>'}
-                            </div>
+                            <\/div>
                             <div class="breakdown-column">
-                                <div class="breakdown-title">Non-GLA Breakdown:</div>
+                                <div class="breakdown-title">Non-GLA Breakdown:<\/div>
                                 ${nonGlaBreakdownHTML || '<div>None</div>'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                            <\/div>
+                        <\/div>
+                    <\/div>
+                <\/div>
 
                 ${photoPagesHTML}
 
-            </div>
+            <\/div>
             <div class="mobile-notice">
                 Scaled for viewing - Full resolution maintained for PDF export
-            </div>
+            <\/div>
 
             <script>
                 // Global variable to track current layout for regular photos only
@@ -609,21 +678,13 @@ _generatePreviewHTML(state) {
                     const state = window.appStateData;
                     const canvas = document.getElementById('previewCanvas');
                     
-                    // DEBUG: Check if state data is available
-                    console.log('State data:', state);
-                    console.log('Canvas element:', canvas);
-                    if (state) {
-                        console.log('Polygons:', state.drawnPolygons?.length);
-                        console.log('Elements:', state.placedElements?.length);
-                    }
-                    
                     // Only try to render canvas if the canvas element exists on the first page
                     if (canvas) {
                         const ctx = canvas.getContext('2d');
                         const overlayContainer = document.getElementById('htmlOverlayContainer');
                         const canvasSection = document.querySelector('.canvas-section');
 
-                        // --- NEW HELPER FUNCTION TO FIND SHARED EDGES ---
+                        // --- HELPER FUNCTION TO FIND SHARED EDGES ---
                         const findAllSharedEdges = (polygons) => {
                             const edges = new Map();
                             const sharedEdges = new Set();
@@ -657,7 +718,7 @@ _generatePreviewHTML(state) {
                             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
                             if (state.drawnPolygons.length === 0 && state.placedElements.length === 0) return;
 
-                            // FIXED: Calculate bounding box properly
+                            // Calculate bounding box properly
                             state.drawnPolygons.forEach(p => p.path.forEach(pt => {
                                 minX = Math.min(minX, pt.x); maxX = Math.max(maxX, pt.x);
                                 minY = Math.min(minY, pt.y); maxY = Math.max(maxY, pt.y);
@@ -687,7 +748,7 @@ _generatePreviewHTML(state) {
                             const scaledSketchWidth = sketchWidth * scale;
                             const scaledSketchHeight = sketchHeight * scale;
 
-                            // FIXED: Improved centering calculation - centers the actual content, not just coordinates
+                            // Improved centering calculation - centers the actual content, not just coordinates
                             const contentCenterX = (minX + maxX) / 2;
                             const contentCenterY = (minY + maxY) / 2;
                             const canvasCenterX = canvasWidth / 2;
@@ -866,9 +927,9 @@ _generatePreviewHTML(state) {
                                     if (el.type === 'area_label') {
                                         const linkedPolygon = state.drawnPolygons.find(p => p.id === el.linkedPolygonId);
                                         if (linkedPolygon) {
-                                            div.innerHTML = \`<strong style="font-size: 1.1em;">\${linkedPolygon.label}</strong><span style="font-size:0.9em; font-weight: 600; color: #222; margin-top: 3px;">\${linkedPolygon.area.toFixed(1)} sq ft</span>\`;
+                                            div.innerHTML = \`<strong style="font-size: 1.1em;">\${linkedPolygon.label}<\/strong><span style="font-size:0.9em; font-weight: 600; color: #222; margin-top: 3px;">\${linkedPolygon.area.toFixed(1)} sq ft<\/span>\`;
                                         } else {
-                                            div.innerHTML = \`<strong style="font-size: 1.1em;">\${el.areaData.areaText}</strong><span style="font-size:0.9em; font-weight: 600; color: #222; margin-top: 3px;">\${el.areaData.sqftText}</span>\`;
+                                            div.innerHTML = \`<strong style="font-size: 1.1em;">\${el.areaData.areaText}<\/strong><span style="font-size:0.9em; font-weight: 600; color: #222; margin-top: 3px;">\${el.areaData.sqftText}<\/span>\`;
                                         }
                                     } else {
                                         div.style.background = el.styling.backgroundColor;
@@ -911,16 +972,12 @@ _generatePreviewHTML(state) {
                     const layout6Pages = document.querySelectorAll('.layout-6'); // Regular photos only
                     const toggleBtn = document.querySelector('.layout-btn');
                     
-                    // Important photos are NOT affected by this toggle
-                    
                     if (previewCurrentLayout === 3) {
-                        // Switch to 6-per-page layout for regular photos
                         layout3Pages.forEach(page => page.style.display = 'none');
                         layout6Pages.forEach(page => page.style.display = 'flex');
                         toggleBtn.textContent = '3/Page';
                         previewCurrentLayout = 6;
                     } else {
-                        // Switch to 3-per-page layout for regular photos
                         layout6Pages.forEach(page => page.style.display = 'none');
                         layout3Pages.forEach(page => page.style.display = 'flex');
                         toggleBtn.textContent = '6/Page';
@@ -929,71 +986,255 @@ _generatePreviewHTML(state) {
                 }
                 
                 // PDF generation using html2canvas
-                window.generatePDF = async function() {
-                    try {
-                        const pageWrapper = document.querySelector('.page-wrapper');
-                        const buttons = document.querySelectorAll('button');
-                        buttons.forEach(btn => btn.style.display = 'none');
+         // REPLACE the existing generatePDF function in previewManager.js with this definitive version.
 
-                        const { jsPDF } = window.jspdf;
-                        const pdf = new jsPDF({
-                            orientation: 'portrait',
-                            unit: 'in',
-                            format: [8.5, 13],
-                            compress: true
-                        });
+ // REPLACE your existing generatePDF function in previewManager.js with this version
+
+window.generatePDF = async function() {
+    try {
+        const buttons = document.querySelectorAll('button');
+        buttons.forEach(btn => btn.style.display = 'none');
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({
+            orientation: 'portrait',
+            unit: 'in',
+            format: [8.5, 13],
+            compress: true
+        });
+        
+        const pageContainers = document.querySelectorAll('.page-container:not([style*="display: none"])');
+
+        for (let i = 0; i < pageContainers.length; i++) {
+            const container = pageContainers[i];
+            if (i > 0) {
+                pdf.addPage();
+            }
+
+            // STEP 1: Hide editing elements before capturing
+            const editInstructions = container.querySelectorAll('.edit-instruction');
+            const editHints = container.querySelectorAll('.edit-hint');
+            
+            // Store original display values
+            const originalDisplays = [];
+            editInstructions.forEach((el, index) => {
+                originalDisplays[index] = el.style.display;
+                el.style.display = 'none';
+            });
+            
+            const originalHintDisplays = [];
+            editHints.forEach((el, index) => {
+                originalHintDisplays[index] = el.style.display;
+                el.style.display = 'none';
+            });
+
+            // STEP 2: Capture the canvas
+            const canvas = await html2canvas(container, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                width: container.clientWidth,
+                height: container.clientHeight,
+                imageTimeout: 15000,
+                allowTaint: true,
+                backgroundColor: '#ffffff'
+            });
+
+            // STEP 3: Restore original display values immediately after capture
+            editInstructions.forEach((el, index) => {
+                el.style.display = originalDisplays[index];
+            });
+            
+            editHints.forEach((el, index) => {
+                el.style.display = originalHintDisplays[index];
+            });
+
+            const imgData = canvas.toDataURL('image/jpeg', 0.90);
+
+            // Calculate dimensions to fit PDF page without stretching
+            const canvasAspectRatio = canvas.width / canvas.height;
+            const pdfPageWidth = 8.5;
+            const pdfPageHeight = 13;
+            const pageAspectRatio = pdfPageWidth / pdfPageHeight;
+
+            let pdfImageWidth, pdfImageHeight;
+
+            if (canvasAspectRatio > pageAspectRatio) {
+                pdfImageWidth = pdfPageWidth;
+                pdfImageHeight = pdfImageWidth / canvasAspectRatio;
+            } else {
+                pdfImageHeight = pdfPageHeight;
+                pdfImageWidth = pdfImageHeight * canvasAspectRatio;
+            }
+
+            const xOffset = (pdfPageWidth - pdfImageWidth) / 2;
+            const yOffset = (pdfPageHeight - pdfImageHeight) / 2;
+            
+            pdf.addImage(imgData, 'JPEG', xOffset, yOffset, pdfImageWidth, pdfImageHeight);
+        }
+
+        buttons.forEach(btn => btn.style.display = '');
+        
+        const state = window.appStateData;
+        let filename = 'subject-sketch-with-photos.pdf'; 
+        
+        if (state) {
+            if (state.currentSketchName && state.currentSketchName.trim()) {
+                filename = state.currentSketchName.replace(/[^a-z0-9\\s\\-]/gi, '').replace(/\\s+/g, '-') + '-sketch.pdf';
+            }
+            else if (state.propertyAddress && state.propertyAddress.trim()) {
+                filename = state.propertyAddress.replace(/[^a-z0-9\\s\\-]/gi, '').replace(/\\s+/g, '-') + '-sketch.pdf';
+            }
+            else if (state.metadata && state.metadata.address && state.metadata.address.trim()) {
+                filename = state.metadata.address.replace(/[^a-z0-9\\s\\-]/gi, '').replace(/\\s+/g, '-') + '-sketch.pdf';
+            }
+        }
+        
+        pdf.save(filename);
+    } catch (error) {
+        console.error('Error generating PDF:', error);
+        alert('Error generating PDF. Please check the console for details.');
+        document.querySelectorAll('button').forEach(btn => btn.style.display = '');
+    }
+}
+
+
+
+                // Photo caption editing functionality
+                window.editCaption = function(captionElement) {
+                    if (captionElement.classList.contains('editing')) return;
+
+                    const photoId = captionElement.getAttribute('data-photo-id');
+                    const currentText = captionElement.textContent.trim();
+                    
+                    // Create input element
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.value = currentText;
+                    input.className = 'caption-input';
+                    
+                    // Add editing class
+                    captionElement.classList.add('editing');
+                    captionElement.innerHTML = '';
+                    captionElement.appendChild(input);
+                    
+                    // Focus and select text
+                    input.focus();
+                    input.select();
+                    
+                    // Save function
+                    const saveCaption = async () => {
+                        const newText = input.value.trim();
+                        if (newText === currentText) {
+                            // No change, just restore
+                            captionElement.classList.remove('editing');
+                            captionElement.textContent = currentText;
+                            return;
+                        }
                         
-                        // Only include visible pages in PDF (important photos always included)
-                        const pageContainers = document.querySelectorAll('.page-container:not([style*="display: none"])');
-
-                        for (let i = 0; i < pageContainers.length; i++) {
-                            const container = pageContainers[i];
-                            if (i > 0) {
-                                pdf.addPage();
+                        try {
+                            // Update the photo data in the opener window (main app)
+                            if (window.opener && !window.opener.closed) {
+                                // Call a function in the main window to update the photo
+                                const success = await window.opener.updatePhotoCaption(photoId, newText);
+                                if (success) {
+                                    // Update local state for immediate preview refresh
+                                    const state = window.appStateData;
+                                    if (state && state.photos) {
+                                        const photo = state.photos.find(p => 
+                                            (p.id && p.id === photoId) || 
+                                            (p.elementId + '_' + state.photos.indexOf(p) === photoId)
+                                        );
+                                        if (photo) {
+                                            photo.elementContent = newText;
+                                        }
+                                    }
+                                    
+                                    captionElement.classList.remove('editing');
+                                    captionElement.textContent = newText;
+                                    
+                                    // Show success message
+                                    showToast('Photo caption updated successfully!', 'success');
+                                } else {
+                                    throw new Error('Failed to update caption in main app');
+                                }
+                            } else {
+                                throw new Error('Main app window not accessible');
                             }
+                        } catch (error) {
+                            console.error('Error saving caption:', error);
+                            showToast('Error saving caption: ' + error.message, 'error');
                             
-                            const canvas = await html2canvas(container, {
-                                scale: 1.5,
-                                useCORS: true,
-                                logging: false,
-                                width: 1020,
-                                height: 1560,
-                                imageTimeout: 15000,
-                                allowTaint: true,
-                                backgroundColor: '#ffffff',
-                            });
-
-                            const imgData = canvas.toDataURL('image/jpeg', 0.85);
-                            pdf.addImage(imgData, 'JPEG', 0, 0, 8.5, 13, undefined, 'FAST');
+                            // Restore original text on error
+                            captionElement.classList.remove('editing');
+                            captionElement.textContent = currentText;
                         }
-
-                        buttons.forEach(btn => btn.style.display = '');
-                        
-                        // MODIFIED: Generate filename based on property address or sketch name
-                        const state = window.appStateData;
-                        let filename = 'subject-sketch-with-photos.pdf'; // fallback
-                        
-                        if (state) {
-                            // Try to get address from currentSketchName first
-                            if (state.currentSketchName && state.currentSketchName.trim()) {
-                                filename = \`\${state.currentSketchName.replace(/[^a-z0-9\\s\\-]/gi, '').replace(/\\s+/g, '-')}-sketch.pdf\`;
-                            }
-                            // Or try to get it from any saved address field
-                            else if (state.propertyAddress && state.propertyAddress.trim()) {
-                                filename = \`\${state.propertyAddress.replace(/[^a-z0-9\\s\\-]/gi, '').replace(/\\s+/g, '-')}-sketch.pdf\`;
-                            }
-                            // Or look for address in metadata
-                            else if (state.metadata && state.metadata.address && state.metadata.address.trim()) {
-                                filename = \`\${state.metadata.address.replace(/[^a-z0-9\\s\\-]/gi, '').replace(/\\s+/g, '-')}-sketch.pdf\`;
-                            }
+                    };
+                    
+                    // Event listeners
+                    input.addEventListener('blur', saveCaption);
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            saveCaption();
+                        } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            captionElement.classList.remove('editing');
+                            captionElement.textContent = currentText;
                         }
-                        
-                        pdf.save(filename);
-                    } catch (error) {
-                        console.error('Error generating PDF:', error);
-                        alert('Error generating PDF. Please try again.');
-                        document.querySelectorAll('button').forEach(btn => btn.style.display = '');
+                    });
+                }
+
+                // Toast notification system
+                window.showToast = function(message, type = 'info') {
+                    const toast = document.createElement('div');
+                    toast.className = \`toast toast-\${type}\`;
+                    toast.textContent = message;
+                    
+                    // Toast styles
+                    Object.assign(toast.style, {
+                        position: 'fixed',
+                        top: '20px',
+                        right: '20px',
+                        padding: '12px 20px',
+                        borderRadius: '6px',
+                        color: 'white',
+                        fontWeight: '600',
+                        zIndex: '10000',
+                        opacity: '0',
+                        transform: 'translateY(-20px)',
+                        transition: 'all 0.3s ease',
+                        maxWidth: '300px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+                    });
+                    
+                    // Type-specific colors
+                    if (type === 'success') {
+                        toast.style.backgroundColor = '#28a745';
+                    } else if (type === 'error') {
+                        toast.style.backgroundColor = '#dc3545';
+                    } else {
+                        toast.style.backgroundColor = '#007bff';
                     }
+                    
+                    document.body.appendChild(toast);
+                    
+                    // Animate in
+                    setTimeout(() => {
+                        toast.style.opacity = '1';
+                        toast.style.transform = 'translateY(0)';
+                    }, 10);
+                    
+                    // Animate out and remove
+                    setTimeout(() => {
+                        toast.style.opacity = '0';
+                        toast.style.transform = 'translateY(-20px)';
+                        setTimeout(() => {
+                            if (toast.parentNode) {
+                                toast.parentNode.removeChild(toast);
+                            }
+                        }, 300);
+                    }, 3000);
                 }
             <\/script>
         </body>

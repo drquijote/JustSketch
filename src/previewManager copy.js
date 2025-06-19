@@ -1,10 +1,11 @@
-// src/previewManager.js - Fixed with properly centered area labels
+// src/previewManager.js - FIXED to correctly load photos into the preview AND properly center sketches.
 
 import { AppState } from './state.js';
 
 /**
  * Manages the creation of a high-quality preview of the entire sketch in a new window.
  * Updated to use 120 DPI resolution for custom size paper (8.5" x 13")
+ * ADDED: Now includes subsequent pages for photos, with scrolling.
  */
 export class PreviewManager {
     constructor() {
@@ -17,6 +18,12 @@ export class PreviewManager {
      */
     showPreview() {
         const stateSnapshot = AppState.getStateSnapshot();
+
+        // --- THIS IS THE FIX ---
+        // Manually add the photos to the snapshot. The standard snapshot doesn't include them,
+        // which is why they were not appearing in the preview.
+        stateSnapshot.photos = AppState.photos || [];
+        // --- END FIX ---
 
         // Updated dimensions for 120 DPI custom size
         const previewWindow = window.open('', 'FloorplanPreview', 'width=1020,height=1560,scrollbars=yes,resizable=yes');
@@ -68,6 +75,155 @@ _generatePreviewHTML(state) {
             else if (label.includes('bath')) bathrooms++;
         }
     });
+
+    // --- MODIFIED: SPECIAL PHOTO HANDLING FOR IMPORTANT VIEWS ---
+    let photoPagesHTML = '';
+    if (state.photos && state.photos.length > 0) {
+        // Identify element IDs of "gray" rooms to exclude their photos.
+        const grayElementIds = new Set(
+            state.placedElements
+                .filter(el => el.type === 'room' && el.styling?.className?.includes('perm-palette'))
+                .map(el => el.id)
+        );
+
+        // Filter out photos linked to gray elements
+        const validPhotos = state.photos.filter(photo => !grayElementIds.has(photo.elementId));
+
+        // NEW: Function to check if a photo is "important"
+        const isImportantPhoto = (photo) => {
+            const content = (photo.elementContent || '').toLowerCase();
+            
+            // Check for important views with proper context
+            const isFloorFront = content.includes('floor') && content.includes('front') && !content.includes('patio') && !content.includes('deck') && !content.includes('porch');
+            const isSubjectFront = content.includes('subject') && content.includes('front');
+            const isFrontView = content.includes('front view');
+            
+            const isFloorStreet = content.includes('floor') && content.includes('street');
+            const isSubjectStreet = content.includes('subject') && content.includes('street');
+            const isStreetView = content.includes('street view');
+            
+            const isFloorRear = content.includes('floor') && content.includes('rear');
+            const isSubjectRear = content.includes('subject') && content.includes('rear');
+            const isRearView = content.includes('rear view');
+            
+            return isFloorFront || isSubjectFront || isFrontView ||
+                   isFloorStreet || isSubjectStreet || isStreetView ||
+                   isFloorRear || isSubjectRear || isRearView;
+        };
+
+        const getPreviewCaption = (photo) => {
+            let caption = photo.elementContent || 'Attached Photo';
+            
+            // Replace "Floor 1" with "Subject" for important photos in preview only
+            if (isImportantPhoto(photo)) {
+                caption = caption.replace(/floor\s*1/gi, 'Subject');
+            }
+            
+            return caption;
+        };
+
+        // Separate important photos from regular photos
+        const importantPhotos = validPhotos.filter(isImportantPhoto);
+        const regularPhotos = validPhotos.filter(photo => !isImportantPhoto(photo));
+
+        // Sort important photos to ensure Front View comes first
+        const sortedImportantPhotos = importantPhotos.sort((a, b) => {
+            const aContent = (a.elementContent || '').toLowerCase();
+            const bContent = (b.elementContent || '').toLowerCase();
+            
+            // Front view gets highest priority (0) - matches both "front view" and "front"
+            if (aContent.includes('front')) return -1;
+            if (bContent.includes('front')) return 1;
+            
+            // Street view gets second priority (1) - matches both "street view" and "street"
+            if (aContent.includes('street')) return -1;
+            if (bContent.includes('street')) return 1;
+            
+            // Rear view gets third priority (2) - matches both "rear view" and "rear"
+            if (aContent.includes('rear')) return -1;
+            if (bContent.includes('rear')) return 1;
+            
+            return 0;
+        });
+
+        // IMPORTANT PHOTOS: Always 3-per-page, always visible, ALWAYS FIRST
+        let importantPhotosHTML = '';
+        const importantPhotoPages = [];
+        for (let i = 0; i < sortedImportantPhotos.length; i += 3) {
+            importantPhotoPages.push(sortedImportantPhotos.slice(i, i + 3));
+        }
+
+        importantPhotoPages.forEach((page, pageIndex) => {
+            const photoItemsHTML = page.map(photo => `
+                <div class="photo-item-vertical">
+                    <img src="${photo.imageData}" alt="${getPreviewCaption(photo)}">
+                    <div class="caption">${getPreviewCaption(photo)}</div>
+                </div>
+            `).join('');
+
+            importantPhotosHTML += `
+                <div class="page-container photo-page important-photos">
+                    <div class="page-title">Photos (Page ${pageIndex + 1})</div>
+                    <div class="photo-grid-vertical">
+                        ${photoItemsHTML}
+                    </div>
+                </div>
+            `;
+        });
+
+        // REGULAR PHOTOS: 3-per-page layout (default)
+        let regularPhotosHTML = '';
+        const regularPhotoPages3 = [];
+        for (let i = 0; i < regularPhotos.length; i += 3) {
+            regularPhotoPages3.push(regularPhotos.slice(i, i + 3));
+        }
+
+        regularPhotoPages3.forEach((page, pageIndex) => {
+            const photoItemsHTML = page.map(photo => `
+                <div class="photo-item-vertical">
+                    <img src="${photo.imageData}" alt="${getPreviewCaption(photo)}">
+                    <div class="caption">${getPreviewCaption(photo)}</div>
+                </div>
+            `).join('');
+
+            regularPhotosHTML += `
+                <div class="page-container photo-page layout-3">
+                    <div class="page-title">Photos (Page ${pageIndex + 1})</div>
+                    <div class="photo-grid-vertical">
+                        ${photoItemsHTML}
+                    </div>
+                </div>
+            `;
+        });
+
+        // REGULAR PHOTOS: 6-per-page layout (initially hidden)
+        const regularPhotoPages6 = [];
+        for (let i = 0; i < regularPhotos.length; i += 6) {
+            regularPhotoPages6.push(regularPhotos.slice(i, i + 6));
+        }
+
+        regularPhotoPages6.forEach((page, pageIndex) => {
+            const photoItemsHTML = page.map(photo => `
+                <div class="photo-item-grid">
+                    <img src="${photo.imageData}" alt="${getPreviewCaption(photo)}">
+                    <div class="caption">${getPreviewCaption(photo)}</div>
+                </div>
+            `).join('');
+
+            regularPhotosHTML += `
+                <div class="page-container photo-page layout-6" style="display: none;">
+                    <div class="page-title">Photos (Page ${pageIndex + 1})</div>
+                    <div class="photo-grid-6">
+                        ${photoItemsHTML}
+                    </div>
+                </div>
+            `;
+        });
+
+        // COMBINE: Important photos FIRST, then regular photos
+        photoPagesHTML = importantPhotosHTML + regularPhotosHTML;
+    }
+    // --- END: PHOTO PAGE GENERATION LOGIC ---
     
     // --- Return the complete HTML document ---
     return `
@@ -76,66 +232,174 @@ _generatePreviewHTML(state) {
         <head>
             <meta charset="UTF-8">
             <title>Sketch Preview - Custom Size</title>
-            <!-- Include jsPDF library -->
             <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-            <!-- Include html2canvas library -->
             <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
             <style>
                 html, body { 
                     height: 100%; 
                     margin: 0; 
                     padding: 0; 
-                    overflow: auto; /* Changed from hidden to auto */
+                    /* MODIFIED: Changed overflow to hidden to prevent double scrollbars */
+                    overflow: hidden; 
                     background: #e8e8e8; 
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                    scroll-behavior: smooth;
                 }
                 
-                /* Wrapper to center the legal-sized container */
+                /* MODIFIED: Wrapper to enable vertical page scrolling and snapping */
                 .page-wrapper {
-                    min-height: 100%;
+                    height: 100vh;
+                    overflow-y: auto;
+                    scroll-snap-type: y mandatory;
                     display: flex;
-                    justify-content: center;
-                    align-items: flex-start;
-                    padding: 20px;
+                    flex-direction: column;
+                    align-items: center;
+                    padding: 20px 0;
                     box-sizing: border-box;
                 }
                 
                 .page-container { 
                     width: 1020px;
-                    height: 1560px;
+                    /* MODIFIED: Use max-height to not constrain content vertically */
+                    max-height: 1560px;
                     display: flex; 
                     flex-direction: column; 
                     background: white;
                     box-shadow: 0 0 20px rgba(0,0,0,0.3);
                     overflow: hidden;
-                    /* Enforce aspect ratio */
                     aspect-ratio: 8.5 / 13;
                     transform-origin: top center;
+                    /* MODIFIED: Add scroll-snap alignment and margin */
+                    scroll-snap-align: start;
+                    flex-shrink: 0;
+                    margin-bottom: 20px;
+                }
+
+                /* --- STYLES FOR PHOTO PAGES --- */
+                .photo-page {
+                    justify-content: flex-start;
+                    padding: 40px;
+                    box-sizing: border-box;
+                    height: 1560px; /* Enforce same height as sketch page */
                 }
                 
+                /* 3-per-page vertical layout */
+                .photo-grid-vertical {
+                    display: flex;
+                    flex-direction: column; /* Stack photos vertically */
+                    align-items: center; /* Center photos horizontally */
+                    width: 100%;
+                    margin-top: 20px;
+                    flex-grow: 1; /* ADDED: Fill available vertical space */
+                    min-height: 0; /* ADDED: Allow shrinking */
+                    justify-content: space-between; /* ADDED: Distribute photo items */
+                }
+                
+                .photo-item-vertical {
+                    display: flex;
+                    padding: 15px;
+                    flex-direction: column;
+                    align-items: center;
+                    width: 100%;
+                    background: lightgrey;
+                    border: 5px solid lightblue;
+                    border-radius: 15px;
+                    max-width: 780px; /* 6.5 inches at 120 DPI */
+                    min-width: 720px; /* 6 inches at 120 DPI */
+                    height: 32%; /* ADDED: Set relative height for 3 items */
+                    box-sizing: border-box; /* ADDED: Include padding/border in height */
+                }
+                
+                .photo-item-vertical img {
+                    width: 100%;
+                    border: 1px solid #ccc;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                    margin-bottom: 10px;
+                    object-fit: contain;
+                    flex: 1; /* ADDED: Allow image to fill space flexibly */
+                    min-height: 0; /* ADDED: Allow image to shrink */
+                }
+                
+                .photo-item-vertical .caption {
+                    font-size: 16px; /* Slightly larger for better readability */
+                    font-weight: 500;
+                    text-align: center;
+                    color: #333;
+                    margin-top: 5px;
+                }
+
+                /* 6-per-page grid layout (3 rows x 2 columns) */
+                .photo-grid-6 {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr; /* 2 columns */
+                    grid-template-rows: 1fr 1fr 1fr; /* 3 rows */
+                    gap: 20px;
+                    width: 100%;
+                    height: 100%;
+                    margin-top: 20px;
+                    padding: 0 20px;
+                    box-sizing: border-box;
+                }
+                
+                .photo-item-grid {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    background: lightgrey;
+                    border: 3px solid lightblue;
+                    border-radius: 10px;
+                    padding: 10px;
+                    box-sizing: border-box;
+                    height: 100%;
+                }
+                
+                .photo-item-grid img {
+                    width: 100%;
+                    height: auto;
+                    border: 1px solid #ccc;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                    margin-bottom: 8px;
+                    object-fit: contain;
+                    flex: 1;
+                    min-height: 0;
+                    max-height: calc(100% - 40px); /* Leave space for caption */
+                }
+                
+                .photo-item-grid .caption {
+                    font-size: 12px;
+                    font-weight: 500;
+                    text-align: center;
+                    color: #333;
+                    margin-top: 5px;
+                    flex-shrink: 0;
+                }
+
                 /* Mobile responsive scaling */
                 @media (max-width: 1060px) {
                     .page-wrapper {
-                        padding: 10px;
+                        padding: 10px 0;
                     }
                     .page-container {
-                        /* Scale down to fit viewport width with some padding */
                         transform: scale(calc((100vw - 40px) / 1020px));
-                        /* Adjust wrapper height to accommodate scaled content */
-                        margin-bottom: calc(1560px * (1 - (100vw - 40px) / 1020px) * -1);
+                        margin-bottom: calc(1580px * (1 - (100vw - 40px) / 1020px) * -1);
+                    }
+                    /* Adjust photo widths for mobile */
+                    .photo-item-vertical {
+                        max-width: calc(780px * ((100vw - 40px) / 1020px));
+                        min-width: calc(720px * ((100vw - 40px) / 1020px));
                     }
                 }
                 
-                /* For very small screens, add extra scaling */
                 @media (max-width: 480px) {
                     .page-wrapper {
-                        padding: 5px;
+                        padding: 5px 0;
                     }
                     .page-container {
                         transform: scale(calc((100vw - 20px) / 1020px));
-                        margin-bottom: calc(1560px * (1 - (100vw - 20px) / 1020px) * -1);
+                        margin-bottom: calc(1580px * (1 - (100vw - 20px) / 1020px) * -1);
                     }
                 }
+
                 .canvas-section { 
                     flex: 1; 
                     min-height: 0; 
@@ -194,12 +458,14 @@ _generatePreviewHTML(state) {
                     width: 100%; 
                     height: 100%; 
                 }
-                .print-btn { 
+                
+                /* Layout toggle button */
+                .layout-btn { 
                     position: fixed; 
                     top: 15px; 
                     right: 20px; 
                     padding: 10px 18px; 
-                    background: #007bff; 
+                    background: #6c757d; 
                     color: white; 
                     border: none; 
                     border-radius: 5px; 
@@ -222,7 +488,7 @@ _generatePreviewHTML(state) {
                     font-size: 1em;
                 }
                 
-                .pdf-btn:hover, .print-btn:hover {
+                .pdf-btn:hover, .layout-btn:hover {
                     opacity: 0.9;
                 }
                 
@@ -235,7 +501,6 @@ _generatePreviewHTML(state) {
                     padding-top: 10px;
                 }
                 
-                /* Mobile notice */
                 .mobile-notice {
                     display: none;
                     position: fixed;
@@ -255,7 +520,7 @@ _generatePreviewHTML(state) {
                     .mobile-notice {
                         display: block;
                     }
-                    .print-btn, .pdf-btn {
+                    .layout-btn, .pdf-btn {
                         top: 10px;
                         right: 10px;
                         padding: 8px 14px;
@@ -272,26 +537,28 @@ _generatePreviewHTML(state) {
                         size: 8.5in 13in;
                         margin: 0;
                     }
-                    body { 
-                        background: white; 
+                    body, .page-wrapper { 
+                        background: white;
+                        overflow: visible;
+                        height: auto;
                     }
-                    .print-btn { 
-                        display: none; 
+                    .layout-btn, .pdf-btn, .mobile-notice { 
+                        display: none !important; 
                     } 
-                    .page-container { 
-                        height: 13in;
-                        width: 8.5in;
-                        max-width: 8.5in;
-                        max-height: 13in;
-                        padding: 0.25in; /* 1/4 inch margins for print */
+                    .page-container {
+                        box-shadow: none;
+                        border: 1px solid #ccc;
+                        margin: 0;
+                        transform: scale(1) !important; /* Reset scaling for print */
+                        page-break-before: always; /* Each page container starts on a new page */
+                    }
+                    .page-container:first-child {
+                        page-break-before: auto; /* First page doesn't need a break */
                     }
                     .canvas-section, .legend-section { 
                         box-shadow: none; 
                         border-radius: 0; 
-                        border: 1px solid #ccc; 
-                    }
-                    .legend-section { 
-                        page-break-before: avoid; /* Keep legend with canvas if possible */
+                        border: none;
                     }
                 }
             </style>
@@ -300,7 +567,7 @@ _generatePreviewHTML(state) {
             <div class="page-wrapper">
                 <div class="page-container">
                     <button class="pdf-btn" onclick="generatePDF()">PDF</button>
-                    <button class="print-btn" onclick="window.print()">Print</button>
+                    <button class="layout-btn" onclick="togglePhotoLayout()">6/Page</button>
                     <div class="page-title">Subject Sketch</div>
                     <div class="canvas-section">
                         <canvas id="previewCanvas"></canvas>
@@ -326,400 +593,411 @@ _generatePreviewHTML(state) {
                         </div>
                     </div>
                 </div>
+
+                ${photoPagesHTML}
+
             </div>
             <div class="mobile-notice">
                 Scaled for viewing - Full resolution maintained for PDF export
             </div>
 
             <script>
+                // Global variable to track current layout for regular photos only
+                let previewCurrentLayout = 3; // Start with 3-per-page layout
+
                 window.onload = () => {
                     const state = window.appStateData;
                     const canvas = document.getElementById('previewCanvas');
-                    const ctx = canvas.getContext('2d');
-                    const overlayContainer = document.getElementById('htmlOverlayContainer');
-                    const canvasSection = document.querySelector('.canvas-section');
+                    
+                    // DEBUG: Check if state data is available
+                    console.log('State data:', state);
+                    console.log('Canvas element:', canvas);
+                    if (state) {
+                        console.log('Polygons:', state.drawnPolygons?.length);
+                        console.log('Elements:', state.placedElements?.length);
+                    }
+                    
+                    // Only try to render canvas if the canvas element exists on the first page
+                    if (canvas) {
+                        const ctx = canvas.getContext('2d');
+                        const overlayContainer = document.getElementById('htmlOverlayContainer');
+                        const canvasSection = document.querySelector('.canvas-section');
 
-                    // --- NEW HELPER FUNCTION TO FIND SHARED EDGES ---
-                    const findAllSharedEdges = (polygons) => {
-                        const edges = new Map();
-                        const sharedEdges = new Set();
-                        
-                        const getEdgeKey = (p1, p2) => {
-                            // Create a consistent key regardless of point order
-                            const key1 = \`\${p1.x.toFixed(1)},\${p1.y.toFixed(1)}\`;
-                            const key2 = \`\${p2.x.toFixed(1)},\${p2.y.toFixed(1)}\`;
-                            return key1 < key2 ? key1 + '|' + key2 : key2 + '|' + key1;
-                        };
+                        // --- NEW HELPER FUNCTION TO FIND SHARED EDGES ---
+                        const findAllSharedEdges = (polygons) => {
+                            const edges = new Map();
+                            const sharedEdges = new Set();
+                            
+                            const getEdgeKey = (p1, p2) => {
+                                // Create a consistent key regardless of point order
+                                const key1 = \`\${p1.x.toFixed(1)},\${p1.y.toFixed(1)}\`;
+                                const key2 = \`\${p2.x.toFixed(1)},\${p2.y.toFixed(1)}\`;
+                                return key1 < key2 ? key1 + '|' + key2 : key2 + '|' + key1;
+                            };
 
-                        polygons.forEach(poly => {
-                            for (let i = 0; i < poly.path.length; i++) {
-                                const p1 = poly.path[i];
-                                const p2 = poly.path[(i + 1) % poly.path.length];
-                                const edgeKey = getEdgeKey(p1, p2);
-                                
-                                if (edges.has(edgeKey)) {
-                                    sharedEdges.add(edgeKey);
-                                } else {
-                                    edges.set(edgeKey, poly.id);
-                                }
-                            }
-                        });
-                        return sharedEdges;
-                    };
-
-                    const render = () => {
-                        if (!state) return;
-
-                        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                        if (state.drawnPolygons.length === 0 && state.placedElements.length === 0) return;
-
-                        state.drawnPolygons.forEach(p => p.path.forEach(pt => {
-                            minX = Math.min(minX, pt.x); maxX = Math.max(maxX, pt.x);
-                            minY = Math.min(minY, pt.y); maxY = Math.max(maxY, pt.y);
-                        }));
-                        state.placedElements.forEach(el => {
-                            minX = Math.min(minX, el.x); maxX = Math.max(maxX, el.x + el.width);
-                            minY = Math.min(minY, el.y); maxY = Math.max(maxY, el.y + el.height);
-                        });
-
-                        const sketchWidth = maxX - minX;
-                        const sketchHeight = maxY - minY;
-                        if (sketchWidth === 0 || sketchHeight === 0) return;
-                        
-                        const canvasWidth = canvasSection.clientWidth;
-                        const canvasHeight = canvasSection.clientHeight;
-                        canvas.width = canvasWidth;
-                        canvas.height = canvasHeight;
-                        
-                        const padding = 50;
-                        const scaleX = (canvasWidth - padding * 2) / sketchWidth;
-                        const scaleY = (canvasHeight - padding * 2) / sketchHeight;
-                        let scale = Math.min(scaleX, scaleY);
-                        
-                        // Add maximum scale limit to prevent small floor plans from being too zoomed in
-                        const MAX_SCALE = 1.5; // This means 1 foot = max 12 pixels (8 * 1.5)
-                        scale = Math.min(scale, MAX_SCALE);
-
-                        const scaledSketchWidth = sketchWidth * scale;
-                        const scaledSketchHeight = sketchHeight * scale;
-
-                        const offsetX = (canvasWidth - scaledSketchWidth) / 2 - (minX * scale);
-                        const offsetY = (canvasHeight - scaledSketchHeight) / 2 - (minY * scale);
-
-                        const toPreviewCoords = (p) => ({ x: p.x * scale + offsetX, y: p.y * scale + offsetY });
-                        
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        overlayContainer.innerHTML = '';
-
-                        // --- NEW: Identify shared edges before drawing ---
-                        const sharedEdges = findAllSharedEdges(state.drawnPolygons);
-                        const getEdgeKey = (p1, p2) => {
-                            const key1 = \`\${p1.x.toFixed(1)},\${p1.y.toFixed(1)}\`;
-                            const key2 = \`\${p2.x.toFixed(1)},\${p2.y.toFixed(1)}\`;
-                            return key1 < key2 ? key1 + '|' + key2 : key2 + '|' + key1;
-                        };
-
-                        // FIRST: Draw edge labels (lower z-index)
-                        state.drawnPolygons.forEach(poly => {
-                            poly.path.forEach((p1, i) => {
-                                const p2 = poly.path[(i + 1) % poly.path.length];
-                                
-                                // --- Check if the edge is shared and skip it if it is ---
-                                const edgeKey = getEdgeKey(p1, p2);
-                                if (sharedEdges.has(edgeKey)) {
-                                    return; // This is an interior wall, so skip drawing the label.
-                                }
-
-                                const dx = p2.x - p1.x;
-                                const dy = p2.y - p1.y;
-                                const lengthInFeet = Math.sqrt(dx * dx + dy * dy) / 8;
-                                if (lengthInFeet < 3) return; // Only show labels for edges 3+ feet
-
-                                const startPoint = toPreviewCoords(p1);
-                                const endPoint = toPreviewCoords(p2);
-                                const midX = (startPoint.x + endPoint.x) / 2;
-                                const midY = (startPoint.y + endPoint.y) / 2;
-                                const canvasDx = endPoint.x - startPoint.x;
-                                const canvasDy = endPoint.y - startPoint.y;
-                                const canvasEdgeLength = Math.sqrt(canvasDx*canvasDx + canvasDy*canvasDy);
-                                if (canvasEdgeLength === 0) return;
-                                
-                                // IMPROVED: Better algorithm to position labels outside polygons
-                                // Calculate perpendicular direction
-                                const perpX = -canvasDy / canvasEdgeLength;
-                                const perpY = canvasDx / canvasEdgeLength;
-                                
-                                // Test both sides of the edge to find which is outside the polygon
-                                const testOffset = 20 * scale;
-                                const testX1 = midX + perpX * testOffset;
-                                const testY1 = midY + perpY * testOffset;
-                                const testX2 = midX - perpX * testOffset;
-                                const testY2 = midY - perpY * testOffset;
-                                
-                                // Simple point-in-polygon test for the current polygon
-                                const isInsidePolygon = (x, y, polygon) => {
-                                    const scaledPoly = polygon.path.map(p => toPreviewCoords(p));
-                                    let inside = false;
-                                    for (let i = 0, j = scaledPoly.length - 1; i < scaledPoly.length; j = i++) {
-                                        if (((scaledPoly[i].y > y) !== (scaledPoly[j].y > y)) &&
-                                            (x < (scaledPoly[j].x - scaledPoly[i].x) * (y - scaledPoly[i].y) / (scaledPoly[j].y - scaledPoly[i].y) + scaledPoly[i].x)) {
-                                            inside = !inside;
-                                        }
+                            polygons.forEach(poly => {
+                                for (let i = 0; i < poly.path.length; i++) {
+                                    const p1 = poly.path[i];
+                                    const p2 = poly.path[(i + 1) % poly.path.length];
+                                    const edgeKey = getEdgeKey(p1, p2);
+                                    
+                                    if (edges.has(edgeKey)) {
+                                        sharedEdges.add(edgeKey);
+                                    } else {
+                                        edges.set(edgeKey, poly.id);
                                     }
-                                    return inside;
-                                };
-                                
-                                // Choose the side that's outside the polygon
-                                let labelX, labelY;
-                                const side1Inside = isInsidePolygon(testX1, testY1, poly);
-                                const side2Inside = isInsidePolygon(testX2, testY2, poly);
-                                
-                                if (!side1Inside && side2Inside) {
-                                    // Use side 1 (positive perpendicular)
-                                    labelX = midX + perpX * (25 * scale);
-                                    labelY = midY + perpY * (25 * scale);
-                                } else if (side1Inside && !side2Inside) {
-                                    // Use side 2 (negative perpendicular)
-                                    labelX = midX - perpX * (25 * scale);
-                                    labelY = midY - perpY * (25 * scale);
-                                } else {
-                                    // Fallback: use centroid-based positioning but with smaller offset
-                                    const centroidPreview = toPreviewCoords(poly.centroid);
-                                    const toCentroidX = centroidPreview.x - midX;
-                                    const toCentroidY = centroidPreview.y - midY;
-                                    const dotProduct = toCentroidX * perpX + toCentroidY * perpY;
-                                    const offset = 25 * scale;
-                                    labelX = midX + (dotProduct > 0 ? -perpX * offset : perpX * offset);
-                                    labelY = midY + (dotProduct > 0 ? -perpY * offset : perpY * offset);
                                 }
-                                
-                                // Ensure label stays within canvas bounds
-                                labelX = Math.max(50, Math.min(canvas.width - 50, labelX));
-                                labelY = Math.max(20, Math.min(canvas.height - 20, labelY));
-                                
+                            });
+                            return sharedEdges;
+                        };
+
+                        const render = () => {
+                            if (!state) return;
+
+                            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                            if (state.drawnPolygons.length === 0 && state.placedElements.length === 0) return;
+
+                            // FIXED: Calculate bounding box properly
+                            state.drawnPolygons.forEach(p => p.path.forEach(pt => {
+                                minX = Math.min(minX, pt.x); maxX = Math.max(maxX, pt.x);
+                                minY = Math.min(minY, pt.y); maxY = Math.max(maxY, pt.y);
+                            }));
+                            state.placedElements.forEach(el => {
+                                minX = Math.min(minX, el.x); maxX = Math.max(maxX, el.x + el.width);
+                                minY = Math.min(minY, el.y); maxY = Math.max(maxY, el.y + el.height);
+                            });
+
+                            const sketchWidth = maxX - minX;
+                            const sketchHeight = maxY - minY;
+                            if (sketchWidth === 0 || sketchHeight === 0) return;
+                            
+                            const canvasWidth = canvasSection.clientWidth;
+                            const canvasHeight = canvasSection.clientHeight;
+                            canvas.width = canvasWidth;
+                            canvas.height = canvasHeight;
+                            
+                            const padding = 50;
+                            const scaleX = (canvasWidth - padding * 2) / sketchWidth;
+                            const scaleY = (canvasHeight - padding * 2) / sketchHeight;
+                            let scale = Math.min(scaleX, scaleY);
+                            
+                            const MAX_SCALE = 1.5;
+                            scale = Math.min(scale, MAX_SCALE);
+
+                            const scaledSketchWidth = sketchWidth * scale;
+                            const scaledSketchHeight = sketchHeight * scale;
+
+                            // FIXED: Improved centering calculation - centers the actual content, not just coordinates
+                            const contentCenterX = (minX + maxX) / 2;
+                            const contentCenterY = (minY + maxY) / 2;
+                            const canvasCenterX = canvasWidth / 2;
+                            const canvasCenterY = canvasHeight / 2;
+                            
+                            const offsetX = canvasCenterX - (contentCenterX * scale);
+                            const offsetY = canvasCenterY - (contentCenterY * scale);
+
+                            const toPreviewCoords = (p) => ({ x: p.x * scale + offsetX, y: p.y * scale + offsetY });
+                            
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            overlayContainer.innerHTML = '';
+
+                            const sharedEdges = findAllSharedEdges(state.drawnPolygons);
+                            const getEdgeKey = (p1, p2) => {
+                                const key1 = \`\${p1.x.toFixed(1)},\${p1.y.toFixed(1)}\`;
+                                const key2 = \`\${p2.x.toFixed(1)},\${p2.y.toFixed(1)}\`;
+                                return key1 < key2 ? key1 + '|' + key2 : key2 + '|' + key1;
+                            };
+
+                            // FIRST: Draw edge labels (lower z-index)
+                            state.drawnPolygons.forEach(poly => {
+                                poly.path.forEach((p1, i) => {
+                                    const p2 = poly.path[(i + 1) % poly.path.length];
+                                    
+                                    const edgeKey = getEdgeKey(p1, p2);
+                                    if (sharedEdges.has(edgeKey)) {
+                                        return;
+                                    }
+
+                                    const dx = p2.x - p1.x;
+                                    const dy = p2.y - p1.y;
+                                    const lengthInFeet = Math.sqrt(dx * dx + dy * dy) / 8;
+                                    if (lengthInFeet < 3) return;
+
+                                    const startPoint = toPreviewCoords(p1);
+                                    const endPoint = toPreviewCoords(p2);
+                                    const midX = (startPoint.x + endPoint.x) / 2;
+                                    const midY = (startPoint.y + endPoint.y) / 2;
+                                    const canvasDx = endPoint.x - startPoint.x;
+                                    const canvasDy = endPoint.y - startPoint.y;
+                                    const canvasEdgeLength = Math.sqrt(canvasDx*canvasDx + canvasDy*canvasDy);
+                                    if (canvasEdgeLength === 0) return;
+                                    
+                                    const perpX = -canvasDy / canvasEdgeLength;
+                                    const perpY = canvasDx / canvasEdgeLength;
+                                    
+                                    const testOffset = 20 * scale;
+                                    const testX1 = midX + perpX * testOffset;
+                                    const testY1 = midY + perpY * testOffset;
+                                    const testX2 = midX - perpX * testOffset;
+                                    const testY2 = midY - perpY * testOffset;
+                                    
+                                    const isInsidePolygon = (x, y, polygon) => {
+                                        const scaledPoly = polygon.path.map(p => toPreviewCoords(p));
+                                        let inside = false;
+                                        for (let i = 0, j = scaledPoly.length - 1; i < scaledPoly.length; j = i++) {
+                                            if (((scaledPoly[i].y > y) !== (scaledPoly[j].y > y)) &&
+                                                (x < (scaledPoly[j].x - scaledPoly[i].x) * (y - scaledPoly[i].y) / (scaledPoly[j].y - scaledPoly[i].y) + scaledPoly[i].x)) {
+                                                inside = !inside;
+                                            }
+                                        }
+                                        return inside;
+                                    };
+                                    
+                                    let labelX, labelY;
+                                    const side1Inside = isInsidePolygon(testX1, testY1, poly);
+                                    const side2Inside = isInsidePolygon(testX2, testY2, poly);
+                                    
+                                    if (!side1Inside && side2Inside) {
+                                        labelX = midX + perpX * (25 * scale);
+                                        labelY = midY + perpY * (25 * scale);
+                                    } else if (side1Inside && !side2Inside) {
+                                        labelX = midX - perpX * (25 * scale);
+                                        labelY = midY - perpY * (25 * scale);
+                                    } else {
+                                        const centroidPreview = toPreviewCoords(poly.centroid);
+                                        const toCentroidX = centroidPreview.x - midX;
+                                        const toCentroidY = centroidPreview.y - midY;
+                                        const dotProduct = toCentroidX * perpX + toCentroidY * perpY;
+                                        const offset = 25 * scale;
+                                        labelX = midX + (dotProduct > 0 ? -perpX * offset : perpX * offset);
+                                        labelY = midY + (dotProduct > 0 ? -perpY * offset : perpY * offset);
+                                    }
+                                    
+                                    labelX = Math.max(50, Math.min(canvas.width - 50, labelX));
+                                    labelY = Math.max(20, Math.min(canvas.height - 20, labelY));
+                                    
+                                    ctx.save();
+                                    ctx.translate(labelX, labelY);
+                                    
+                                    const text = \`\${lengthInFeet.toFixed(1)}'\`;
+                                    
+                                    const fontSize = Math.max(10, 12 * Math.min(1, scale));
+                                    ctx.font = \`bold \${fontSize}px Arial\`;
+                                    ctx.textAlign = 'center';
+                                    ctx.textBaseline = 'middle';
+                                    const textMetrics = ctx.measureText(text);
+                                    
+                                    ctx.fillStyle = 'rgba(255, 255, 255, 0)';
+                                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+                                    ctx.lineWidth = 0.5;
+                                    const padding = 4;
+                                    const bgRect = {
+                                        x: -textMetrics.width / 2 - padding,
+                                        y: -fontSize / 2 - 2,
+                                        width: textMetrics.width + padding * 2,
+                                        height: fontSize + 4
+                                    };
+                                    ctx.fillRect(bgRect.x, bgRect.y, bgRect.width, bgRect.height);
+                                    ctx.strokeRect(bgRect.x, bgRect.y, bgRect.width, bgRect.height);
+                                    
+                                    ctx.fillStyle = '#333';
+                                    ctx.fillText(text, 0, 0);
+                                    ctx.restore();
+                                });
+                            });
+
+                            // SECOND: Draw polygon areas
+                            state.drawnPolygons.forEach(poly => {
                                 ctx.save();
-                                ctx.translate(labelX, labelY);
-                                
-                                // No rotation - keep all text perfectly horizontal
-                                // ctx.rotate(0); // No rotation applied
-                                
-                                const text = \`\${lengthInFeet.toFixed(1)}'\`;
-                                
-                                // Consistent, readable font size
-                                const fontSize = Math.max(10, 12 * Math.min(1, scale));
-                                ctx.font = \`bold \${fontSize}px Arial\`;
-                                ctx.textAlign = 'center';
-                                ctx.textBaseline = 'middle';
-                                const textMetrics = ctx.measureText(text);
-                                
-                                // Clean white background with subtle border
-                                ctx.fillStyle = 'rgba(255, 255, 255, 0)';
-                                ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-                                ctx.lineWidth = 0.5;
-                                const padding = 4;
-                                const bgRect = {
-                                    x: -textMetrics.width / 2 - padding,
-                                    y: -fontSize / 2 - 2,
-                                    width: textMetrics.width + padding * 2,
-                                    height: fontSize + 4
-                                };
-                                ctx.fillRect(bgRect.x, bgRect.y, bgRect.width, bgRect.height);
-                                ctx.strokeRect(bgRect.x, bgRect.y, bgRect.width, bgRect.height);
-                                
-                                // Draw text
-                                ctx.fillStyle = '#333';
-                                ctx.fillText(text, 0, 0);
+                                if (poly.type.startsWith('ADU') || poly.type.startsWith('UNIT')) {
+                                    ctx.fillStyle = 'rgba(221, 215, 226, 0.7)';
+                                } else {
+                                    ctx.fillStyle = poly.glaType === 1 ? 'rgba(144, 238, 144, 0.4)' : 'rgba(180, 180, 180, 0.6)';
+                                }
+                                ctx.strokeStyle = '#555';
+                                ctx.lineWidth = 1.5;
+                                ctx.beginPath();
+                                poly.path.forEach((p, i) => {
+                                    const point = toPreviewCoords(p);
+                                    if (i === 0) ctx.moveTo(point.x, point.y);
+                                    else ctx.lineTo(point.x, point.y);
+                                });
+                                ctx.closePath();
+                                ctx.fill();
+                                ctx.stroke();
                                 ctx.restore();
                             });
-                        });
 
-                        // SECOND: Draw polygon areas (higher z-index, on top of labels)
-                        state.drawnPolygons.forEach(poly => {
-                            ctx.save();
-                            if (poly.type.startsWith('ADU') || poly.type.startsWith('UNIT')) {
-                                ctx.fillStyle = 'rgba(221, 215, 226, 0.7)';
-                            } else {
-                                ctx.fillStyle = poly.glaType === 1 ? 'rgba(144, 238, 144, 0.4)' : 'rgba(180, 180, 180, 0.6)';
-                            }
-                            ctx.strokeStyle = '#555';
-                            ctx.lineWidth = 1.5;
-                            ctx.beginPath();
-                            poly.path.forEach((p, i) => {
-                                const point = toPreviewCoords(p);
-                                if (i === 0) ctx.moveTo(point.x, point.y);
-                                else ctx.lineTo(point.x, point.y);
-                            });
-                            ctx.closePath();
-                            ctx.fill();
-                            ctx.stroke();
-                            ctx.restore();
-                        });
-
-                        state.placedElements.forEach(el => {
-                            const div = document.createElement('div');
-                            
-                            // FIX: Handle area_label centering differently
-                            let posX, posY;
-                            if (el.type === 'area_label') {
-                                // For area labels, x and y represent the center position
-                                const centerPos = toPreviewCoords({ x: el.x, y: el.y });
+                            // THIRD: Draw placed elements
+                            state.placedElements.forEach(el => {
+                                const div = document.createElement('div');
+                                let posX, posY;
+                                if (el.type === 'area_label') {
+                                    const centerPos = toPreviewCoords({ x: el.x, y: el.y });
+                                    const elWidth = el.width * scale;
+                                    const elHeight = el.height * scale;
+                                    posX = centerPos.x - elWidth / 2;
+                                    posY = centerPos.y - elHeight / 2;
+                                } else {
+                                    const pos = toPreviewCoords(el);
+                                    posX = pos.x;
+                                    posY = pos.y;
+                                }
+                                
                                 const elWidth = el.width * scale;
                                 const elHeight = el.height * scale;
-                                posX = centerPos.x - elWidth / 2;
-                                posY = centerPos.y - elHeight / 2;
-                            } else {
-                                // For other elements, use top-left positioning
-                                const pos = toPreviewCoords(el);
-                                posX = pos.x;
-                                posY = pos.y;
-                            }
-                            
-                            const elWidth = el.width * scale;
-                            const elHeight = el.height * scale;
-                            
-                            Object.assign(div.style, { 
-                                position: 'absolute', 
-                                left: \`\${posX}px\`, 
-                                top: \`\${posY}px\`, 
-                                width: \`\${elWidth}px\`, 
-                                height: \`\${elHeight}px\`, 
-                                transformOrigin: 'center' 
-                            });
-                            
-                            if (el.type === 'room' || el.type === 'area_label') {
+                                
                                 Object.assign(div.style, { 
-                                    fontSize: \`\${16 * Math.max(0.8, scale * 0.7)}px\`, 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'center', 
-                                    textAlign: 'center', 
-                                    flexDirection: 'column' 
+                                    position: 'absolute', 
+                                    left: \`\${posX}px\`, 
+                                    top: \`\${posY}px\`, 
+                                    width: \`\${elWidth}px\`, 
+                                    height: \`\${elHeight}px\`, 
+                                    transformOrigin: 'center' 
                                 });
                                 
-                                if (el.type === 'area_label') {
-                                    // Update area label with current polygon data
-                                    const linkedPolygon = state.drawnPolygons.find(p => p.id === el.linkedPolygonId);
-                                    if (linkedPolygon) {
-                                        div.innerHTML = \`<strong style="font-size: 1.1em;">\${linkedPolygon.label}</strong><span style="font-size:0.9em; font-weight: 600; color: #222; margin-top: 3px;">\${linkedPolygon.area.toFixed(1)} sq ft</span>\`;
+                                if (el.type === 'room' || el.type === 'area_label') {
+                                    Object.assign(div.style, { 
+                                        fontSize: \`\${16 * Math.max(0.8, scale * 0.7)}px\`, 
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                                        textAlign: 'center', flexDirection: 'column' 
+                                    });
+                                    
+                                    if (el.type === 'area_label') {
+                                        const linkedPolygon = state.drawnPolygons.find(p => p.id === el.linkedPolygonId);
+                                        if (linkedPolygon) {
+                                            div.innerHTML = \`<strong style="font-size: 1.1em;">\${linkedPolygon.label}</strong><span style="font-size:0.9em; font-weight: 600; color: #222; margin-top: 3px;">\${linkedPolygon.area.toFixed(1)} sq ft</span>\`;
+                                        } else {
+                                            div.innerHTML = \`<strong style="font-size: 1.1em;">\${el.areaData.areaText}</strong><span style="font-size:0.9em; font-weight: 600; color: #222; margin-top: 3px;">\${el.areaData.sqftText}</span>\`;
+                                        }
                                     } else {
-                                        div.innerHTML = \`<strong style="font-size: 1.1em;">\${el.areaData.areaText}</strong><span style="font-size:0.9em; font-weight: 600; color: #222; margin-top: 3px;">\${el.areaData.sqftText}</span>\`;
+                                        div.style.background = el.styling.backgroundColor;
+                                        div.style.color = el.styling.color || 'white';
+                                        div.style.borderRadius = '4px';
+                                        div.style.fontSize = \`\${14 * Math.max(0.9, scale * 0.8)}px\`;
+                                        div.style.fontWeight = '600';
+                                        div.style.padding = '4px 8px';
+                                        div.textContent = el.content;
                                     }
-                                } else {
-                                    div.style.background = el.styling.backgroundColor;
-                                    div.style.color = el.styling.color || 'white';
-                                    div.style.borderRadius = '4px';
-                                    div.style.fontSize = \`\${14 * Math.max(0.9, scale * 0.8)}px\`;
-                                    div.style.fontWeight = '600';
-                                    div.style.padding = '4px 8px';
-                                    div.textContent = el.content;
+                                } else if (el.type === 'icon') {
+                                    div.className = 'icon-container';
+                                    const img = new Image();
+                                    img.src = el.content;
+                                    img.style.width = '100%'; 
+                                    img.style.height = '100%';
+                                    img.style.display = 'block';
+                                    img.style.objectFit = 'contain';
+                                    if (el.rotation) {
+                                        div.style.transform = \`rotate(\${el.rotation}rad)\`;
+                                    }
+                                    div.appendChild(img);
                                 }
-                            } else if (el.type === 'icon') {
-                                div.className = 'icon-container';
-                                const img = new Image();
-                                img.src = el.content;
-                                img.style.width = '100%'; 
-                                img.style.height = '100%';
-                                img.style.display = 'block';
-                                img.style.objectFit = 'contain';
-                                if (el.rotation) {
-                                    // Apply rotation to container, not image
-                                    div.style.transform = \`rotate(\${el.rotation}rad)\`;
-                                }
-                                div.appendChild(img);
-                            }
-                            overlayContainer.appendChild(div);
+                                overlayContainer.appendChild(div);
+                            });
+                        };
+                        
+                        render();
+                        let resizeTimer;
+                        window.addEventListener('resize', () => {
+                            clearTimeout(resizeTimer);
+                            resizeTimer = setTimeout(render, 100);
                         });
-                    };
+                    }
+                }
+                
+                // Function to toggle between photo layouts (ONLY affects regular photos)
+                window.togglePhotoLayout = function() {
+                    const layout3Pages = document.querySelectorAll('.layout-3'); // Regular photos only
+                    const layout6Pages = document.querySelectorAll('.layout-6'); // Regular photos only
+                    const toggleBtn = document.querySelector('.layout-btn');
                     
-                    render();
-                    let resizeTimer;
-                    window.addEventListener('resize', () => {
-                        clearTimeout(resizeTimer);
-                        resizeTimer = setTimeout(render, 100);
-                    });
+                    // Important photos are NOT affected by this toggle
+                    
+                    if (previewCurrentLayout === 3) {
+                        // Switch to 6-per-page layout for regular photos
+                        layout3Pages.forEach(page => page.style.display = 'none');
+                        layout6Pages.forEach(page => page.style.display = 'flex');
+                        toggleBtn.textContent = '3/Page';
+                        previewCurrentLayout = 6;
+                    } else {
+                        // Switch to 3-per-page layout for regular photos
+                        layout6Pages.forEach(page => page.style.display = 'none');
+                        layout3Pages.forEach(page => page.style.display = 'flex');
+                        toggleBtn.textContent = '6/Page';
+                        previewCurrentLayout = 3;
+                    }
                 }
                 
                 // PDF generation using html2canvas
                 window.generatePDF = async function() {
                     try {
-                        const pageContainer = document.querySelector('.page-container');
-                        
-                        // Hide buttons temporarily
+                        const pageWrapper = document.querySelector('.page-wrapper');
                         const buttons = document.querySelectorAll('button');
                         buttons.forEach(btn => btn.style.display = 'none');
-                        
-                        // Wait for all images to load
-                        const images = pageContainer.querySelectorAll('img');
-                        const imagePromises = Array.from(images).map(img => {
-                            if (img.complete) return Promise.resolve();
-                            return new Promise((resolve, reject) => {
-                                img.onload = resolve;
-                                img.onerror = resolve; // Continue even if image fails
-                                // Force reload if needed
-                                if (!img.src) return resolve();
-                                const tempSrc = img.src;
-                                img.src = '';
-                                img.src = tempSrc;
-                            });
-                        });
-                        
-                        await Promise.all(imagePromises);
-                        
-                        // Small delay to ensure rendering is complete
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                        
-                        // Generate canvas from HTML with optimized settings
-                        const canvas = await html2canvas(pageContainer, {
-                            scale: 1.5, // Reduced from 2 to 1.5 for smaller file size
-                            useCORS: true,
-                            logging: false,
-                            width: 1020,
-                            height: 1560,
-                            imageTimeout: 15000, // Increased timeout
-                            allowTaint: true,
-                            backgroundColor: '#ffffff',
-                            onclone: (clonedDoc) => {
-                                // Fix icon positioning in cloned document
-                                const clonedIcons = clonedDoc.querySelectorAll('.html-overlay div');
-                                clonedIcons.forEach(div => {
-                                    const img = div.querySelector('img');
-                                    if (img && img.style.transform) {
-                                        // Apply transform directly to container instead
-                                        div.style.transform = img.style.transform;
-                                        img.style.transform = 'none';
-                                    }
-                                });
-                            }
-                        });
-                        
-                        // Show buttons again
-                        buttons.forEach(btn => btn.style.display = '');
-                        
-                        // Convert canvas to JPEG for better compression
-                        const imgData = canvas.toDataURL('image/jpeg', 0.85); // Slightly higher quality
-                        
-                        // Create PDF with compression
+
                         const { jsPDF } = window.jspdf;
                         const pdf = new jsPDF({
                             orientation: 'portrait',
                             unit: 'in',
                             format: [8.5, 13],
-                            compress: true // Enable PDF compression
+                            compress: true
                         });
                         
-                        // Add image with compression
-                        pdf.addImage(imgData, 'JPEG', 0, 0, 8.5, 13, undefined, 'FAST');
+                        // Only include visible pages in PDF (important photos always included)
+                        const pageContainers = document.querySelectorAll('.page-container:not([style*="display: none"])');
+
+                        for (let i = 0; i < pageContainers.length; i++) {
+                            const container = pageContainers[i];
+                            if (i > 0) {
+                                pdf.addPage();
+                            }
+                            
+                            const canvas = await html2canvas(container, {
+                                scale: 1.5,
+                                useCORS: true,
+                                logging: false,
+                                width: 1020,
+                                height: 1560,
+                                imageTimeout: 15000,
+                                allowTaint: true,
+                                backgroundColor: '#ffffff',
+                            });
+
+                            const imgData = canvas.toDataURL('image/jpeg', 0.85);
+                            pdf.addImage(imgData, 'JPEG', 0, 0, 8.5, 13, undefined, 'FAST');
+                        }
+
+                        buttons.forEach(btn => btn.style.display = '');
                         
-                        // Download PDF
-                        pdf.save('subject-sketch.pdf');
+                        // MODIFIED: Generate filename based on property address or sketch name
+                        const state = window.appStateData;
+                        let filename = 'subject-sketch-with-photos.pdf'; // fallback
+                        
+                        if (state) {
+                            // Try to get address from currentSketchName first
+                            if (state.currentSketchName && state.currentSketchName.trim()) {
+                                filename = \`\${state.currentSketchName.replace(/[^a-z0-9\\s\\-]/gi, '').replace(/\\s+/g, '-')}-sketch.pdf\`;
+                            }
+                            // Or try to get it from any saved address field
+                            else if (state.propertyAddress && state.propertyAddress.trim()) {
+                                filename = \`\${state.propertyAddress.replace(/[^a-z0-9\\s\\-]/gi, '').replace(/\\s+/g, '-')}-sketch.pdf\`;
+                            }
+                            // Or look for address in metadata
+                            else if (state.metadata && state.metadata.address && state.metadata.address.trim()) {
+                                filename = \`\${state.metadata.address.replace(/[^a-z0-9\\s\\-]/gi, '').replace(/\\s+/g, '-')}-sketch.pdf\`;
+                            }
+                        }
+                        
+                        pdf.save(filename);
                     } catch (error) {
                         console.error('Error generating PDF:', error);
                         alert('Error generating PDF. Please try again.');
+                        document.querySelectorAll('button').forEach(btn => btn.style.display = '');
                     }
                 }
             <\/script>
         </body>
         </html>
     `;
-}
+}  
 }

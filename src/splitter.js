@@ -10,6 +10,7 @@ export class SplitterManager {
     constructor() {
         this.PIXELS_PER_FOOT = 8;
         this.isProcessingSplit = false;
+        this.pendingFirstArea = null;    // FIXED: Added this property
         this.pendingSecondArea = null;
         console.log('SplitterManager: Initialized (v3 - Vertex Connection + Graph Analysis)');
     }
@@ -31,23 +32,21 @@ export class SplitterManager {
         console.log('SplitterManager: Listening for cycle completion and vertex connections');
     }
 
-
-
-/**
- * Creates a unique, sorted identifier for a polygon's path to allow for comparison.
- * @param {Array<Object>} path - An array of vertex points {x, y}.
- * @returns {string} A canonical string ID for the path.
- */
-getCanonicalPathID(path) {
-    if (!path || path.length === 0) return '';
-    
-    const sortedPathString = path
-        .map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`) // Create a string for each point
-        .sort() // Sort the strings alphabetically
-        .join(';'); // Join them into a single ID
+    /**
+     * Creates a unique, sorted identifier for a polygon's path to allow for comparison.
+     * @param {Array<Object>} path - An array of vertex points {x, y}.
+     * @returns {string} A canonical string ID for the path.
+     */
+    getCanonicalPathID(path) {
+        if (!path || path.length === 0) return '';
         
-    return sortedPathString;
-}
+        const sortedPathString = path
+            .map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`) // Create a string for each point
+            .sort() // Sort the strings alphabetically
+            .join(';'); // Join them into a single ID
+            
+        return sortedPathString;
+    }
 
     /**
      * NEW: Setup interceptor for vertex connections to existing polygons
@@ -78,8 +77,6 @@ getCanonicalPathID(path) {
     /**
      * NEW: Intercept clicks during drawing mode to check for existing polygon vertices
      */
-// In splitter.js, find and replace this function
-
     interceptDrawingClick(e) {
         if (!AppState.currentPolygonPoints || AppState.currentPolygonPoints.length === 0) {
             return false;
@@ -133,7 +130,7 @@ getCanonicalPathID(path) {
      * NEW: Find existing polygon vertex near click coordinates
      */
     findExistingPolygonVertex(x, y) {
-        const clickRadius = 25; // Same as drawing system
+        const clickRadius = 30; // Same as drawing system
         let closestVertex = null;
         let closestDistance = Infinity;
         
@@ -148,146 +145,69 @@ getCanonicalPathID(path) {
                 const dy = y - vertex.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 
-                console.log(`🔗 VERTEX: Polygon "${polygon.label}" vertex ${vertexIndex} at (${vertex.x.toFixed(1)}, ${vertex.y.toFixed(1)}) - distance: ${distance.toFixed(1)}px`);
-                
                 if (distance <= clickRadius && distance < closestDistance) {
+                    closestDistance = distance;
                     closestVertex = {
-                        vertex: vertex,
                         polygon: polygon,
-                        polygonIndex: polyIndex,
                         vertexIndex: vertexIndex,
+                        vertex: vertex,
                         distance: distance
                     };
-                    closestDistance = distance;
                 }
             }
         }
         
         if (closestVertex) {
-            console.log(`✅ VERTEX: Found closest vertex at distance ${closestVertex.distance.toFixed(1)}px from polygon "${closestVertex.polygon.label}"`);
-        } else {
-            console.log('❌ VERTEX: No existing polygon vertex found within click radius');
+            console.log('🔗 VERTEX: Found vertex in polygon', closestVertex.polygon.label, 'at distance', closestVertex.distance.toFixed(1));
         }
         
         return closestVertex;
     }
 
     /**
-     * NEW: Connect current drawing path to an existing polygon vertex
+     * NEW: Get the shorter arc between two vertices on a polygon
      */
-    connectToExistingVertex(existingVertexInfo) {
-        const { vertex, polygon } = existingVertexInfo;
+    getShorterArc(polygonPath, startIndex, endIndex) {
+        const pathLength = polygonPath.length;
         
-        console.log(`🔗 VERTEX: Connecting to vertex (${vertex.x}, ${vertex.y}) from polygon "${polygon.label}"`);
+        // Calculate forward path
+        let forwardPath = [];
+        let currentIndex = startIndex;
+        while (currentIndex !== endIndex) {
+            currentIndex = (currentIndex + 1) % pathLength;
+            forwardPath.push({...polygonPath[currentIndex]});
+        }
         
-        // Create new point with exact coordinates from existing vertex
-        const newPoint = {
-            x: vertex.x,
-            y: vertex.y,
-            name: `p${AppState.currentPolygonCounter}`,
-            connectedToPolygon: polygon.id,
-            connectedToVertex: existingVertexInfo.vertexIndex
-        };
+        // Calculate backward path
+        let backwardPath = [];
+        currentIndex = startIndex;
+        while (currentIndex !== endIndex) {
+            currentIndex = (currentIndex - 1 + pathLength) % pathLength;
+            backwardPath.push({...polygonPath[currentIndex]});
+        }
         
-        // Add to current path
-        AppState.currentPolygonPoints.push(newPoint);
-        AppState.currentPolygonCounter++;
-        
-        console.log(`🔗 VERTEX: Added ${newPoint.name} at exact position (${newPoint.x}, ${newPoint.y})`);
-        
-        // Check if this completes a two-cycle pattern
-        this.checkForImmediateTwoCycleCompletion();
-        
-        // Update display
-        CanvasManager.saveAction();
-        CanvasManager.redraw();
+        // Return the shorter path
+        return forwardPath.length <= backwardPath.length ? forwardPath : backwardPath;
     }
 
-    /**
-     * NEW: Check if the current path + existing polygons forms a two-cycle pattern
-     */
-    checkForImmediateTwoCycleCompletion() {
-        console.log('🔍 SPLIT: Checking for immediate two-cycle completion');
-        
-        // Build connected graph with current path (even if not closed)
-        const connectedGraph = this.buildConnectedGraphFromCurrentPath();
-        
-        if (!connectedGraph) {
-            console.log('🔍 SPLIT: No connected graph from current path');
-            return false;
-        }
-        
-        // Check if this forms a two-cycle pattern
-        if (this.isTwoCycleGraph(connectedGraph)) {
-            console.log('✅ SPLIT: Two-cycle pattern detected from vertex connection!');
-            
-            // Clear the current drawing path (we're taking over)
-            AppState.currentPolygonPoints = [];
-            AppState.currentPolygonCounter = 0;
-            
-            // Perform the split
-            this.performSplit(connectedGraph);
-            return true;
-        }
-        
-        return false;
-    }
-
-    /**
-     * NEW: Build connected graph from current drawing path + existing polygons
-     */
-    buildConnectedGraphFromCurrentPath() {
-        if (!AppState.currentPolygonPoints || AppState.currentPolygonPoints.length < 2) {
-            return null;
-        }
-        
-        // Create a temporary closed path for analysis
-        const tempPath = [...AppState.currentPolygonPoints];
-        
-        // Check if first and last points are connected to the same polygon
-        const firstPoint = tempPath[0];
-        const lastPoint = tempPath[tempPath.length - 1];
-        
-        // If both ends connect to existing polygons, we might have a two-cycle
-        const firstConnection = this.findPolygonConnection(firstPoint);
-        const lastConnection = this.findPolygonConnection(lastPoint);
-        
-        if (firstConnection && lastConnection) {
-            console.log('🔍 SPLIT: Found connections to existing polygons');
-            return this.buildConnectedGraph(tempPath);
-        }
-        
-        return null;
-    }
-
-    /**
-     * NEW: Find which polygon a point connects to
-     */
     findPolygonConnection(point) {
-        const tolerance = 5;
-        
+        if (!AppState.drawnPolygons) return null;
+        const tolerance = 15;
         for (const polygon of AppState.drawnPolygons) {
-            for (let i = 0; i < polygon.path.length; i++) {
-                const vertex = polygon.path[i];
+            const vertexIndex = polygon.path.findIndex(vertex => {
                 const dx = point.x - vertex.x;
                 const dy = point.y - vertex.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                if (distance <= tolerance) {
-                    return {
-                        polygon: polygon,
-                        vertexIndex: i,
-                        vertex: vertex
-                    };
-                }
+                return Math.sqrt(dx * dx + dy * dy) < tolerance;
+            });
+            if (vertexIndex !== -1) {
+                return { polygon, vertexIndex };
             }
         }
-        
         return null;
     }
 
     /**
-     * Main entry point - analyze the entire connected graph for two-cycle pattern
+     * Main entry point - analyze the entire connected graph for two-cycle pattern - FIXED
      */
     handlePotentialSplit(event) {
         if (this.isProcessingSplit) return false;
@@ -329,40 +249,151 @@ getCanonicalPathID(path) {
         // Test if this connected graph represents two cycles sharing a path
         if (this.isTwoCycleGraph(connectedGraph)) {
             console.log('✅ SPLIT: Two-cycle pattern detected in connected graph!');
+            
+            // CRITICAL: Mark this event as handled BEFORE doing anything else
+            event.splitHandled = true;
+            
+            // CRITICAL: Stop the event immediately 
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+            if (event.preventDefault) event.preventDefault();
+            
+            // Clear the current drawing path (we're taking over)
+            AppState.currentPolygonPoints = [];
+            AppState.currentPolygonCounter = 0;
+            
+            // Perform the split
             this.performSplit(connectedGraph);
             return true;
         }
         
-        console.log('❌ SPLIT: Not a two-cycle pattern, letting normal processing continue');
         return false;
     }
 
     /**
-     * Build a connected graph that includes existing polygons connected to the new path
+     * NEW: Build connected graph from current drawing path + existing polygons
      */
-    buildConnectedGraph(newPath) {
-        // Find which existing polygons share vertices with the new path
-        const connectedPolygons = this.findConnectedPolygons(newPath);
-        
-        if (connectedPolygons.length === 0) {
-            console.log('🔍 SPLIT: New path not connected to any existing polygons');
+    buildConnectedGraphFromCurrentPath() {
+        if (!AppState.currentPolygonPoints || AppState.currentPolygonPoints.length < 2) {
             return null;
         }
         
-        console.log('🔍 SPLIT: Found', connectedPolygons.length, 'connected polygons');
+        // Create a temporary closed path for analysis
+        const tempPath = [...AppState.currentPolygonPoints];
         
-        // Build unified graph from all connected components
-        return this.buildUnifiedGraph(newPath, connectedPolygons);
+        // Check if first and last points are connected to the same polygon
+        const firstPoint = tempPath[0];
+        const lastPoint = tempPath[tempPath.length - 1];
+        
+        // If both ends connect to existing polygons, we might have a two-cycle
+        const firstConnection = this.findPolygonConnection(firstPoint);
+        const lastConnection = this.findPolygonConnection(lastPoint);
+        
+        if (firstConnection && lastConnection) {
+            console.log('🔍 SPLIT: Found connections to existing polygons');
+            return this.buildConnectedGraph(tempPath);
+        }
+        
+        return null;
     }
 
     /**
-     * Find existing polygons that share vertices with the new path
+     * NEW: Check if the current path + existing polygons forms a two-cycle pattern
+     */
+    checkForImmediateTwoCycleCompletion() {
+        console.log('🔍 SPLIT: Checking for immediate two-cycle completion');
+        
+        // Build connected graph with current path (even if not closed)
+        const connectedGraph = this.buildConnectedGraphFromCurrentPath();
+        
+        if (!connectedGraph) {
+            console.log('🔍 SPLIT: No connected graph from current path');
+            return false;
+        }
+        
+        // --- START DEBUG LOGGING ---
+        console.log('--- DEBUG: GRAPH ANALYSIS INPUT ---');
+        try {
+            // Log the graph structure
+            const simplifiedGraph = {};
+            for (const [key, value] of connectedGraph.graph.entries()) {
+                simplifiedGraph[key] = value;
+            }
+            console.log("GRAPH_STRUCTURE:", JSON.stringify(simplifiedGraph, null, 2));
+
+            // Log the vertex details
+            const simplifiedVertices = {};
+            for (const [key, value] of connectedGraph.vertices.entries()) {
+                simplifiedVertices[key] = value;
+            }
+            console.log("VERTICES:", JSON.stringify(simplifiedVertices, null, 2));
+
+            // Log the calculated degree of each vertex
+            const degrees = {};
+            for (const [vertex, neighbors] of connectedGraph.graph.entries()) {
+                degrees[vertex] = neighbors.length;
+            }
+            console.log("DEGREES:", JSON.stringify(degrees, null, 2));
+
+        } catch (e) {
+            console.error("Error during debug logging:", e);
+        }
+        console.log('--- END DEBUG LOGGING ---');
+
+        // The original line should come immediately after:
+        if (this.isTwoCycleGraph(connectedGraph)) {
+            console.log('✅ SPLIT: Two-cycle pattern detected from vertex connection!');
+            
+            // Clear the current drawing path (we're taking over)
+            AppState.currentPolygonPoints = [];
+            AppState.currentPolygonCounter = 0;
+            
+            // Perform the split
+            this.performSplit(connectedGraph);
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * NEW: Find which polygon a point connects to
+     */
+    findPolygonConnection(point) {
+        const tolerance = 15;
+        
+        for (const polygon of AppState.drawnPolygons) {
+            for (let i = 0; i < polygon.path.length; i++) {
+                const vertex = polygon.path[i];
+                const dx = point.x - vertex.x;
+                const dy = point.y - vertex.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance <= tolerance) {
+                    return {
+                        polygon: polygon,
+                        vertexIndex: i,
+                        vertex: vertex
+                    };
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Find connected polygons that share vertices with the new path
      */
     findConnectedPolygons(newPath) {
         const connectedPolygons = [];
-        const tolerance = 5; // pixels
+        const tolerance = 15;
         
-        for (const polygon of AppState.drawnPolygons) {
+        console.log('🔍 SPLIT: Checking new path against', AppState.drawnPolygons.length, 'existing polygons');
+        
+        AppState.drawnPolygons.forEach((polygon, polyIndex) => {
+            let hasConnection = false;
+            
+            // Check if any vertex in the new path is close to any vertex in this polygon
             for (const newVertex of newPath) {
                 for (const polyVertex of polygon.path) {
                     const dx = newVertex.x - polyVertex.x;
@@ -370,14 +401,18 @@ getCanonicalPathID(path) {
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     
                     if (distance <= tolerance) {
-                        console.log(`🔍 SPLIT: Found connection between new vertex (${newVertex.x.toFixed(1)}, ${newVertex.y.toFixed(1)}) and polygon "${polygon.label}"`);
-                        connectedPolygons.push(polygon);
-                        break; // Found connection, move to next polygon
+                        hasConnection = true;
+                        console.log(`🔍 SPLIT: Found connection between new path and polygon "${polygon.label}"`);
+                        break;
                     }
                 }
-                if (connectedPolygons.includes(polygon)) break; // Already found this polygon
+                if (hasConnection) break;
             }
-        }
+            
+            if (hasConnection) {
+                connectedPolygons.push(polygon);
+            }
+        });
         
         return connectedPolygons;
     }
@@ -388,7 +423,7 @@ getCanonicalPathID(path) {
     buildUnifiedGraph(newPath, connectedPolygons) {
         const graph = new Map();
         const vertices = new Map(); // Map from coordinate key to vertex info
-        const tolerance = 5;
+        const tolerance = 15;
         
         // Helper to get coordinate key for a point
         const getKey = (point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
@@ -481,11 +516,29 @@ getCanonicalPathID(path) {
     }
 
     /**
+     * Build connected graph
+     */
+    buildConnectedGraph(newPath) {
+        // Find polygons that share vertices with the new path
+        const connectedPolygons = this.findConnectedPolygons(newPath);
+        
+        if (connectedPolygons.length === 0) {
+            console.log('🔍 SPLIT: No connected polygons found');
+            return null;
+        }
+        
+        console.log('🔍 SPLIT: Found', connectedPolygons.length, 'connected polygons');
+        
+        // Build unified graph combining all connected polygons and the new path
+        return this.buildUnifiedGraph(newPath, connectedPolygons);
+    }
+
+    /**
      * Check if unified graph satisfies two-cycle conditions
      */
     isTwoCycleGraph(graphData) {
         const { graph, vertices } = graphData;
-        
+
         const V = graph.size;
         let E = 0;
         const degrees = [];
@@ -536,142 +589,34 @@ getCanonicalPathID(path) {
     }
 
     /**
-     * Perform the split by decomposing the unified graph into two cycles
+     * Checks if a given edge exists within a polygon's path.
+     * @private
      */
-/**
- * Perform the split by decomposing the unified graph into two cycles
- */
-// In splitter.js, find and replace this entire function
-
-performSplit(graphData) {
-
-    AppState.emit('app:exitDrawingMode');
-
-
-    this.isProcessingSplit = true;
-    try {
-        const originalPolygonsMap = new Map();
-        graphData.connectedPolygons.forEach(p => {
-            originalPolygonsMap.set(this.getCanonicalPathID(p.path), p);
-        });
-        
-        graphData.connectedPolygons.forEach(polygon => {
-            const index = AppState.drawnPolygons.indexOf(polygon);
-            if (index > -1) AppState.drawnPolygons.splice(index, 1);
-        });
-        
-        const polygonIds = graphData.connectedPolygons.map(p => p.id);
-        AppState.placedElements = AppState.placedElements.filter(el => 
-            !(el.type === 'area_label' && polygonIds.includes(el.linkedPolygonId))
-        );
-        
-        const junctionVertices = this.findJunctionVertices(graphData);
-        if (junctionVertices.length !== 2) throw new Error(`Expected 2 junction vertices, found ${junctionVertices.length}`);
-        
-        const paths = this.findAllPathsBetweenJunctions(graphData, junctionVertices);
-        if (paths.length !== 3) throw new Error(`Expected 3 paths, found ${paths.length}`);
-
-        // --- NEW LOGIC TO FIX SUPERIMPOSED AREA ---
-
-        // 1. Construct all three possible cycles from the three paths.
-        const cycle1 = this.constructCleanCycle(paths[0], paths[1]);
-        const cycle2 = this.constructCleanCycle(paths[0], paths[2]);
-        const cycle3 = this.constructCleanCycle(paths[1], paths[2]);
-
-        // 2. Calculate the area of each cycle.
-        const allCycles = [
-            { path: cycle1, area: this.calculateArea(cycle1) },
-            { path: cycle2, area: this.calculateArea(cycle2) },
-            { path: cycle3, area: this.calculateArea(cycle3) },
-        ];
-
-        // 3. Sort the cycles by area, largest first.
-        allCycles.sort((a, b) => b.area - a.area);
-        
-        // 4. Discard the largest cycle (the outer perimeter) and keep the two smaller ones.
-        const finalCycle1 = allCycles[1].path;
-        const finalCycle2 = allCycles[2].path;
-        
-        console.log('🔪 SPLIT: Correctly identified two inner cycles.');
-
-        // --- RESUME LOGIC USING THE TWO CORRECT CYCLES ---
-        
-        const cycle1ID = this.getCanonicalPathID(finalCycle1);
-        const cycle2ID = this.getCanonicalPathID(finalCycle2);
-
-        const matchedOriginalPolygon1 = originalPolygonsMap.get(cycle1ID);
-        const matchedOriginalPolygon2 = originalPolygonsMap.get(cycle2ID);
-
-        if ((matchedOriginalPolygon1 && !matchedOriginalPolygon2) || (!matchedOriginalPolygon1 && matchedOriginalPolygon2)) {
-            console.log('✅ SPLIT: Detected one unchanged polygon. Entering single-prompt mode.');
-
-            const unchangedPolygon = matchedOriginalPolygon1 || matchedOriginalPolygon2;
-            const newCycle = matchedOriginalPolygon1 ? finalCycle2 : finalCycle1;
-
-            AppState.drawnPolygons.push(unchangedPolygon);
-            this.createAreaLabelElement(unchangedPolygon);
-
-            const area = this.calculateArea(newCycle);
-            const newPolygonToClassify = this.createPolygonFromCycle(newCycle, area, 'New Area');
-            AppState.drawnPolygons.push(newPolygonToClassify);
-
-            const modal = document.getElementById('polygonModal');
-            const nameInput = document.getElementById('polygonName');
-            const typeSelect = document.getElementById('polygonType');
-            const includeInGLACheckbox = document.getElementById('includeInGLA');
-            const modalTitle = modal.querySelector('h3');
-            const saveBtn = modal.querySelector('.btn-primary');
-            const cancelBtn = modal.querySelector('.btn-secondary');
-
-            modalTitle.textContent = `Classify Your New Area of ${area.toFixed(1)} sq ft`;
-            const defaultType = 'living';
-            typeSelect.value = defaultType;
-            nameInput.value = AreaManager.generateAreaLabel(defaultType);
+    isEdgeInPolygon(edge, polygonPath) {
+        for (let i = 0; i < polygonPath.length; i++) {
+            const p1 = polygonPath[i];
+            const p2 = polygonPath[(i + 1) % polygonPath.length];
             
-            const syncGlaCheckbox = () => {
-                if (!includeInGLACheckbox) return;
-                const selectedOption = typeSelect.options[typeSelect.selectedIndex];
-                includeInGLACheckbox.checked = parseInt(selectedOption.getAttribute('data-gla'), 10) === 1;
-            };
-            typeSelect.onchange = () => {
-                nameInput.value = AreaManager.generateAreaLabel(typeSelect.value);
-                syncGlaCheckbox();
-            };
-            syncGlaCheckbox();
+            const isMatch = (Math.abs(p1.x - edge[0].x) < 1 && Math.abs(p1.y - edge[0].y) < 1 &&
+                             Math.abs(p2.x - edge[1].x) < 1 && Math.abs(p2.y - edge[1].y) < 1) ||
+                            (Math.abs(p1.x - edge[1].x) < 1 && Math.abs(p1.y - edge[1].y) < 1 &&
+                             Math.abs(p2.x - edge[0].x) < 1 && Math.abs(p2.y - edge[0].y) < 1);
             
-            saveBtn.onclick = () => {
-                const selectedOption = typeSelect.options[typeSelect.selectedIndex];
-                newPolygonToClassify.label = nameInput.value.trim();
-                newPolygonToClassify.type = typeSelect.value;
-                newPolygonToClassify.glaType = parseInt(selectedOption.getAttribute('data-gla'), 10);
-                modal.classList.add('hidden');
-                this.finalizeSplit();
-            };
-
-            cancelBtn.onclick = () => this.handleSplitCancel();
-            modal.classList.remove('hidden');
-            nameInput.focus();
-
-        } else {
-            console.log('✅ SPLIT: Two new areas created. Entering two-prompt mode.');
-            const area1 = this.calculateArea(finalCycle1);
-            const area2 = this.calculateArea(finalCycle2);
-            
-            const largerPolygon = this.createPolygonFromCycle(area1 >= area2 ? finalCycle1 : finalCycle2, Math.max(area1, area2), 'Area 1');
-            const smallerPolygon = this.createPolygonFromCycle(area1 < area2 ? finalCycle1 : finalCycle2, Math.min(area1, area2), 'Area 2');
-            
-            this.pendingSecondArea = smallerPolygon;
-            AppState.currentPolygonPoints = [];
-            AppState.currentPolygonCounter = 0;
-            
-            CanvasManager.redraw();
-            this.showFirstAreaModal(largerPolygon, largerPolygon.area);
+            if (isMatch) return true;
         }
-    } catch (error) {
-        console.error('🔥 SPLIT: Error during split:', error);
-        this.isProcessingSplit = false;
+        return false;
     }
-}
+
+    /**
+     * Constructs a new polygon path by combining a side path and the splitting path.
+     * @private
+     */
+    constructPolygonPath(sidePath, splitPath) {
+        // The new polygon is simply the side path followed by the splitting path in reverse,
+        // which closes the loop correctly.
+        // We skip the last point of the reversed split path because it's the same as the start of the side path.
+        return [...sidePath, ...[...splitPath].reverse().slice(1)];
+    }
 
     /**
      * NEW: Intelligently identify which path is the shared path
@@ -747,16 +692,8 @@ performSplit(graphData) {
             visited.add(current);
             
             if (current === end && currentPath.length > 1) {
-                // Convert path to coordinate points
-                const pathPoints = currentPath.map((vertexKey, index) => {
-                    const vertex = vertices.get(vertexKey);
-                    return {
-                        x: vertex.x,
-                        y: vertex.y,
-                        name: `path${allPaths.length}_p${index}`
-                    };
-                });
-                allPaths.push([...pathPoints]);
+                // Found a path to the end
+                allPaths.push([...currentPath]);
             } else if (current !== end) {
                 // Continue searching
                 const neighbors = graph.get(current) || [];
@@ -774,6 +711,95 @@ performSplit(graphData) {
         
         dfs(start);
         return allPaths;
+    }
+
+    /**
+     * Find exactly 3 paths between two junction vertices
+     * This ensures we follow actual edges in the graph
+     */
+    findThreePathsBetweenJunctions(graphData, junctionVertices) {
+        const { graph, vertices } = graphData;
+        const [junction1, junction2] = junctionVertices;
+        
+        console.log('🔪 SPLIT: Finding paths between junctions');
+        
+        // Each junction has exactly 3 neighbors
+        const junction1Neighbors = graph.get(junction1);
+        const junction2Neighbors = graph.get(junction2);
+        
+        console.log(`  Junction 1 has ${junction1Neighbors.length} neighbors`);
+        console.log(`  Junction 2 has ${junction2Neighbors.length} neighbors`);
+        
+        const paths = [];
+        
+        // For each neighbor of junction1, try to find a path to junction2
+        for (const startNeighbor of junction1Neighbors) {
+            const path = this.findPathToJunction(
+                graph, 
+                vertices, 
+                junction1, 
+                startNeighbor, 
+                junction2, 
+                new Set([junction1])
+            );
+            
+            if (path) {
+                console.log(`  Found path with ${path.length} vertices`);
+                paths.push(path);
+            }
+        }
+        
+        // We should have exactly 3 paths
+        if (paths.length === 3) {
+            return paths;
+        }
+        
+        // Fallback to original DFS method if needed
+        console.warn('🔪 SPLIT: Could not find 3 distinct paths, using fallback');
+        return this.findAllPathsBetweenJunctions(graphData, junctionVertices);
+    }
+
+    /**
+     * Find a path from start through firstStep to target
+     * Following actual edges without backtracking
+     */
+    findPathToJunction(graph, vertices, start, firstStep, target, visited) {
+        const path = [];
+        const pathVertices = [start];
+        
+        let current = firstStep;
+        let previous = start;
+        
+        // Keep following edges until we reach the target
+        while (current !== target) {
+            pathVertices.push(current);
+            visited.add(current);
+            
+            // Find next unvisited neighbor
+            const neighbors = graph.get(current) || [];
+            let nextVertex = null;
+            
+            for (const neighbor of neighbors) {
+                if (neighbor !== previous && !visited.has(neighbor)) {
+                    nextVertex = neighbor;
+                    break;
+                }
+            }
+            
+            if (!nextVertex) {
+                // Dead end - this path doesn't lead to target
+                return null;
+            }
+            
+            previous = current;
+            current = nextVertex;
+        }
+        
+        // Add the target vertex
+        pathVertices.push(target);
+        
+        // Convert to path format expected by other functions
+        return pathVertices;
     }
 
     /**
@@ -828,10 +854,172 @@ performSplit(graphData) {
     }
 
     /**
-     * Show first area modal with custom title
+     * Finalize the split - COMPLETELY FIXED VERSION
+     */
+    performSplit(graphData) {
+        AppState.emit('app:exitDrawingMode');
+
+        this.isProcessingSplit = true;
+        try {
+            // Find the original polygon that's being split
+            const originalPolygon = graphData.connectedPolygons[0]; 
+            if (!originalPolygon) {
+                throw new Error('No original polygon found to split');
+            }
+            
+            console.log('🔪 SPLIT: Original polygon to split:', originalPolygon.label);
+            console.log('🔪 SPLIT: Original polygon area:', originalPolygon.area.toFixed(1), 'sq ft');
+            
+            // CRITICAL: Remove original polygon from the drawn list IMMEDIATELY
+            const originalIndex = AppState.drawnPolygons.findIndex(p => p.id === originalPolygon.id);
+            if (originalIndex > -1) {
+                AppState.drawnPolygons.splice(originalIndex, 1);
+                console.log('🔪 SPLIT: Removed original polygon from drawnPolygons');
+            }
+            
+            // Remove associated area label
+            const removedLabels = AppState.placedElements.filter(el => 
+                el.type === 'area_label' && el.linkedPolygonId === originalPolygon.id
+            );
+            AppState.placedElements = AppState.placedElements.filter(el => 
+                !(el.type === 'area_label' && el.linkedPolygonId === originalPolygon.id)
+            );
+            console.log(`🔪 SPLIT: Removed ${removedLabels.length} area labels`);
+            
+            // Force immediate redraw to show original polygon is gone
+            CanvasManager.redraw();
+            
+            const junctionVertices = this.findJunctionVertices(graphData);
+            if (junctionVertices.length !== 2) {
+                throw new Error(`Expected 2 junction vertices, found ${junctionVertices.length}`);
+            }
+            
+            // Find the three paths between junctions
+            const paths = this.findThreePathsBetweenJunctions(graphData, junctionVertices);
+            if (paths.length !== 3) {
+                throw new Error(`Expected 3 paths, found ${paths.length}`);
+            }
+
+            console.log('🔪 SPLIT: Found 3 paths between junctions');
+            paths.forEach((path, i) => {
+                console.log(`  Path ${i}: ${path.length} vertices`);
+            });
+
+            // Identify which path is the splitting path (the new path drawn by user)
+            let splittingPathIndex = -1;
+            
+            // The splitting path is likely the one from the new path drawn by user
+            const newPathVertices = new Set(graphData.newPath.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`));
+            
+            for (let i = 0; i < paths.length; i++) {
+                const path = paths[i];
+                // Convert path vertices to the same format for comparison
+                const pathVertices = path.map(vertexKey => {
+                    const vertex = graphData.vertices.get(vertexKey);
+                    return `${vertex.x.toFixed(1)},${vertex.y.toFixed(1)}`;
+                });
+                
+                // Check if most vertices in this path match the new path
+                const matchingVertices = pathVertices.filter(v => newPathVertices.has(v)).length;
+                const matchPercentage = matchingVertices / pathVertices.length;
+                
+                console.log(`  Path ${i} has ${matchingVertices}/${pathVertices.length} matching vertices (${(matchPercentage * 100).toFixed(1)}%)`);
+                
+                if (matchPercentage > 0.5) { // More than 50% match
+                    splittingPathIndex = i;
+                    break;
+                }
+            }
+            
+            if (splittingPathIndex === -1) {
+                // Fallback: use the shortest path as splitting path
+                splittingPathIndex = 0;
+                let shortestLength = paths[0].length;
+                for (let i = 1; i < paths.length; i++) {
+                    if (paths[i].length < shortestLength) {
+                        shortestLength = paths[i].length;
+                        splittingPathIndex = i;
+                    }
+                }
+                console.log('🔪 SPLIT: Using shortest path as splitting path (fallback)');
+            }
+            
+            const splittingPath = paths[splittingPathIndex];
+            const remainingPaths = paths.filter((_, i) => i !== splittingPathIndex);
+            
+            console.log(`🔪 SPLIT: Using path ${splittingPathIndex} as splitting path`);
+            console.log(`🔪 SPLIT: Remaining paths have ${remainingPaths[0].length} and ${remainingPaths[1].length} vertices`);
+            
+            // Convert vertex keys back to actual coordinates
+            const convertPathToCoordinates = (path) => {
+                return path.map(vertexKey => {
+                    const vertex = graphData.vertices.get(vertexKey);
+                    return { x: vertex.x, y: vertex.y };
+                });
+            };
+            
+            const splittingCoords = convertPathToCoordinates(splittingPath);
+            const path1Coords = convertPathToCoordinates(remainingPaths[0]);
+            const path2Coords = convertPathToCoordinates(remainingPaths[1]);
+            
+            // Create two new polygons by combining each remaining path with the splitting path
+            const polygon1 = [...path1Coords];
+            const reverseSplittingPath = [...splittingCoords].reverse();
+            // Skip first and last vertices of reverse splitting path to avoid duplicates
+            for (let i = 1; i < reverseSplittingPath.length - 1; i++) {
+                polygon1.push(reverseSplittingPath[i]);
+            }
+            
+            const polygon2 = [...path2Coords];
+            // Skip first and last vertices of splitting path to avoid duplicates
+            for (let i = 1; i < splittingCoords.length - 1; i++) {
+                polygon2.push(splittingCoords[i]);
+            }
+            
+            // Calculate areas
+            const area1 = this.calculateArea(polygon1);
+            const area2 = this.calculateArea(polygon2);
+            
+            console.log(`🔪 SPLIT: Created two areas: ${area1.toFixed(1)} sq ft and ${area2.toFixed(1)} sq ft`);
+            console.log(`🔪 SPLIT: Original area: ${originalPolygon.area.toFixed(1)} sq ft`);
+            console.log(`🔪 SPLIT: Total new area: ${(area1 + area2).toFixed(1)} sq ft`);
+            console.log(`🔪 SPLIT: Area difference: ${Math.abs(originalPolygon.area - (area1 + area2)).toFixed(1)} sq ft`);
+            
+            // Create polygon objects - but DON'T add them to drawnPolygons yet!
+            const largerPolygon = this.createPolygonFromCycle(
+                area1 > area2 ? polygon1 : polygon2,
+                Math.max(area1, area2),
+                'Area 1'
+            );
+            const smallerPolygon = this.createPolygonFromCycle(
+                area1 < area2 ? polygon2 : polygon1,
+                Math.min(area1, area2),
+                'Area 2'
+            );
+            
+            // Store both polygons for the modal workflow
+            this.pendingFirstArea = largerPolygon;
+            this.pendingSecondArea = smallerPolygon;
+            AppState.currentPolygonPoints = [];
+            AppState.currentPolygonCounter = 0;
+            
+            // Force redraw again to ensure original polygon stays gone
+            CanvasManager.redraw();
+            
+            // Show the first area modal
+            this.showFirstAreaModal(largerPolygon, largerPolygon.area);
+            
+        } catch (error) {
+            console.error('🔥 SPLIT: Error during split:', error);
+            this.isProcessingSplit = false;
+        }
+    }
+
+    /**
+     * Show first area modal - FIXED VERSION that doesn't add polygon yet
      */
     showFirstAreaModal(polygon, area) {
-        AppState.drawnPolygons.push(polygon);
+        // CRITICAL: DO NOT add the polygon to drawnPolygons here!
         
         const modal = document.getElementById('polygonModal');
         const nameInput = document.getElementById('polygonName');
@@ -868,11 +1056,11 @@ performSplit(graphData) {
         nameInput.focus();
         setTimeout(() => nameInput.select(), 100);
         
-        console.log('📝 SPLIT: Showing first area modal');
+        console.log('📝 SPLIT: Showing first area modal (polygon NOT yet added to drawnPolygons)');
     }
 
     /**
-     * Handle first area save and show second modal
+     * Handle first area save - FIXED VERSION
      */
     handleFirstAreaSave(polygon) {
         const modal = document.getElementById('polygonModal');
@@ -884,14 +1072,17 @@ performSplit(graphData) {
         polygon.type = typeSelect.value;
         polygon.glaType = parseInt(selectedOption.getAttribute('data-gla'), 10);
         
-        console.log('✅ SPLIT: First area configured:', polygon.label);
+        // NOW add the first polygon to drawnPolygons
+        AppState.drawnPolygons.push(polygon);
+        
+        console.log('✅ SPLIT: First area configured and added:', polygon.label);
         
         modal.classList.add('hidden');
         this.showSecondAreaModal();
     }
 
     /**
-     * Show second area modal
+     * Show second area modal - FIXED VERSION
      */
     showSecondAreaModal() {
         if (!this.pendingSecondArea) {
@@ -900,7 +1091,7 @@ performSplit(graphData) {
             return;
         }
         
-        AppState.drawnPolygons.push(this.pendingSecondArea);
+        // CRITICAL: DO NOT add the second polygon here either!
         
         const modal = document.getElementById('polygonModal');
         const nameInput = document.getElementById('polygonName');
@@ -914,10 +1105,10 @@ performSplit(graphData) {
             modalTitle.textContent = `Classify your second area of ${this.pendingSecondArea.area.toFixed(1)} sq ft`;
         }
         
-        const defaultType = 'living';
+        const defaultType = 'garage';
         typeSelect.value = defaultType;
         nameInput.value = AreaManager.generateAreaLabel(defaultType);
-
+        
         const syncGlaCheckbox = () => {
             if (!includeInGLACheckbox) return;
             const selectedOption = typeSelect.options[typeSelect.selectedIndex];
@@ -937,11 +1128,11 @@ performSplit(graphData) {
         nameInput.focus();
         setTimeout(() => nameInput.select(), 100);
         
-        console.log('📝 SPLIT: Showing second area modal');
+        console.log('📝 SPLIT: Showing second area modal (polygon NOT yet added to drawnPolygons)');
     }
 
     /**
-     * Handle second area save and finalize
+     * Handle second area save - NEW METHOD
      */
     handleSecondAreaSave() {
         const modal = document.getElementById('polygonModal');
@@ -953,136 +1144,27 @@ performSplit(graphData) {
         this.pendingSecondArea.type = typeSelect.value;
         this.pendingSecondArea.glaType = parseInt(selectedOption.getAttribute('data-gla'), 10);
         
-        console.log('✅ SPLIT: Second area configured:', this.pendingSecondArea.label);
+        // NOW add the second polygon to drawnPolygons
+        AppState.drawnPolygons.push(this.pendingSecondArea);
+        
+        console.log('✅ SPLIT: Second area configured and added:', this.pendingSecondArea.label);
         
         modal.classList.add('hidden');
         this.finalizeSplit();
     }
 
     /**
-     * Handle split cancellation
+     * Handle split cancellation - NEW METHOD
      */
     handleSplitCancel() {
-        console.log('❌ SPLIT: User cancelled split, reverting');
-        
-        // Remove any polygons we added during the process
-        AppState.drawnPolygons = AppState.drawnPolygons.filter(p => 
-            p.id !== this.pendingSecondArea?.id && 
-            !p.label.startsWith('Area ')
-        );
+        console.log('❌ SPLIT: Split cancelled by user');
         
         const modal = document.getElementById('polygonModal');
         modal.classList.add('hidden');
         
         this.cleanupSplit();
-    }
-
-
-getShorterArc(cyclePath, startIndex, endIndex) {
-        const pathLength = cyclePath.length;
-        if (startIndex === endIndex) return [];
-        
-        const forwardPath = [];
-        let currentIndex = (startIndex + 1) % pathLength;
-        while (currentIndex !== endIndex) {
-            forwardPath.push({ ...cyclePath[currentIndex] });
-            currentIndex = (currentIndex + 1) % pathLength;
-        }
-        forwardPath.push({ ...cyclePath[endIndex] });
-
-        const backwardPath = [];
-        currentIndex = (startIndex - 1 + pathLength) % pathLength;
-        while (currentIndex !== endIndex) {
-            backwardPath.push({ ...cyclePath[currentIndex] });
-            currentIndex = (currentIndex - 1 + pathLength) % pathLength;
-        }
-        backwardPath.push({ ...cyclePath[endIndex] });
-
-        const calculatePathDistance = (path, startPoint) => {
-            let totalDistance = 0;
-            let lastPoint = startPoint;
-            for (const point of path) {
-                const dx = point.x - lastPoint.x;
-                const dy = point.y - lastPoint.y;
-                totalDistance += Math.sqrt(dx * dx + dy * dy);
-                lastPoint = point;
-            }
-            return totalDistance;
-        };
-        
-        const startPoint = cyclePath[startIndex];
-        const forwardDistance = calculatePathDistance(forwardPath, startPoint);
-        const backwardDistance = calculatePathDistance(backwardPath, startPoint);
-
-        return forwardDistance <= backwardDistance ? forwardPath : backwardPath;
-    }
-
-    findPolygonConnection(point) {
-        if (!AppState.drawnPolygons) return null;
-        const tolerance = 15;
-        for (const polygon of AppState.drawnPolygons) {
-            const vertexIndex = polygon.path.findIndex(vertex => {
-                const dx = point.x - vertex.x;
-                const dy = point.y - vertex.y;
-                return Math.sqrt(dx * dx + dy * dy) < tolerance;
-            });
-            if (vertexIndex !== -1) {
-                return { polygon, vertexIndex };
-            }
-        }
-        return null;
-    }
-    
-    getCanonicalPathID(path) {
-        if (!path || path.length === 0) return '';
-        const sortedPathString = path
-            .map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`)
-            .sort()
-            .join(';');
-        return sortedPathString;
-    }
-    /**
-     * Finalize the split
-     */
-
-// In splitter.js, replace your existing finalizeSplit function with this one
-
-// In splitter.js, replace your existing finalizeSplit function with this one
-
-// In splitter.js, replace your existing finalizeSplit function with this one
-
-    finalizeSplit() {
-        console.log('🎉 SPLIT: Finalizing split and ensuring all area labels exist.');
-
-        // This robustly finds any polygons that are missing a visual label and creates one.
-        AppState.drawnPolygons.forEach(polygon => {
-            const labelExists = AppState.placedElements.some(el =>
-                el.type === 'area_label' && el.linkedPolygonId === polygon.id
-            );
-            if (!labelExists) {
-                console.log(`Creating missing label for: "${polygon.label}"`);
-                this.createAreaLabelElement(polygon);
-            }
-        });
-
-        // This correctly requests a legend update.
-        AppState.emit('app:requestLegendUpdate');
-        
-        // *** THIS IS THE FIX: This line was added to exit drawing mode. ***
-        AppState.emit('app:exitDrawingMode');
-        
-        // Save and redraw.
-        CanvasManager.saveAction();
         CanvasManager.redraw();
-        
-        this.cleanupSplit();
-        console.log('✅ SPLIT: Split completed successfully.');
     }
-
-    /**
-     * Create area label element
-     */
-
 
     createAreaLabelElement(polygon) {
         const areaLabelElement = {
@@ -1111,11 +1193,81 @@ getShorterArc(cyclePath, startIndex, endIndex) {
         console.log('🏷️ SPLIT: Created area label for:', polygon.label);
     }
 
+    // Add this helper function for showing single area modal
+    showSingleAreaModal(newPolygonToClassify, area) {
+        const modal = document.getElementById('polygonModal');
+        const nameInput = document.getElementById('polygonName');
+        const typeSelect = document.getElementById('polygonType');
+        const includeInGLACheckbox = document.getElementById('includeInGLA');
+        const modalTitle = modal.querySelector('h3');
+        const saveBtn = modal.querySelector('.btn-primary');
+        const cancelBtn = modal.querySelector('.btn-secondary');
+
+        modalTitle.textContent = `Classify Your New Area of ${area.toFixed(1)} sq ft`;
+        const defaultType = 'garage'; // Default to garage for split areas
+        typeSelect.value = defaultType;
+        nameInput.value = AreaManager.generateAreaLabel(defaultType);
+        
+        const syncGlaCheckbox = () => {
+            if (!includeInGLACheckbox) return;
+            const selectedOption = typeSelect.options[typeSelect.selectedIndex];
+            includeInGLACheckbox.checked = parseInt(selectedOption.getAttribute('data-gla'), 10) === 1;
+        };
+        typeSelect.onchange = () => {
+            nameInput.value = AreaManager.generateAreaLabel(typeSelect.value);
+            syncGlaCheckbox();
+        };
+        syncGlaCheckbox();
+        
+        saveBtn.onclick = () => {
+            const selectedOption = typeSelect.options[typeSelect.selectedIndex];
+            newPolygonToClassify.label = nameInput.value.trim();
+            newPolygonToClassify.type = typeSelect.value;
+            newPolygonToClassify.glaType = parseInt(selectedOption.getAttribute('data-gla'), 10);
+            modal.classList.add('hidden');
+            this.finalizeSplit();
+        };
+
+        cancelBtn.onclick = () => this.handleSplitCancel();
+        modal.classList.remove('hidden');
+        nameInput.focus();
+    }
+
+    // In splitter.js, replace your existing finalizeSplit function with this one
+    finalizeSplit() {
+        console.log('🎉 SPLIT: Finalizing split and ensuring all area labels exist.');
+
+        // This robustly finds any polygons that are missing a visual label and creates one.
+        AppState.drawnPolygons.forEach(polygon => {
+            const labelExists = AppState.placedElements.some(el =>
+                el.type === 'area_label' && el.linkedPolygonId === polygon.id
+            );
+            if (!labelExists) {
+                console.log(`Creating missing label for: "${polygon.label}"`);
+                this.createAreaLabelElement(polygon);
+            }
+        });
+
+        // This correctly requests a legend update.
+        AppState.emit('app:requestLegendUpdate');
+        
+        // Exit drawing mode if somehow still active.
+        AppState.emit('app:exitDrawingMode');
+        
+        // Save and redraw.
+        CanvasManager.saveAction();
+        CanvasManager.redraw();
+        
+        this.cleanupSplit();
+        console.log('✅ SPLIT: Split completed successfully.');
+    }
+
     /**
-     * Clean up after split
+     * Clean up after split - UPDATED
      */
     cleanupSplit() {
         this.isProcessingSplit = false;
+        this.pendingFirstArea = null;    
         this.pendingSecondArea = null;
         
         const modal = document.getElementById('polygonModal');

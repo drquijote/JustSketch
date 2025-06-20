@@ -141,6 +141,9 @@ window.updatePhotoCaption = (photoId, newCaption) => {
     const drawingManager = new DrawingManager();
     window.drawingManager = drawingManager;
 
+    HelperPointManager.updateHelperPoints();
+    console.log('🔄 Initial helper point update called');
+
     const areaManager = new AreaManager();
     areaManager.init();
     
@@ -560,6 +563,24 @@ function setupKeyboardShortcuts() {
     });
 }
 
+
+window.addEventListener('DOMContentLoaded', () => {
+    // Clear any existing helper points
+    if (typeof AppState !== 'undefined') {
+        AppState.helperPoints = [];
+        AppState.permanentHelperPoints = [];
+        console.log('Cleared all helper points on startup');
+    }
+
+    window.AppState = AppState;
+    window.HelperPointManager = HelperPointManager;
+    
+    // Clear any existing helper points on startup
+    AppState.helperPoints = [];
+    AppState.permanentHelperPoints = [];
+    console.log('🧹 Cleared all helper points on startup');
+
+});
  
  
 // REMOVED: Old duplicate import function that didn't handle photos

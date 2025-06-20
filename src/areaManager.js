@@ -230,7 +230,7 @@ export class AreaManager {
         AppState.currentPolygonCounter = newPath.length;
         
         // Add vertices as permanent helpers for snapping
-        this.addVerticesAsPermanentHelpers(newPath);
+        //this.addVerticesAsPermanentHelpers(newPath);
         
         // Update legend calculations
         this.updateLegendCalculations();
@@ -322,7 +322,7 @@ export class AreaManager {
             // Check if clicking on an area to start dragging (normal drag, no long press)
             let areaAtPoint = null;
             for (const poly of AppState.drawnPolygons) {
-                if (AreaHelpers.isPointInPolygon(pos, poly.path)) {
+                if (AreaHelpers.isPointInsidePolygon(pos, poly.path)) {
                     areaAtPoint = poly;
                     break;
                 }
@@ -550,7 +550,7 @@ export class AreaManager {
     prepareDragGroup(polygon, clickPosition) {
         const elementsToDrag = AppState.placedElements.filter(el => {
             const elementCenter = { x: el.x + (el.width / 2), y: el.y + (el.height / 2) };
-            return AreaHelpers.isPointInPolygon(elementCenter, polygon.path);
+            return AreaHelpers.isPointInsidePolygon(elementCenter, polygon.path);
         });
 
         this.draggedGroup = {
@@ -730,7 +730,7 @@ export class AreaManager {
                 };
                 
                 // Use AreaHelpers to check if the element's center is inside the polygon's path.
-                if (AreaHelpers.isPointInPolygon(elementCenter, polygonPath)) {
+                if (AreaHelpers.isPointInsidePolygon(elementCenter, polygonPath)) {
                     console.log(`🗑️ Found interior element to delete: "${element.content || element.alt}"`);
                     elementsToRemoveIndices.push(index);
                 }
@@ -986,7 +986,7 @@ export class AreaManager {
             };
             
             // Check if element center is inside the polygon
-            if (AreaHelpers.isPointInPolygon(elementCenter, this.activePathForModal)) {
+if (AreaHelpers.isPointInsidePolygon(elementCenter, this.activePathForModal)) {
                 console.log(`🗑️ DELETE: Found element "${element.content}" inside polygon`);
                 elementsToDelete.push(index);
             }

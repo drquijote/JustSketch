@@ -1,7 +1,11 @@
 git add .
-git commit -m "pdf now working"
+git commit -m "better helper buttons, atricious splitter"
 git push origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
 
+
+
+git log --oneline -60 --pretty=format:"%h %ad %s" --date=short
+git stash push -m "saving current work before checking out 7dcf67e"
 
 
 

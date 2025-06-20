@@ -1120,7 +1120,7 @@ drawPolygons() {
 
         // *** ENHANCED: Draw preview lines to potential cycle closing points ***
         if (AppState.currentPolygonPoints.length >= 2) {
-            this.drawCyclePreviewLines(ctx);
+            //this.drawCyclePreviewLines(ctx);
         }
 
         // *** NEW: Draw closing edge preview if we have 3+ points ***
@@ -1365,9 +1365,9 @@ drawCyclePreviewLines(ctx) {
 
  // Replace the entire drawHelperPoints function in drawing.js with this:
 drawHelperPoints() {
-    // Only draw any helper points if we are currently in drawing mode.
+    // Only draw helper points if we're in drawing mode
     if (AppState.currentMode !== 'drawing') {
-        return; // Do nothing if not in drawing mode.
+        return;
     }
 
     const { ctx } = AppState;
@@ -1375,104 +1375,21 @@ drawHelperPoints() {
 
     ctx.save();
 
-    // *** NEW: Draw edge snap preview when waiting for first vertex ***
-    if (this.waitingForFirstVertex && this.lastMousePosition) {
-        const nearbyEdge = this.findNearbyEdgeForSnapping(this.lastMousePosition.x, this.lastMousePosition.y);
-        if (nearbyEdge) {
-            const snapPoint = this.getSnapPointOnEdge(nearbyEdge, this.lastMousePosition);
-            
-            // Highlight the edge that would be snapped to
-            ctx.save();
-            ctx.strokeStyle = 'rgba(46, 204, 113, 0.8)'; // Green highlight
-            ctx.lineWidth = 4;
-            ctx.setLineDash([8, 4]);
-            ctx.beginPath();
-            ctx.moveTo(nearbyEdge.startPoint.x, nearbyEdge.startPoint.y);
-            ctx.lineTo(nearbyEdge.endPoint.x, nearbyEdge.endPoint.y);
-            ctx.stroke();
-            ctx.restore();
-            
-            // Draw the snap point preview
-            ctx.save();
-            ctx.fillStyle = '#2ecc71'; // Bright green for edge snap
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 3;
-            
-            // Larger circle for edge snap point
-            ctx.beginPath();
-            ctx.arc(snapPoint.x, snapPoint.y, 10, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-            
-            // Add small center dot
-            ctx.fillStyle = 'white';
-            ctx.beginPath();
-            ctx.arc(snapPoint.x, snapPoint.y, 3, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.restore();
-        }
-    }
-
-    // *** FIRST: Draw permanent helper points (blue - from completed paths) ***
-    // These are drawn BEHIND temporary helper points
-    if (AppState.permanentHelperPoints && AppState.permanentHelperPoints.length > 0) {
-        AppState.permanentHelperPoints.forEach(point => {
-            ctx.save();
-            
-            // Add subtle shadow for depth
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-            ctx.shadowBlur = 2;
-            ctx.shadowOffsetX = 1;
-            ctx.shadowOffsetY = 1;
-            
-            ctx.fillStyle = '#3498db'; // Blue color
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 2;
-            
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-            
-            // Small white center dot
-            ctx.fillStyle = 'white';
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, 2, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.restore();
-        });
-    }
-
-    // *** SECOND: Draw temporary helper points (purple - from current drawing) ***
-    // These are drawn ON TOP of permanent helper points for highest priority
+    // Draw temporary helper points (simple purple dots for alignment)
     if (AppState.helperPoints && AppState.helperPoints.length > 0) {
         AppState.helperPoints.forEach(point => {
             ctx.save();
             
-            // Enhanced shadow for maximum visibility
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
-            ctx.shadowBlur = 4;
-            ctx.shadowOffsetX = 2;
-            ctx.shadowOffsetY = 2;
-            
-            // Larger size and vibrant purple for maximum visibility
-            ctx.fillStyle = '#9b59b6'; // More vibrant purple
+            // Simple purple dot with white border
+            ctx.fillStyle = '#9b59b6'; // Purple
             ctx.strokeStyle = 'white';
-            ctx.lineWidth = 3; // Thicker border
+            ctx.lineWidth = 2;
             
-            // Larger radius for better visibility (8px instead of 6px)
+            // Draw small circle (6px radius)
             ctx.beginPath();
-            ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+            ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
-            
-            // Add a subtle inner highlight for extra distinction
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
-            ctx.fill();
             
             ctx.restore();
         });
@@ -2163,7 +2080,7 @@ completeCycle(pathToComplete) {
     console.log('🎉 Creating new polygon cycle');
     
     // Add vertices as permanent helpers for future snapping.
-    this.addVerticesAsPermanentHelpers(pathToComplete);
+    //this.addVerticesAsPermanentHelpers(pathToComplete);
     
     // Announce that the cycle is closed so the AreaManager can create the shape.
     AppState.emit('app:cycleClosed', { path: [...pathToComplete] });
@@ -2529,7 +2446,7 @@ drawPolygons() {
 
         // *** ENHANCED: Draw preview lines to potential cycle closing points ***
         if (AppState.currentPolygonPoints.length >= 2) {
-            this.drawCyclePreviewLines(ctx);
+            //this.drawCyclePreviewLines(ctx);
         }
 
         // *** ENHANCED: Draw vertices with higher z-index and better visibility ***

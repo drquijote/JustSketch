@@ -14,10 +14,14 @@ export class AreaManager {
         this.draggedGroup = null;
         this.isDraggingArea = false;
         this.isEditModeActive = false;
+        this.lastContainedPathInfo = null; // Add this line
+
         
         // Properties for polygon property editing
         this.pencilClickAreas = new Map();
         this.editingPolygon = null;
+        this.lastSharedEdgeInfo = null; // Add this line
+
 
         // --- NEW PROPERTIES FOR LINE EDITING ---
         this.activeLineEdit = null; // Stores info on the line selected for movement
@@ -71,6 +75,83 @@ export class AreaManager {
 
         
     }
+
+
+    // *** NEW: Check if new area is contained within existing areas ***
+checkForSharedEdges(newPath) {
+    if (!AppState.drawnPolygons || AppState.drawnPolygons.length === 0) {
+        return; // No existing areas to check against
+    }
+    
+    const tolerance = 5; // pixels - how close points need to be to be considered the same
+    
+    // Get the type and generate the name for the new area
+    const typeSelect = document.getElementById('polygonType');
+    const defaultType = typeSelect?.options[0]?.value || 'living';
+    const newAreaName = AreaManager.generateAreaLabel(defaultType);
+    
+    // Check if the new path is contained within any existing polygon
+    for (const existingPolygon of AppState.drawnPolygons) {
+        let allVerticesInside = true;
+        let someVerticesOnBoundary = false;
+        
+        // Check each vertex of the new path
+        for (let i = 0; i < newPath.length; i++) {
+            const vertex = newPath[i];
+            
+            // Check if vertex is inside the polygon
+            const isInside = AreaHelpers.isPointInsidePolygon(vertex, existingPolygon.path);
+            
+            // Check if vertex is on the boundary
+            let isOnBoundary = false;
+            for (const polyVertex of existingPolygon.path) {
+                if (this.pointsNearby(vertex, polyVertex, tolerance)) {
+                    isOnBoundary = true;
+                    someVerticesOnBoundary = true;
+                    break;
+                }
+            }
+            
+            // If vertex is neither inside nor on boundary, path is not contained
+            if (!isInside && !isOnBoundary) {
+                allVerticesInside = false;
+                break;
+            }
+        }
+        
+        // If all vertices are inside or on boundary, the path is contained
+        if (allVerticesInside) {
+            // Collect the vertex names from the new path
+            const containedVertices = newPath.map((vertex, index) => {
+                return vertex.name || `p${index}`;
+            });
+            
+            const message = `You have created ${newAreaName}, this path is contained within ${existingPolygon.label}, the contained path is ${containedVertices.join(',')}`;
+            alert(message);
+            console.log('🔍 CONTAINED PATH:', message);
+            console.log('🔍 Path details:', {
+                newAreaName,
+                containingPolygon: existingPolygon.label,
+                vertices: containedVertices,
+                someOnBoundary: someVerticesOnBoundary
+            });
+            
+            // Store this info for edge labeling
+            this.lastContainedPathInfo = {
+                containedVertices: newPath.map((v, i) => ({
+                    vertex: v,
+                    index: i,
+                    label: v.name || `p${i}`
+                })),
+                newPath: newPath,
+                containingPolygonName: existingPolygon.label,
+                containingPolygon: existingPolygon
+            };
+            
+            return; // Only show one alert
+        }
+    }
+}
  
     // *** NEW: Ensure all existing polygons have draggable labels ***
     ensureAreaLabelsExist() {
@@ -868,6 +949,102 @@ export class AreaManager {
         
         console.log('✏️ PENCIL: Edit dialog opened for:', polygon.label);
     }
+
+    /**
+ * Main function to process overlaps using the Martinez library.
+ * Returns true if an overlap was processed, false otherwise.
+ */
+processOverlapWithMartinez(newPolygon) {
+    // Find the first polygon that overlaps with the new one.
+    const existingPolygon = AppState.drawnPolygons.find(p => {
+        // A quick check: does the intersection of the two polygons have an area?
+        const intersection = martinez.intersection(
+            this.convertToMartinezFormat(p.path), 
+            this.convertToMartinezFormat(newPolygon.path)
+        );
+        return intersection && intersection.length > 0;
+    });
+
+    if (!existingPolygon) {
+        return false; // No overlap found.
+    }
+
+    console.log(`🔪 Clipping: ${newPolygon.label} overlaps with ${existingPolygon.label}`);
+
+    // 1. CONVERT data for the library
+    const existingGeoJSON = this.convertToMartinezFormat(existingPolygon.path);
+    const newGeoJSON = this.convertToMartinezFormat(newPolygon.path);
+
+    // 2. PERFORM boolean operations
+    const intersectionResult = martinez.intersection(existingGeoJSON, newGeoJSON);
+    const differenceResult = martinez.diff(existingGeoJSON, newGeoJSON); // Symmetric Difference
+
+    // Check if the operations were successful
+    if (!intersectionResult || !differenceResult || intersectionResult.length === 0 || differenceResult.length === 0) {
+        console.error("Clipping operation failed to produce valid results.");
+        return false;
+    }
+
+    // 3. REMOVE the old, large polygon
+    const polyIndex = AppState.drawnPolygons.findIndex(p => p.id === existingPolygon.id);
+    if (polyIndex > -1) {
+        AppState.drawnPolygons.splice(polyIndex, 1);
+    }
+    const labelIndex = AppState.placedElements.findIndex(el => el.type === 'area_label' && el.linkedPolygonId === existingPolygon.id);
+    if (labelIndex > -1) {
+        AppState.placedElements.splice(labelIndex, 1);
+    }
+
+    // 4. CREATE the new polygons from the results
+
+    // --- The Intersection becomes the "Garage" ---
+    const intersectionPath = intersectionResult[0][0].map(p => ({ x: p[0], y: p[1] }));
+    const intersectionArea = AreaHelpers.calculatePolygonArea(intersectionPath) / (this.PIXELS_PER_FOOT * this.PIXELS_PER_FOOT);
+    const garageFinal = {
+        ...newPolygon, // Inherit type, etc. from what the user drew
+        id: Date.now() + 1,
+        path: intersectionPath,
+        area: intersectionArea,
+        centroid: AreaHelpers.calculateCentroid(intersectionPath),
+        label: newPolygon.label // Keep the name the user entered, e.g., "Garage 2"
+    };
+
+    // --- The Symmetric Difference becomes the new "Floor 3" ---
+    const differencePath = differenceResult[0][0].map(p => ({ x: p[0], y: p[1] }));
+    const differenceArea = AreaHelpers.calculatePolygonArea(differencePath) / (this.PIXELS_PER_FOOT * this.PIXELS_PER_FOOT);
+    const floorFinal = {
+        ...existingPolygon, // Inherit type, etc. from the original polygon
+        id: Date.now() + 2,
+        path: differencePath,
+        area: differenceArea,
+        centroid: AreaHelpers.calculateCentroid(differencePath),
+        label: existingPolygon.label // Keep the original name, e.g., "Floor 3"
+    };
+    
+    // 5. ADD the two new, perfectly fitted polygons to the state
+    AppState.drawnPolygons.push(garageFinal, floorFinal);
+    this.createAreaLabelElement(garageFinal);
+    this.createAreaLabelElement(floorFinal);
+
+    console.log("✅ Clipping successful. Replaced 1 polygon with 2.");
+    return true; // Clipping was performed.
+}
+
+/**
+ * Helper to convert an application polygon path to the format Martinez.js expects.
+ * FROM: [{x, y}, {x, y}]
+ * TO:   [[[x, y], [x, y]]]
+ */
+convertToMartinezFormat(path) {
+    const ring = path.map(point => [point.x, point.y]);
+    // Ensure the polygon is closed by making the last point same as the first
+    if (ring.length > 0 && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) {
+        ring.push(ring[0]);
+    }
+    return [ring]; // Return as a MultiPolygon with one ring
+}
+
+
     // *** NEW: Save edited area properties ***
     saveEditedArea() {
         if (!this.editingPolygon) return;
@@ -922,7 +1099,292 @@ export class AreaManager {
 
     // --- Standard Area Logic ---
 
- 
+ saveNewArea() {
+    if (!this.activePathForModal) return;
+
+    const nameInput = document.getElementById('polygonName');
+    const typeSelect = document.getElementById('polygonType');
+    const selectedOption = typeSelect.options[typeSelect.selectedIndex];
+
+    // Create a temporary object for the new polygon.
+    // It will be modified or replaced by the clipping process.
+    const newPolygon = {
+        id: Date.now(),
+        path: this.activePathForModal,
+        label: nameInput.value,
+        type: typeSelect.value,
+        glaType: parseInt(selectedOption.getAttribute('data-gla'), 10),
+        centroid: AreaHelpers.calculateCentroid(this.activePathForModal)
+        // Area is calculated after clipping.
+    };
+
+    // This function will now handle all clipping logic and state updates.
+    // It returns 'true' if a clip happened, 'false' otherwise.
+    const wasClipped = this.processOverlapWithMartinez(newPolygon);
+
+    // If no clipping occurred, add the new polygon as is.
+    if (!wasClipped) {
+        console.log("No overlap found, adding polygon normally.");
+        const areaSqPixels = AreaHelpers.calculatePolygonArea(newPolygon.path);
+        newPolygon.area = areaSqPixels / (this.PIXELS_PER_FOOT * this.PIXELS_PER_FOOT);
+        
+        AppState.drawnPolygons.push(newPolygon);
+        this.createAreaLabelElement(newPolygon);
+    }
+    
+    // Standard cleanup
+    this.hideAreaModal();
+    this.updateLegendCalculations();
+    CanvasManager.saveAction();
+    CanvasManager.redraw();
+    AppState.emit('app:exitDrawingMode');
+}
+
+ cutOverlappingAreas(newPolygon) {
+    if (!AppState.drawnPolygons || AppState.drawnPolygons.length === 0) {
+        return; // No existing areas to cut
+    }
+
+    const polygonsToAdd = [];
+    const polygonsToRemove = [];
+
+    // Use a copy of the array for safe iteration while modifying the original
+    [...AppState.drawnPolygons].forEach(existingPolygon => {
+        // Use a robust clipping function to get the difference
+        const difference = this.subtractPolygonArea(existingPolygon, newPolygon);
+
+        // If the difference is not the same as the original polygon, it means a cut happened
+        if (difference.length > 0 && difference[0].path.length !== existingPolygon.path.length) {
+            console.log(`🔪 CUTTING: ${existingPolygon.label} was cut by ${newPolygon.label}`);
+            
+            // Mark the original polygon for removal
+            polygonsToRemove.push(existingPolygon.id);
+            
+            // The result of the cut might be multiple disjoint polygons. Add them all.
+            difference.forEach((cutResult, i) => {
+                const newId = Date.now() + i + Math.random();
+                const newArea = AreaHelpers.calculatePolygonArea(cutResult.path) / (this.PIXELS_PER_FOOT * this.PIXELS_PER_FOOT);
+                
+                polygonsToAdd.push({
+                    ...existingPolygon, // Inherit properties like type, glaType
+                    id: newId,
+                    path: cutResult.path,
+                    area: newArea,
+                    centroid: AreaHelpers.calculateCentroid(cutResult.path),
+                    // Modify label to show it's a piece of the original
+                    label: `${existingPolygon.label} (cut)`
+                });
+            });
+        }
+    });
+
+    // Apply the changes: remove old polygons first
+    if (polygonsToRemove.length > 0) {
+        // Also remove the associated area label elements for the polygons being replaced
+        const elementsToRemove = AppState.placedElements.filter(el => 
+            el.type === 'area_label' && polygonsToRemove.includes(el.linkedPolygonId)
+        );
+        elementsToRemove.forEach(element => {
+            const index = AppState.placedElements.indexOf(element);
+            if (index > -1) {
+                AppState.placedElements.splice(index, 1);
+            }
+        });
+
+        // Remove the polygons themselves
+        AppState.drawnPolygons = AppState.drawnPolygons.filter(p => !polygonsToRemove.includes(p.id));
+    }
+
+    // Add the new cut versions and create their labels
+    if (polygonsToAdd.length > 0) {
+        polygonsToAdd.forEach(p => {
+            AppState.drawnPolygons.push(p);
+            this.createAreaLabelElement(p); // Create a new label for the new piece
+        });
+    }
+}
+
+
+
+
+// *** NEW: Helper method to check if two polygons overlap ***
+calculatePolygonOverlap(path1, path2) {
+    // Simple overlap detection: check if any vertex of one polygon is inside the other
+    let hasOverlap = false;
+    
+    // Check if any point of path1 is inside path2
+    for (const point of path1) {
+        if (AreaHelpers.isPointInsidePolygon(point, path2)) {
+            hasOverlap = true;
+            break;
+        }
+    }
+    
+    // Check if any point of path2 is inside path1
+    if (!hasOverlap) {
+        for (const point of path2) {
+            if (AreaHelpers.isPointInsidePolygon(point, path1)) {
+                hasOverlap = true;
+                break;
+            }
+        }
+    }
+    
+    return { hasOverlap };
+}
+
+ subtractPolygonArea(subjectPolygon, clipPolygon) {
+    const subject = subjectPolygon.path.map(p => [p.x, p.y]);
+    const clip = clipPolygon.path.map(p => [p.x, p.y]);
+
+    // Helper to check if a point is inside a polygon
+    const isInside = (point, polygon) => {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i][0], yi = polygon[i][1];
+            const xj = polygon[j][0], yj = polygon[j][1];
+
+            const intersect = ((yi > point[1]) !== (yj > point[1])) &&
+                (point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    };
+
+    // Helper for line segment intersection
+    const intersection = (a, b, c, d) => {
+        const det = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0]);
+        if (det === 0) return null;
+        const t = ((c[0] - a[0]) * (d[1] - c[1]) - (c[1] - a[1]) * (d[0] - c[0])) / det;
+        const u = -((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / det;
+        if (t > 0 && t < 1 && u > 0 && u < 1) {
+            return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+        }
+        return null;
+    };
+    
+    // 1. Find all intersections
+    const intersections = [];
+    for (let i = 0; i < subject.length; i++) {
+        for (let j = 0; j < clip.length; j++) {
+            const p1 = subject[i];
+            const p2 = subject[(i + 1) % subject.length];
+            const p3 = clip[j];
+            const p4 = clip[(j + 1) % clip.length];
+            const intersectPoint = intersection(p1, p2, p3, p4);
+            if (intersectPoint) {
+                intersections.push({ point: intersectPoint, subject_edge: i, clip_edge: j });
+            }
+        }
+    }
+
+    if (intersections.length === 0) {
+        // No intersections: check if one is inside the other
+        if (isInside(subject[0], clip)) return []; // Subject is fully inside clip, so difference is empty
+        if (isInside(clip[0], subject)) {
+             // Clip is fully inside subject, creating a hole. This is complex and we'll return the original for now.
+             // A full implementation would return a polygon with a hole.
+             return [{ path: subjectPolygon.path }];
+        }
+        return [{ path: subjectPolygon.path }]; // Polygons are separate
+    }
+
+    // 2. Augment polygon lists with intersection points
+    const augment = (poly, intersections, isSubject) => {
+        const augmented = [];
+        for (let i = 0; i < poly.length; i++) {
+            augmented.push({ point: poly[i], original: true });
+            const edge_intersections = intersections
+                .filter(x => (isSubject ? x.subject_edge : x.clip_edge) === i)
+                .map(x => ({ point: x.point, original: false }));
+            
+            edge_intersections.sort((a, b) => {
+                const da = Math.hypot(a.point[0] - poly[i][0], a.point[1] - poly[i][1]);
+                const db = Math.hypot(b.point[0] - poly[i][0], b.point[1] - poly[i][1]);
+                return da - db;
+            });
+            augmented.push(...edge_intersections);
+        }
+        return augmented;
+    };
+
+    const augmentedSubject = augment(subject, intersections, true);
+    const augmentedClip = augment(clip, intersections, false);
+    
+    // 3. Mark entry/exit points
+    for (const pt of augmentedSubject) {
+        if (!pt.original) pt.is_intersection = true;
+    }
+    for (const pt of augmentedClip) {
+        if (!pt.original) pt.is_intersection = true;
+    }
+
+    // Map intersections between polygons
+    for (const s_pt of augmentedSubject) {
+        if (s_pt.is_intersection) {
+            for (const c_pt of augmentedClip) {
+                if (c_pt.is_intersection && Math.hypot(s_pt.point[0] - c_pt.point[0], s_pt.point[1] - c_pt.point[1]) < 1e-9) {
+                    s_pt.neighbor = c_pt;
+                    c_pt.neighbor = s_pt;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Mark entry/exit
+    let subjectIsInside = isInside(augmentedSubject[0].point, clip);
+    for (const pt of augmentedSubject) {
+        if (pt.is_intersection) {
+            pt.entry = !subjectIsInside;
+            subjectIsInside = !subjectIsInside;
+        }
+    }
+
+    // 4. Trace the result polygons
+    const resultPolygons = [];
+    const visited = new Set();
+
+    for (const start_node of augmentedSubject) {
+        if (start_node.is_intersection && !visited.has(start_node) && !start_node.entry) {
+            const new_poly = [];
+            let current_node = start_node;
+            let current_poly_is_subject = true;
+            
+            while (!visited.has(current_node)) {
+                visited.add(current_node);
+                new_poly.push(current_node.point);
+                
+                // Find next point in the current list
+                const find_next = (node, list) => {
+                    const idx = list.findIndex(n => n === node);
+                    return list[(idx + 1) % list.length];
+                };
+
+                let next_node = find_next(current_node, current_poly_is_subject ? augmentedSubject : augmentedClip);
+                
+                if (next_node.is_intersection) {
+                    current_poly_is_subject = !current_poly_is_subject;
+                    current_node = next_node.neighbor;
+                } else {
+                    current_node = next_node;
+                }
+            }
+            if(new_poly.length > 2) resultPolygons.push(new_poly);
+        }
+    }
+    
+    // Handle cases where no intersections lead to a result (e.g., subject contains clip)
+    if (resultPolygons.length === 0 && !isInside(subject[0], clip)) {
+        resultPolygons.push(subject);
+    }
+    
+    // Convert back to the application's {x, y} format
+    return resultPolygons.map(poly => ({
+        path: poly.map(p => ({ x: p[0], y: p[1] }))
+    }));
+}
+
 handleCycleClosed(event) {
     const path = event.detail.path;
     if (!path || path.length < 3) {
@@ -952,6 +1414,10 @@ checkForSharedEdges(newPath) {
     const defaultType = typeSelect?.options[0]?.value || 'living';
     const newAreaName = AreaManager.generateAreaLabel(defaultType);
     
+    // Store shared vertices for the alert message
+    const sharedVertices = [];
+    let sharedPolygonName = '';
+    
     // Check each edge of the new path against each edge of existing polygons
     for (let i = 0; i < newPath.length; i++) {
         const newEdgeStart = newPath[i];
@@ -972,14 +1438,45 @@ checkForSharedEdges(newPath) {
                 );
                 
                 if (isSharedEdge) {
-                    // Found a shared edge! Show the alert and return
-                    const message = `You have created ${newAreaName}, this shares a path with ${existingPolygon.label}`;
-                    alert(message);
-                    console.log('🔗 SHARED EDGE:', message);
-                    return; // Only show one alert even if multiple shared edges exist
+                    sharedPolygonName = existingPolygon.label;
+                    
+                    // Add the vertices that form this shared edge
+                    // Check if newEdgeStart matches any vertex in the new path
+                    for (let k = 0; k < newPath.length; k++) {
+                        if (this.pointsNearby(newPath[k], existingEdgeStart, tolerance) || 
+                            this.pointsNearby(newPath[k], existingEdgeEnd, tolerance)) {
+                            const vertexLabel = `s${sharedVertices.length}`;
+                            if (!sharedVertices.some(v => v.index === k)) {
+                                sharedVertices.push({
+                                    index: k,
+                                    label: vertexLabel,
+                                    originalName: newPath[k].name || `vertex${k}`
+                                });
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+    
+    // If we found shared edges, show a detailed alert
+    if (sharedVertices.length > 0) {
+        // Sort vertices by their index to show them in order
+        sharedVertices.sort((a, b) => a.index - b.index);
+        const sharedLabels = sharedVertices.map(v => v.label).join(',');
+        
+        const message = `You have created ${newAreaName}, this shares a path with ${sharedPolygonName}, the shared path is ${sharedLabels}`;
+        alert(message);
+        console.log('🔗 SHARED EDGE:', message);
+        console.log('🔗 Shared vertices details:', sharedVertices);
+        
+        // Store this info temporarily for the edge labeling
+        this.lastSharedEdgeInfo = {
+            sharedVertices: sharedVertices,
+            newPath: newPath,
+            sharedPolygonName: sharedPolygonName
+        };
     }
 }
 
@@ -1078,37 +1575,7 @@ if (AreaHelpers.isPointInsidePolygon(elementCenter, this.activePathForModal)) {
         this.activePathForModal = null;
     }
 
-    // *** ENSURE: saveNewArea is exactly as it was ***
-    saveNewArea() {
-        if (!this.activePathForModal) return;
-
-        const nameInput = document.getElementById('polygonName');
-        const typeSelect = document.getElementById('polygonType');
-        const selectedOption = typeSelect.options[typeSelect.selectedIndex];
-        const areaSqPixels = AreaHelpers.calculatePolygonArea(this.activePathForModal);
-        const areaSqFeet = areaSqPixels / (this.PIXELS_PER_FOOT * this.PIXELS_PER_FOOT);
-
-        const newPolygon = {
-            id: Date.now(),
-            path: this.activePathForModal,
-            label: nameInput.value,
-            type: typeSelect.value,
-            glaType: parseInt(selectedOption.getAttribute('data-gla'), 10),
-            area: areaSqFeet,
-            centroid: AreaHelpers.calculateCentroid(this.activePathForModal)
-        };
-
-        AppState.drawnPolygons.push(newPolygon);
-        
-        // *** NEW: Create draggable area label element ***
-        this.createAreaLabelElement(newPolygon);
-        
-        this.hideAreaModal();
-        this.updateLegendCalculations();
-        CanvasManager.saveAction();
-        CanvasManager.redraw();
-        AppState.emit('app:exitDrawingMode');
-    }
+ 
 
     // *** NEW: Add this function to areaManager.js ***
     deleteCurrentCycle() {
@@ -1175,67 +1642,35 @@ if (AreaHelpers.isPointInsidePolygon(elementCenter, this.activePathForModal)) {
         this.activePathForModal = null;
     }
 
-    saveNewArea() {
-        if (!this.activePathForModal) return;
+ 
+createAreaLabelElement(polygon) {
+    const areaLabelElement = {
+        id: `area_label_${polygon.id}`,
+        type: 'area_label',
+        content: polygon.label,
+        areaData: {
+            areaText: polygon.label,
+            sqftText: `${polygon.area.toFixed(1)} sq ft`,
+            polygonId: polygon.id
+        },
+        styling: {
+            backgroundColor: 'transparent',
+            color: '#000',
+            textAlign: 'center'
+        },
+        x: polygon.centroid.x,
+        y: polygon.centroid.y,
+        width: Math.max(80, polygon.label.length * 8 + 16),
+        height: 32, // Tall enough for both lines of text
+        draggable: true,
+        linkedPolygonId: polygon.id
+    };
 
-        const nameInput = document.getElementById('polygonName');
-        const typeSelect = document.getElementById('polygonType');
-        const selectedOption = typeSelect.options[typeSelect.selectedIndex];
-        const areaSqPixels = AreaHelpers.calculatePolygonArea(this.activePathForModal);
-        const areaSqFeet = areaSqPixels / (this.PIXELS_PER_FOOT * this.PIXELS_PER_FOOT);
-
-        const newPolygon = {
-            id: Date.now(),
-            path: this.activePathForModal,
-            label: nameInput.value,
-            type: typeSelect.value,
-            glaType: parseInt(selectedOption.getAttribute('data-gla'), 10),
-            area: areaSqFeet,
-            centroid: AreaHelpers.calculateCentroid(this.activePathForModal)
-        };
-
-        AppState.drawnPolygons.push(newPolygon);
-        
-        // *** NEW: Create draggable area label element ***
-        this.createAreaLabelElement(newPolygon);
-        
-        this.hideAreaModal();
-        this.updateLegendCalculations();
-        CanvasManager.saveAction();
-        CanvasManager.redraw();
-        AppState.emit('app:exitDrawingMode');
-    }
-
-    // *** NEW: Create a draggable element for the area label ***
-    createAreaLabelElement(polygon) {
-        const areaLabelElement = {
-            id: `area_label_${polygon.id}`,
-            type: 'area_label',
-            content: polygon.label,
-            areaData: {
-                areaText: polygon.label,
-                sqftText: `${polygon.area.toFixed(1)} sq ft`,
-                polygonId: polygon.id
-            },
-            styling: {
-                backgroundColor: 'transparent',
-                color: '#000',
-                textAlign: 'center'
-            },
-            x: polygon.centroid.x,
-            y: polygon.centroid.y,
-            width: Math.max(80, polygon.label.length * 8 + 16),
-            height: 32, // Tall enough for both lines of text
-            draggable: true,
-            linkedPolygonId: polygon.id
-        };
-
-        // Add to placed elements so it can be dragged like other elements
-        AppState.placedElements.push(areaLabelElement);
-        
-        console.log('Created draggable area label:', areaLabelElement);
-    }
-
+    // Add to placed elements so it can be dragged like other elements
+    AppState.placedElements.push(areaLabelElement);
+    
+    console.log('Created draggable area label:', areaLabelElement);
+}
     // Enhanced updateLegendCalculations function
     updateLegendCalculations() {
         console.log('AreaManager: Updating legend calculations');
@@ -1380,134 +1815,6 @@ if (AreaHelpers.isPointInsidePolygon(elementCenter, this.activePathForModal)) {
         }
     }
 
- drawCompletedAreas() {
-    const { ctx } = AppState;
-    if (!ctx || AppState.drawnPolygons.length === 0) return;
-
-    const sharedEdges = this.findAllSharedEdges();
-    this.lineIconClickAreas.clear(); // Clear old icon positions
-
-    AppState.drawnPolygons.forEach((poly) => {
-        ctx.save();
-        
-        // Unchanged polygon fill and stroke logic...
-        ctx.strokeStyle = '#555';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([]);
-        
-        let fillOpacity = 0.4;
-        let fillColor;
-        
-        // Check if we're in photo mode - make fills very subdued
-        if (AppState.currentMode === 'photos') {
-            // Very light gray with high transparency for all areas in photo mode
-            fillColor = 'rgba(200, 200, 200, 0.15)'; // Light gray, 15% opacity
-        } else {
-            // Normal mode colors
-            if (AppState.currentMode === 'edit' && AppState.editSubMode === 'labels') {
-                fillOpacity = 0.1;
-            }
-            
-            if (poly.glaType === 1) { 
-                fillColor = `rgba(144, 238, 144, ${fillOpacity})`; // Green
-            } else if (poly.type === 'ADU') { 
-                fillColor = `rgba(173, 255, 173, ${fillOpacity + 0.1})`; // Light green
-            } else if (poly.glaType === 0) { 
-                fillColor = `rgba(180, 180, 180, ${fillOpacity + 0.2})`; // Gray
-            } else { 
-                fillColor = `rgba(220, 220, 220, ${fillOpacity - 0.1})`; // Light gray
-            }
-        }
-        
-        ctx.fillStyle = fillColor;
-        
-        ctx.beginPath();
-        ctx.moveTo(poly.path[0].x, poly.path[0].y);
-        for (let i = 1; i < poly.path.length; i++) { 
-            ctx.lineTo(poly.path[i].x, poly.path[i].y); 
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-
-        // Show area edit icon ONLY in edit areas mode
-        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
-            this.drawAreaEditIcon(ctx, poly);
-        }
-
-        // Show line icons ONLY in edit lines mode
-        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'lines') {
-            const editIcon = AppState.imageCache['public/edit.svg'];
-            const deleteIcon = AppState.imageCache['public/delete.svg'];
-            const iconSize = 20;
-
-            for (let i = 0; i < poly.path.length; i++) {
-                const p1 = poly.path[i];
-                const p2 = poly.path[(i + 1) % poly.path.length];
-                
-                // --- Highlight the active line ---
-                if (this.activeLineEdit && this.activeLineEdit.polygon.id === poly.id && this.activeLineEdit.edgeStartIndex === i) {
-                    ctx.save();
-                    ctx.strokeStyle = 'rgba(52, 152, 219, 0.9)'; // Bright blue for active
-                    ctx.lineWidth = 6;
-                    ctx.lineCap = 'round';
-                    ctx.beginPath();
-                    ctx.moveTo(p1.x, p1.y);
-                    ctx.lineTo(p2.x, p2.y);
-                    ctx.stroke();
-                    ctx.restore();
-                }
-
-                // Calculate 1/3 and 2/3 points on the line
-                const editPointX = p1.x + (p2.x - p1.x) / 3;
-                const editPointY = p1.y + (p2.y - p1.y) / 3;
-                const deletePointX = p1.x + (p2.x - p1.x) * 2 / 3;
-                const deletePointY = p1.y + (p2.y - p1.y) * 2 / 3;
-
-                // Draw Edit Icon at 1/3 point
-                if (editIcon) {
-                    ctx.drawImage(editIcon, editPointX - iconSize/2, editPointY - iconSize/2, iconSize, iconSize);
-                }
-                
-                // Draw Delete Icon at 2/3 point
-                if (deleteIcon) {
-                    ctx.drawImage(deleteIcon, deletePointX - iconSize/2, deletePointY - iconSize/2, iconSize, iconSize);
-                }
-                
-                // Store click areas for both icons
-                const editKey = `edit-${poly.id}-${i}`;
-                const deleteKey = `delete-${poly.id}-${i}`;
-                const edgeInfo = { polygon: poly, edgeStartIndex: i, edgeEndIndex: (i + 1) % poly.path.length };
-                
-                this.lineIconClickAreas.set(editKey, {
-                    x: editPointX - iconSize / 2, y: editPointY - iconSize / 2,
-                    width: iconSize, height: iconSize, action: 'edit', edgeInfo: edgeInfo
-                });
-                this.lineIconClickAreas.set(deleteKey, {
-                    x: deletePointX - iconSize / 2, y: deletePointY - iconSize / 2,
-                    width: iconSize, height: iconSize, action: 'delete', edgeInfo: edgeInfo
-                });
-            }
-        }
-        
-        // Draw external wall length labels (unchanged)
-        for (let i = 0; i < poly.path.length; i++) {
-            const p1 = poly.path[i];
-            const p2 = poly.path[(i + 1) % poly.path.length];
-            const edgeKey = this.getEdgeKey(poly.id, i, (i + 1) % poly.path.length);
-            if (!sharedEdges.has(edgeKey)) {
-                this.drawExternalLabel(ctx, p1, p2, poly.centroid);
-            }
-        }
-
-        // Note: Area labels are now separate draggable elements, not drawn here
-
-        ctx.restore();
-    });
-
-    this.updateLegendCalculations();
-}
-    // *** HELPER FUNCTIONS FOR EDGE LABELS ***
 
     findAllSharedEdges() {
         const sharedEdges = new Set();
@@ -1623,4 +1930,224 @@ const lengthInFeet = lengthInPixels / PIXELS_PER_FOOT;
         ctx.fillStyle = '#2c3e50';
         ctx.fillText(text, labelX, labelY);
     }
+
+ drawCompletedAreas() {
+    const { ctx } = AppState;
+    if (!ctx || AppState.drawnPolygons.length === 0) return;
+
+    const sharedEdges = this.findAllSharedEdges();
+    this.lineIconClickAreas.clear(); // Clear old icon positions
+
+    AppState.drawnPolygons.forEach((poly) => {
+        ctx.save();
+        
+        // Unchanged polygon fill and stroke logic...
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([]);
+        
+        let fillOpacity = 0.4;
+        let fillColor;
+        
+        // Check if we're in photo mode - make fills very subdued
+        if (AppState.currentMode === 'photos') {
+            // Very light gray with high transparency for all areas in photo mode
+            fillColor = 'rgba(200, 200, 200, 0.15)'; // Light gray, 15% opacity
+        } else {
+            // Normal mode colors
+            if (AppState.currentMode === 'edit' && AppState.editSubMode === 'labels') {
+                fillOpacity = 0.1;
+            }
+            
+            if (poly.glaType === 1) { 
+                fillColor = `rgba(144, 238, 144, ${fillOpacity})`; // Green
+            } else if (poly.type === 'ADU') { 
+                fillColor = `rgba(173, 255, 173, ${fillOpacity + 0.1})`; // Light green
+            } else if (poly.glaType === 0) { 
+                fillColor = `rgba(180, 180, 180, ${fillOpacity + 0.2})`; // Gray
+            } else { 
+                fillColor = `rgba(220, 220, 220, ${fillOpacity - 0.1})`; // Light gray
+            }
+        }
+        
+        ctx.fillStyle = fillColor;
+        
+        ctx.beginPath();
+        ctx.moveTo(poly.path[0].x, poly.path[0].y);
+        for (let i = 1; i < poly.path.length; i++) { 
+            ctx.lineTo(poly.path[i].x, poly.path[i].y); 
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // ADD THIS: Debug edge labels when in edit mode
+// ADD THIS: Debug edge labels when in edit mode
+if (AppState.currentMode === 'edit') {
+    ctx.save();
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // First, check if this polygon contains the last detected path
+    let isContainingPolygon = false;
+    if (this.lastContainedPathInfo && this.lastContainedPathInfo.containingPolygonName === poly.label) {
+        isContainingPolygon = true;
+    }
+    
+    for (let i = 0; i < poly.path.length; i++) {
+        const p1 = poly.path[i];
+        const p2 = poly.path[(i + 1) % poly.path.length];
+        
+        // Calculate midpoint of edge
+        const midX = (p1.x + p2.x) / 2;
+        const midY = (p1.y + p2.y) / 2;
+        
+        // Create label based on polygon label
+        let edgeLabel = '';
+        let isHighlighted = false;
+        
+        if (isContainingPolygon) {
+            // This polygon contains the new path - show normal labels
+            const words = poly.label.split(' ');
+            const firstLetter = words[0].charAt(0).toUpperCase();
+            const number = words[1] || '';
+            edgeLabel = `${firstLetter}${number}-${i}`;
+        } else {
+            // Normal edge
+            const words = poly.label.split(' ');
+            const firstLetter = words[0].charAt(0).toUpperCase();
+            const number = words[1] || '';
+            edgeLabel = `${firstLetter}${number}-${i}`;
+        }
+        
+        // Draw background for label
+        const textMetrics = ctx.measureText(edgeLabel);
+        const padding = 2;
+        
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        
+        ctx.fillRect(
+            midX - textMetrics.width / 2 - padding,
+            midY - 6 - padding,
+            textMetrics.width + padding * 2,
+            12 + padding * 2
+        );
+        
+        // Draw text
+        ctx.fillStyle = 'black';
+        ctx.fillText(edgeLabel, midX, midY);
+    }
+    
+    // If there's a contained path in this polygon, highlight it
+    if (isContainingPolygon && this.lastContainedPathInfo) {
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
+        ctx.lineWidth = 4;
+        ctx.setLineDash([5, 5]);
+        
+        // Draw the contained path
+        ctx.beginPath();
+        const path = this.lastContainedPathInfo.newPath;
+        if (path.length > 0) {
+            ctx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) {
+                ctx.lineTo(path[i].x, path[i].y);
+            }
+            ctx.lineTo(path[0].x, path[0].y); // Close the path
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Label each vertex of the contained path
+        ctx.fillStyle = 'red';
+        ctx.font = 'bold 12px Arial';
+        path.forEach((vertex, index) => {
+            const label = vertex.name || `p${index}`;
+            ctx.fillText(label, vertex.x, vertex.y - 15);
+        });
+    }
+    
+    ctx.restore();
+}
+
+        // Show area edit icon ONLY in edit areas mode
+        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'areas') {
+            this.drawAreaEditIcon(ctx, poly);
+        }
+
+        // Show line icons ONLY in edit lines mode
+        if (AppState.currentMode === 'edit' && AppState.editSubMode === 'lines') {
+            const editIcon = AppState.imageCache['public/edit.svg'];
+            const deleteIcon = AppState.imageCache['public/delete.svg'];
+            const iconSize = 20;
+
+            for (let i = 0; i < poly.path.length; i++) {
+                const p1 = poly.path[i];
+                const p2 = poly.path[(i + 1) % poly.path.length];
+                
+                // --- Highlight the active line ---
+                if (this.activeLineEdit && this.activeLineEdit.polygon.id === poly.id && this.activeLineEdit.edgeStartIndex === i) {
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(52, 152, 219, 0.9)'; // Bright blue for active
+                    ctx.lineWidth = 6;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                // Calculate 1/3 and 2/3 points on the line
+                const editPointX = p1.x + (p2.x - p1.x) / 3;
+                const editPointY = p1.y + (p2.y - p1.y) / 3;
+                const deletePointX = p1.x + (p2.x - p1.x) * 2 / 3;
+                const deletePointY = p1.y + (p2.y - p1.y) * 2 / 3;
+
+                // Draw Edit Icon at 1/3 point
+                if (editIcon) {
+                    ctx.drawImage(editIcon, editPointX - iconSize/2, editPointY - iconSize/2, iconSize, iconSize);
+                }
+                
+                // Draw Delete Icon at 2/3 point
+                if (deleteIcon) {
+                    ctx.drawImage(deleteIcon, deletePointX - iconSize/2, deletePointY - iconSize/2, iconSize, iconSize);
+                }
+                
+                // Store click areas for both icons
+                const editKey = `edit-${poly.id}-${i}`;
+                const deleteKey = `delete-${poly.id}-${i}`;
+                const edgeInfo = { polygon: poly, edgeStartIndex: i, edgeEndIndex: (i + 1) % poly.path.length };
+                
+                this.lineIconClickAreas.set(editKey, {
+                    x: editPointX - iconSize / 2, y: editPointY - iconSize / 2,
+                    width: iconSize, height: iconSize, action: 'edit', edgeInfo: edgeInfo
+                });
+                this.lineIconClickAreas.set(deleteKey, {
+                    x: deletePointX - iconSize / 2, y: deletePointY - iconSize / 2,
+                    width: iconSize, height: iconSize, action: 'delete', edgeInfo: edgeInfo
+                });
+            }
+        }
+        
+        // Draw external wall length labels (unchanged)
+        for (let i = 0; i < poly.path.length; i++) {
+            const p1 = poly.path[i];
+            const p2 = poly.path[(i + 1) % poly.path.length];
+            const edgeKey = this.getEdgeKey(poly.id, i, (i + 1) % poly.path.length);
+            if (!sharedEdges.has(edgeKey)) {
+                this.drawExternalLabel(ctx, p1, p2, poly.centroid);
+            }
+        }
+
+        // Note: Area labels are now separate draggable elements, not drawn here
+
+        ctx.restore();
+    });
+
+    this.updateLegendCalculations();
+}
+    // *** HELPER FUNCTIONS FOR EDGE LABELS ***
+
+
 }

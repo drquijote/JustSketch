@@ -419,6 +419,10 @@ constructor() {
     this.activeInput = 'distance';
     this.distanceInputSequence = [];
     this.angleInputSequence = [];
+    this.branchFromIndex = null; // Used to track which vertex to branch from.
+    // *** ADD THESE TWO NEW PROPERTIES ***
+    this.pathPrefixes = ['p', 'q', 'r', 's', 't', 'u', 'v', 'w'];
+    this.currentPrefixIndex = 0; // Start with 'p'
 
     // Store preset angles for easy checking
     this.directionAngles = {
@@ -463,6 +467,124 @@ constructor() {
     this.setupEventListeners();
     console.log('DrawingManager: Initialized');
   }
+
+ drawDrawnLines() {
+    const { ctx } = AppState;
+    if (!ctx || !AppState.drawnLines || AppState.drawnLines.length === 0) {
+      return;
+    }
+
+    ctx.save();
+
+    // Loop through each "committed" line path
+    AppState.drawnLines.forEach(line => {
+      if (!line.path || line.path.length < 1) return;
+
+      const path = line.path;
+
+      // --- 1. Draw the line segments (edges) ---
+      if (path.length > 1) {
+        ctx.strokeStyle = '#3498db'; // Same blue color as the active path
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(path[0].x, path[0].y);
+        for (let i = 1; i < path.length; i++) {
+          ctx.lineTo(path[i].x, path[i].y);
+        }
+        ctx.stroke();
+      }
+
+      // --- 2. Draw the distance labels on each edge ---
+      // This logic is copied directly from `drawPolygons`
+      for (let i = 1; i < path.length; i++) {
+        const prevPoint = path[i - 1];
+        const currentPoint = path[i];
+        
+        const dx = currentPoint.x - prevPoint.x;
+        const dy = currentPoint.y - prevPoint.y;
+        const distanceInPixels = Math.sqrt(dx * dx + dy * dy);
+        const distanceInFeet = distanceInPixels / this.PIXELS_PER_FOOT;
+        
+        if (distanceInFeet >= 1) {
+          const midX = (prevPoint.x + currentPoint.x) / 2;
+          const midY = (prevPoint.y + currentPoint.y) / 2;
+          const lineLength = Math.sqrt(dx * dx + dy * dy);
+          if (lineLength === 0) continue;
+          
+          const perpX = -dy / lineLength;
+          const perpY = dx / lineLength;
+          const offset = 20;
+          const labelX = midX + perpX * offset;
+          const labelY = midY + perpY * offset;
+          
+          const text = `${distanceInFeet.toFixed(1)}'`;
+          ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          
+          const textMetrics = ctx.measureText(text);
+          const padding = 4;
+          
+          ctx.fillStyle = 'rgba(52, 152, 219, 0.9)';
+          const backgroundRect = {
+            x: labelX - textMetrics.width / 2 - padding,
+            y: labelY - 6 - padding,
+            width: textMetrics.width + padding * 2,
+            height: 12 + padding * 2
+          };
+          ctx.fillRect(backgroundRect.x, backgroundRect.y, backgroundRect.width, backgroundRect.height);
+          
+          ctx.fillStyle = 'white';
+          ctx.fillText(text, labelX, labelY);
+        }
+      }
+
+      // --- 3. Draw the vertices and their labels ---
+      // This logic is also copied directly from `drawPolygons`
+      path.forEach((point) => {
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+        
+        // For inactive paths, all vertices are the same intermediate color.
+        ctx.fillStyle = '#3498db'; 
+        
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        ctx.restore();
+        
+        ctx.save();
+        ctx.fillStyle = '#2c3e50';
+        ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+        ctx.shadowBlur = 3;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+        
+        ctx.fillText(point.name, point.x, point.y - 20);
+        ctx.restore();
+      });
+    });
+
+    ctx.restore();
+  }
+
+
 
 findClickedHelperPoint(x, y) {
     const clickRadius = this.isMobileDevice() ? 30 : 20;
@@ -1409,6 +1531,11 @@ setupEventListeners() {
       this.drawPolygons();
     });
     
+    // Listen for drawing committed lines (lower layer)
+    AppState.on('canvas:redraw:lines', () => {
+        this.drawDrawnLines();
+    });
+
     // *** NEW: Listen for top-layer drawing overlay - ensures purple points are always on top ***
     AppState.on('canvas:redraw:drawing-overlay', () => {
       // Only draw the current drawing elements (vertices and helper points) on the top layer
@@ -2171,22 +2298,44 @@ findClickedVertex(x, y) {
     return -1;
 }
 
- continueFromVertex(vertexIndex) {
-    console.log(`DrawingManager: Continuing from vertex ${AppState.currentPolygonPoints[vertexIndex].name}`);
+// In src/drawing.js, replace the existing function with this one.
+
+  continueFromVertex(vertexIndex) {
+    const currentPath = AppState.currentPolygonPoints;
+    const clickedPoint = currentPath[vertexIndex];
     
-    const isLastVertex = vertexIndex === AppState.currentPolygonPoints.length - 1;
-    
+    const isLastVertex = vertexIndex === currentPath.length - 1;
+
     if (isLastVertex) {
-      console.log('Continuing from last vertex - no vertices removed');
-      AppState.currentPolygonCounter = vertexIndex + 1;
+      console.log('Continuing from last vertex - no vertices removed.');
     } else {
-      const removedVertices = AppState.currentPolygonPoints.splice(vertexIndex + 1);
-      if (removedVertices.length > 0) {
-        console.log(`Removed vertices: ${removedVertices.map(v => v.name).join(', ')}`);
+      console.log(`Branching from intermediate vertex ${clickedPoint.name}.`);
+      
+      if (currentPath.length > 1) {
+        AppState.drawnLines.push({
+          id: Date.now(),
+          path: [...currentPath]
+        });
+        console.log('Committed original path to drawnLines to create a branch.');
       }
-      AppState.currentPolygonCounter = vertexIndex + 1;
+
+      // --- START MODIFICATION: Advance to the next letter prefix ---
+      this.currentPrefixIndex = (this.currentPrefixIndex + 1) % this.pathPrefixes.length;
+      const newPrefix = this.pathPrefixes[this.currentPrefixIndex];
+      console.log(`Switched to new path prefix: "${newPrefix}"`);
+      // --- END MODIFICATION ---
+
+      AppState.currentPolygonPoints = [{
+        x: clickedPoint.x,
+        y: clickedPoint.y,
+        name: `${newPrefix}0` // Use the new prefix for the first vertex of the branch
+      }];
+      
+      AppState.currentPolygonCounter = 1;
+      this.waitingForFirstVertex = false;
     }
-    
+
+    // --- The UI reset logic is the same for both cases ---
     this.distanceInputSequence.length = 0;
     this.angleInputSequence.length = 0;
     
@@ -2204,78 +2353,70 @@ findClickedVertex(x, y) {
       angleInput.value = '0';
     }
     
-    // Update helper points before redrawing
     HelperPointManager.updateHelperPoints();
-
     CanvasManager.saveAction();
     CanvasManager.redraw();
     
-    console.log(`Ready to continue drawing from ${AppState.currentPolygonPoints[vertexIndex].name}`);
+    console.log(`Ready to draw new branch. New path starts at the position of old ${clickedPoint.name}.`);
   }
 
-// Replace the placeFirstVertex function in drawing.js with this fixed version:
 
-placeFirstVertex(x, y) {
-    console.log('DrawingManager: Placing first vertex at:', x, y);
-    
+// Replace the placeFirstVertex function in drawing.js with this fixed version:
+ placeFirstVertex(x, y) {
+    // When placing a brand new vertex, always reset to the primary prefix 'p'.
+    this.currentPrefixIndex = 0;
+    const prefix = this.pathPrefixes[this.currentPrefixIndex];
+
+    // ... (snapping logic is unchanged) ...
     let finalX = x;
     let finalY = y;
     let snapInfo = null;
-    
-    // *** PRIORITY 1: Check for vertex snapping first (highest priority) ***
+    let nearbyEdge = null;
     const nearbyHelper = this.findClickedHelperPoint(x, y);
     if (nearbyHelper) {
         finalX = nearbyHelper.x;
         finalY = nearbyHelper.y;
         snapInfo = { type: 'vertex', point: nearbyHelper };
-        console.log('🎯 SNAP: First vertex snapped to helper point at:', finalX, finalY);
     } else {
-        // *** PRIORITY 2: Check for edge snapping if no vertex found ***
-        const nearbyEdge = this.findNearbyEdgeForSnapping(x, y);
+        nearbyEdge = this.findNearbyEdgeForSnapping(x, y);
         if (nearbyEdge) {
             const snapPoint = this.getSnapPointOnEdge(nearbyEdge, { x, y });
             finalX = snapPoint.x;
             finalY = snapPoint.y;
             snapInfo = { type: 'edge', edge: nearbyEdge, point: snapPoint };
-            console.log('🎯 SNAP: First vertex snapped to edge at:', finalX, finalY);
         }
     }
-    
+
+    // --- START MODIFICATION: Use the current prefix for the vertex name ---
     const firstPoint = {
         x: finalX,
         y: finalY,
-        name: 'p0',
+        name: `${prefix}0`, // Will be "p0"
         snappedToHelper: !!nearbyHelper,
-        snappedToEdge: !!snapInfo && snapInfo.type === 'edge', // FIXED: Use snapInfo instead of nearbyEdge
+        snappedToEdge: !!nearbyEdge,
         snapInfo: snapInfo
     };
-    
+    // --- END MODIFICATION ---
+
+    // ... (rest of the function is unchanged) ...
     AppState.currentPolygonPoints = [firstPoint];
     AppState.currentPolygonCounter = 1;
     this.waitingForFirstVertex = false;
-
-    // *** NEW: Add snapped-to point as a permanent helper for future reference ***
     if (snapInfo && snapInfo.type === 'edge') {
         this.addSnapPointAsPermanentHelper(snapInfo.point);
     }
-
-    // Update helper points before redrawing
     HelperPointManager.updateHelperPoints();
-
     CanvasManager.saveAction();
     CanvasManager.redraw();
-
-    console.log('DrawingManager: First vertex p0 placed with snap info:', snapInfo);
     const distanceInput = document.getElementById('distanceDisplay');
     if (distanceInput) {
         this.activeInput = 'distance';
         setTimeout(() => {
             distanceInput.focus();
             distanceInput.select();
-            console.log('Distance input focused after placing p0');
         }, 100);
     }
-}
+  }
 
   showDrawingUI() {
     console.log('DrawingManager: Showing drawing UI elements');
@@ -3424,84 +3565,77 @@ addSnapPointAsPermanentHelper(snapPoint) {
 
  
 // *** ENHANCED: Update placeNextVertex with better snapping detection ***
-placeNextVertex(distance, angleDegrees) {
-    console.log('DEBUG: placeNextVertex called with angle =', angleDegrees, 'degrees');
-    const currentPoint = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1];
+  placeNextVertex(distance, angleDegrees) {
+    // ... (the first part of the function is unchanged) ...
+    let currentPoint;
+    if (this.branchFromIndex !== null) {
+        currentPoint = AppState.currentPolygonPoints[this.branchFromIndex];
+    } else {
+        currentPoint = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1];
+    }
+    
+    // ... (calculations for x, y, snapping are unchanged) ...
     const distanceInPixels = distance * this.PIXELS_PER_FOOT;
     const angleRadians = angleDegrees * (Math.PI / 180);
     const calculatedX = currentPoint.x + distanceInPixels * Math.cos(angleRadians);
     const calculatedY = currentPoint.y - distanceInPixels * Math.sin(angleRadians);
-    
-    // *** NEW: Check for helper point snapping at calculated position ***
-    const snapRadius = 15; // Slightly larger snap radius for calculated positions
-    const nearbyHelper = this.findNearbyHelper(calculatedX, calculatedY, snapRadius);
-    
+    const nearbyHelper = this.findNearbyHelper(calculatedX, calculatedY, 15);
     let finalX = calculatedX;
     let finalY = calculatedY;
-    
     if (nearbyHelper) {
         finalX = nearbyHelper.x;
         finalY = nearbyHelper.y;
-        console.log('🎯 SNAP: Calculated vertex snapped to helper point!', 
-                   `Original: (${calculatedX.toFixed(1)}, ${calculatedY.toFixed(1)})`, 
-                   `Snapped: (${finalX}, ${finalY})`);
+        console.log('🎯 SNAP: Calculated vertex snapped to helper point!');
     }
-    
-    console.log('DEBUG: Final position =', {x: finalX, y: finalY});
-    
+
+    // --- START MODIFICATION: Use the current prefix for the vertex name ---
+    const prefix = this.pathPrefixes[this.currentPrefixIndex];
     const newPoint = {
         x: finalX,
         y: finalY,
-        name: `p${AppState.currentPolygonCounter}`,
+        name: `${prefix}${AppState.currentPolygonCounter}`, // e.g., "p1", "q1", etc.
         snappedToHelper: !!nearbyHelper
     };
+    // --- END MODIFICATION ---
 
-    // Check for line extension logic
+    // ... (line extension logic is unchanged) ...
     if (AppState.currentPolygonPoints.length >= 2) {
-        console.log('DEBUG: Checking for line extension');
-        const prevPoint = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 2];
-        const lastPoint = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1];
-        const prevDx = lastPoint.x - prevPoint.x;
-        const prevDy = lastPoint.y - prevPoint.y;
-        const prevAngleRadians = Math.atan2(-prevDy, prevDx);
-        const prevAngleDegrees = (prevAngleRadians * 180 / Math.PI + 360) % 360;
-        const currentAngleDegrees = (angleDegrees + 360) % 360;
-        const angleDifference = Math.abs(currentAngleDegrees - prevAngleDegrees);
-        const normalizedDifference = Math.min(angleDifference, 360 - angleDifference);
-        const isSameDirection = normalizedDifference < 1;
-        
-        if (isSameDirection) {
-            console.log(`Same direction detected! Removing intermediate vertex ${lastPoint.name}`);
-            AppState.currentPolygonPoints.pop();
-            AppState.currentPolygonCounter--;
-            newPoint.name = lastPoint.name;
-            console.log(`Extended line from ${prevPoint.name} directly to ${newPoint.name}`);
+        const prevPoint = currentPoint;
+        const lastPointInArray = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1];
+        if (prevPoint === lastPointInArray) {
+            const pointBeforePrev = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 2];
+            const prevDx = prevPoint.x - pointBeforePrev.x;
+            const prevDy = prevPoint.y - pointBeforePrev.y;
+            const prevAngleRadians = Math.atan2(-prevDy, prevDx);
+            const prevAngleDegrees = (prevAngleRadians * 180 / Math.PI + 360) % 360;
+            const currentAngleDegrees = (angleDegrees + 360) % 360;
+            const angleDifference = Math.abs(currentAngleDegrees - prevAngleDegrees);
+            const normalizedDifference = Math.min(angleDifference, 360 - angleDifference);
+            if (normalizedDifference < 1) {
+                AppState.currentPolygonPoints.pop();
+                AppState.currentPolygonCounter--;
+                newPoint.name = prevPoint.name;
+            }
         }
     }
 
+    // ... (rest of the function is unchanged) ...
     AppState.currentPolygonPoints.push(newPoint);
     AppState.currentPolygonCounter++;
-    console.log(`Placed ${newPoint.name} at (${finalX.toFixed(1)}, ${finalY.toFixed(1)})`);
-    
+    this.branchFromIndex = null;
     this.autoPanToPoint(finalX, finalY);
-    
     const distanceInput = document.getElementById('distanceDisplay');
     const angleInput = document.getElementById('angleDisplay');
     if (distanceInput) distanceInput.value = '0';
     if (angleInput) angleInput.value = '0';
-    
     this.distanceInputSequence.length = 0;
     this.angleInputSequence.length = 0;
-    
     this.activeInput = 'distance';
     if (distanceInput) distanceInput.focus();
-    
-    // Update helper points before redrawing
     HelperPointManager.updateHelperPoints();
-    
     CanvasManager.saveAction();
     CanvasManager.redraw();
-}
+  }
 
 // *** NEW: Helper function to find nearby helpers for auto-snapping ***
 findNearbyHelper(x, y, radius = 15) {

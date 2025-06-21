@@ -1,0 +1,17 @@
+
+1) take a good look at the files in this project. review them all a couple times over
+2) do you understand how paths are drawn? cycles are completed, closed cycles are split ?
+3) I want to imrove this but I am afraid this code has become to buggy, i want to start nearly from 0 again.. 
+4) can you help me crate a new file, betterdrawing.js where we redevelop the entire drawing of paths and closed
+cycles nearly from sratch.
+5) can we write the code on betterdrawing.js for drawing initial point p0?
+     a) p0 should be placed whereever the user clicks, or it should snap to a nearby existing vertex if such exists
+     b) it should show p0 when placed
+     c) next we should be able to place p1 using the existing mechanism, that is the angle drawn [optional], the distnace, and the directional pad, both on touchscreen or arrows on laptop keyboard, or by clicking (snapping to) on an existing vertex already, or by clicking on a helper vertex [see helper.js]
+     d) this drawing of any vetex pX should be logged on the history so user can undo or redo
+     e) a paths should be able to be saved, and the user should be able to come back and edit a path by clicking on any verted to start drawing more, making any of the existing paths p0
+     f) a path should be able to become a tree [as in graph theory]
+     g)a path or a cycle should be able to be split by deleteing any one edge, lets keep the same mechanism for moving, editing or deleting edges [read currrent files, when app is in edit lines mode we can edit edges]
+     h) lest get paths and trees done correctly, we will then move to the closed cycle logic and functions.. 
+    do you understand ?
+ 6) to implement this, let us add a toggle state to the Start button, to "Start", "NewStart", "Stop" where NewStart useds all the logic contained in our new files that we are developing betterdrawing.js ,and the Start State continues the legacy methods for drawing. Let us focus ONLY on this part of it, i dont want anything else changed so we want to leave all other files alone as much as possible so all logic is self contianed in betterdrawing.js, do you understand ?  

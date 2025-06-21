@@ -1,18 +1,30 @@
+
+**************  to SAVE GitHub  ****************
 git add .
 git commit -m "better helper buttons, atricious splitter"
 git push origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
 
 
 
+**************  to see latest pushed versions  ****************
 git log --oneline -60 --pretty=format:"%h %ad %s" --date=short
 git stash push -m "saving current work before checking out 7dcf67e"
 
 
 
-
+**************  to REVERT to xxyxyxyx on ec2  ****************
 cd ../../../../../var/www/bold/w/
 sudo git pull origin SAVES-FILES-CORRECTLY-PHOTOS-NEXT
 git log -1
+
+
+
+
+**************  to  REVERT to xxyxyxyx  on laptop  ****************
+git checkout SAVES-FILES-CORRECTLY-PHOTOS-NEXT
+git log --oneline -1
+git reset --hard 42f8e55
+git clean -fd
 
 
 Can we add another mode for the app? I think so far we have four modes drawing mode, edit mode, ready mode and photo mode. Can we split up the EDIT mode into two different EDIT mode, edit button labels and icon labels and edit areas so that they are completely different from each other because I'm having trouble when I try to click on the button to edit it it tries to click on the line. I think that I tried to delete that line. Do you understand and the way we would do it is with the same button we would toggle it so it will toggle to three different states you click the added button once and it edit the set the mode to edit the labels you click it again and it set it to EDIT areas in that case it'll make all of the nearly transparent so that the user can just focus on editing areas meaning moving them around or editing any one of the lines and then you click it again and it goes back to ready my total shuffle from the three remotes ready edit labels, EDIT areas and then back to ready and back and so on and so forth do you understand what I mean and have the name on the button change reflect in which sta this way it'll make the editing more simple because right now I think the logic is difficult to distinguish between editing labels and editing areas. What do you think?

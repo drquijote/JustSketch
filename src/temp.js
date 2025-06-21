@@ -1,145 +1,586 @@
-// This is just the PDF export functionality to add to your existing previewManager.js
-// Add this method to your PreviewManager class, keeping all your existing code unchanged
+import { AppState } from './state.js';
+import { CanvasManager } from './canvas.js';
+import { DrawingManager } from './drawing.js';
+import { HelperPointManager } from './helpers.js';
+import { AreaManager } from './areaManager.js';
+import { SplitterManager } from './splitter.js';
+import { PreviewManager } from './previewManager.js';
+import { SaveManager } from './saveManager.js';
+import { PhotoManager } from './photos.js'; 
 
-// First, update just the HTML generation to add the PDF button and libraries
-// In your existing _generatePreviewHTML method, make these minimal changes:
+// Import existing sketch.js functions
+import { 
+  showpallets, 
+  initSketchModule,
+  toggleLegend, 
+  activateSketchListeners,
+  deactivateSketchListeners
+} from './sketch.js';
 
-// 1. Add these two script tags in the <head> section after your existing styles:
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-// 2. Replace your existing print button:
-        // REPLACE: <button class="print-btn" onclick="window.print()">Print</button>
-        // WITH: <button class="print-btn" onclick="generatePDF()">Export PDF</button>
 
-// 3. Add this PDF generation function in the <script> section before your existing window.onload:
-        <script>
-            // PDF generation function - single page layout
-            async function generatePDF() {
-                const button = document.querySelector('.print-btn');
-                const originalText = button.textContent;
-                button.disabled = true;
-                button.textContent = 'Generating PDF...';
-                
-                try {
-                    console.log('Starting PDF generation...');
-                    
-                    const { jsPDF } = window.jspdf;
-                    
-                    // Capture the canvas section
-                    const canvasSection = document.querySelector('.canvas-section');
-                    const canvasImage = await html2canvas(canvasSection, {
-                        scale: 2,
-                        backgroundColor: '#ffffff',
-                        logging: false,
-                        allowTaint: true,
-                        useCORS: true
-                    });
-                    
-                    // Capture the legend section
-                    const legendSection = document.querySelector('.legend-section');
-                    const legendImage = await html2canvas(legendSection, {
-                        scale: 2,
-                        backgroundColor: '#ffffff',
-                        logging: false
-                    });
-                    
-                    // Detect best orientation
-                    const canvasAspectRatio = canvasImage.width / canvasImage.height;
-                    const orientation = canvasAspectRatio > 1.2 ? 'landscape' : 'portrait';
-                    
-                    const pdf = new jsPDF({
-                        orientation: orientation,
-                        unit: 'mm',
-                        format: 'letter'
-                    });
-                    
-                    const pageWidth = pdf.internal.pageSize.getWidth();
-                    const pageHeight = pdf.internal.pageSize.getHeight();
-                    const margin = 10;
-                    
-                    const availableWidth = pageWidth - (2 * margin);
-                    const availableHeight = pageHeight - (2 * margin);
-                    
-                    const legendAspectRatio = legendImage.width / legendImage.height;
-                    
-                    if (orientation === 'landscape') {
-                        // Landscape: floor plan left, legend right
-                        const floorPlanWidth = availableWidth * 0.65;
-                        const legendWidth = availableWidth * 0.33;
-                        const gap = availableWidth * 0.02;
-                        
-                        let fpWidth = floorPlanWidth;
-                        let fpHeight = fpWidth / canvasAspectRatio;
-                        
-                        if (fpHeight > availableHeight) {
-                            fpHeight = availableHeight;
-                            fpWidth = fpHeight * canvasAspectRatio;
-                        }
-                        
-                        let lgWidth = legendWidth;
-                        let lgHeight = lgWidth / legendAspectRatio;
-                        
-                        if (lgHeight > availableHeight * 0.6) {
-                            lgHeight = availableHeight * 0.6;
-                            lgWidth = lgHeight * legendAspectRatio;
-                        }
-                        
-                        const fpX = margin;
-                        const fpY = margin + (availableHeight - fpHeight) / 2;
-                        
-                        const lgX = margin + floorPlanWidth + gap;
-                        const lgY = margin + (availableHeight - lgHeight) / 2;
-                        
-                        pdf.addImage(canvasImage.toDataURL('image/png'), 'PNG', fpX, fpY, fpWidth, fpHeight);
-                        pdf.addImage(legendImage.toDataURL('image/png'), 'PNG', lgX, lgY, lgWidth, lgHeight);
-                        
-                    } else {
-                        // Portrait: floor plan top, legend bottom
-                        const floorPlanHeight = availableHeight * 0.65;
-                        const legendHeight = availableHeight * 0.33;
-                        const gap = availableHeight * 0.02;
-                        
-                        let fpHeight = floorPlanHeight;
-                        let fpWidth = fpHeight * canvasAspectRatio;
-                        
-                        if (fpWidth > availableWidth) {
-                            fpWidth = availableWidth;
-                            fpHeight = fpWidth / canvasAspectRatio;
-                        }
-                        
-                        let lgHeight = legendHeight;
-                        let lgWidth = lgHeight * legendAspectRatio;
-                        
-                        if (lgWidth > availableWidth) {
-                            lgWidth = availableWidth;
-                            lgHeight = lgWidth / legendAspectRatio;
-                        }
-                        
-                        const fpX = margin + (availableWidth - fpWidth) / 2;
-                        const fpY = margin;
-                        
-                        const lgX = margin + (availableWidth - lgWidth) / 2;
-                        const lgY = margin + floorPlanHeight + gap;
-                        
-                        pdf.addImage(canvasImage.toDataURL('image/png'), 'PNG', fpX, fpY, fpWidth, fpHeight);
-                        pdf.addImage(legendImage.toDataURL('image/png'), 'PNG', lgX, lgY, lgWidth, lgHeight);
-                    }
-                    
-                    const timestamp = new Date().toISOString().slice(0, 10);
-                    const filename = `floor-plan-${timestamp}.pdf`;
-                    
-                    pdf.save(filename);
-                    console.log('PDF generated successfully:', filename);
-                    
-                } catch (error) {
-                    console.error('Error generating PDF:', error);
-                    alert('Error generating PDF: ' + error.message);
-                } finally {
-                    button.disabled = false;
-                    button.textContent = originalText;
-                }
-            }
+/**
+ * Cleans up any orphan vertices left from incomplete drawing operations
+ * This ensures no stray points remain on the canvas when switching modes
+ */
+function cleanupOrphanVertices() {
+    console.log('🧹 Cleaning up orphan vertices...');
+    
+    // Clear any current drawing path
+    if (AppState.currentPolygonPoints && AppState.currentPolygonPoints.length > 0) {
+        console.log(`🧹 Clearing ${AppState.currentPolygonPoints.length} orphan vertices from current drawing`);
+        AppState.currentPolygonPoints = [];
+        AppState.currentPolygonCounter = 0;
+    }
+    
+    // Reset drawing manager state if it exists
+    if (window.drawingManager) {
+        window.drawingManager.waitingForFirstVertex = true;
+        window.drawingManager.distanceInputSequence = [];
+        window.drawingManager.angleInputSequence = [];
+        
+        // Clear any active inputs
+        const distanceInput = document.getElementById('distanceDisplay');
+        const angleInput = document.getElementById('angleDisplay');
+        if (distanceInput) distanceInput.value = '0';
+        if (angleInput) angleInput.value = '0';
+    }
+    
+    // Clear helper points that depend on current drawing
+    if (AppState.helperPoints) {
+        AppState.helperPoints = [];
+    }
+    
+    // Update helper points to reflect the cleaned state
+    if (window.HelperPointManager && window.HelperPointManager.updateHelperPoints) {
+        window.HelperPointManager.updateHelperPoints();
+    }
+    
+    console.log('✅ Orphan vertices cleanup complete');
+}
+
+
+/**
+ * Draws a grid pattern across the entire canvas.
+ * This ensures the visual background matches the canvas's full dimensions.
+ */
+function drawGrid() {
+    const { ctx, canvas } = AppState;
+    if (!ctx || !canvas) return;
+
+    const gridSize = 40; // The spacing of the grid lines in pixels
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = '#dcdcdc'; // A light gray for the grid lines
+    ctx.lineWidth = 1;
+
+    // Draw vertical lines across the entire canvas width
+    for (let x = 0; x <= canvas.width; x += gridSize) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+    }
+
+    // Draw horizontal lines across the entire canvas height
+    for (let y = 0; y <= canvas.height; y += gridSize) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+    }
+
+    ctx.stroke();
+    ctx.restore();
+}
+
+// Global functions for HTML onclick handlers
+window.showpallets = showpallets;
+window.toggleLegend = toggleLegend;
+
+// Mode switching functions
+window.switchToPlacementMode = switchToPlacementMode;
+window.switchToDrawingMode = switchToDrawingMode;
+
+// Create global saveManager instance for import/export
+let globalSaveManager;
+
+// --- Main Application Setup ---
+// src/main.js
+
+// src/main.js
+
+document.addEventListener('DOMContentLoaded', () => {
+    // --- Standard Initialization (Unchanged) ---
+    const splitterManager = new SplitterManager();
+    splitterManager.init();
+
+    globalSaveManager = new SaveManager();
+    globalSaveManager.init();
+    const photoManager = new PhotoManager();
+    photoManager.init();  
+    window.photoManager = photoManager;
+
+
+window.updatePhotoCaption = (photoId, newCaption) => {
+        if (window.photoManager && typeof window.photoManager.updatePhotoCaption === 'function') {
+            return window.photoManager.updatePhotoCaption(photoId, newCaption);
+        } else {
+            console.error('PhotoManager not available');
+            return false;
+        }
+    };
+
+
+    
+    
+    console.log("App loaded - initializing modular architecture");
+
+    const canvas = document.getElementById('drawingCanvas');
+    CanvasManager.init(canvas);
+    
+    AppState.on('canvas:redraw:background', drawGrid);
+
+    const drawingManager = new DrawingManager();
+    window.drawingManager = drawingManager;
+
+    HelperPointManager.updateHelperPoints();
+    console.log('🔄 Initial helper point update called');
+
+    const areaManager = new AreaManager();
+    areaManager.init();
+    
+    const previewManager = new PreviewManager();
+    
+    initSketchModule();
+
+    initializeAppControls(previewManager, globalSaveManager);
+    setupKeyboardShortcuts();
+
+    CanvasManager.redraw();
+    CanvasManager.saveAction();
+
+    console.log("App initialization complete.");
+
+    // --- NEW, ROBUST STARTUP LOGIC ---
+    // This block replaces the old calls to loadSketchFromURL and checkAndPromptNewSketch.
+    const urlParams = new URLSearchParams(window.location.search);
+    const isImporting = urlParams.get('import') === 'true';
+    const isLoadingSketch = urlParams.has('loadSketch');
+
+
+    if (isImporting) {
+        // SCENARIO 1: IMPORTING
+        // Don't show the "new sketch" modal, just open the file dialog.
+        console.log('Startup Mode: Importing Sketch');
+        const fileInput = document.getElementById('importFile');
+        if (fileInput) {
+            setTimeout(() => fileInput.click(), 100);
+        }
+
+    } else if (isLoadingSketch) {
+        // SCENARIO 2: LOADING SAVED SKETCH
+        // Don't show the "new sketch" modal, just load the data.
+        console.log('Startup Mode: Loading Sketch from DB');
+        globalSaveManager.loadSketchFromURL();
+
+    } else {
+        // SCENARIO 3: NEW SKETCH
+        // If not importing and not loading, it's a new sketch. Show the modal.
+        console.log('Startup Mode: New Sketch');
+        checkAndPromptNewSketch();
+    }
+    // --- END NEW LOGIC ---
+});
+
+
+// src/main.js
+
+// src/main.js
+
+function checkAndPromptNewSketch() {
+    // This function is now only called when we are certain it's a new sketch.
+    // The logic to decide WHEN to call it has been moved.
+    setTimeout(() => {
+        console.log('New sketch detected - showing save modal');
+        
+        const nameInput = document.getElementById('sketchNameInput');
+        if (nameInput) {
+            nameInput.value = '';
+            nameInput.placeholder = 'e.g., 123 Main Street';
+        }
+        
+        const exteriorCheckbox = document.getElementById('exteriorOnlyCheckbox');
+        const fullInspectionCheckbox = document.getElementById('fullInspectionCheckbox');
+        const fhaCheckbox = document.getElementById('fhaCheckbox');
+        
+        if (exteriorCheckbox) exteriorCheckbox.checked = false;
+        if (fullInspectionCheckbox) fullInspectionCheckbox.checked = false;
+        if (fhaCheckbox) fhaCheckbox.checked = false;
+        
+        const saveModal = document.getElementById('saveModal');
+        if (saveModal) {
+            saveModal.classList.remove('hidden');
+            setTimeout(() => {
+                if (nameInput) nameInput.focus();
+            }, 100);
+        }
+    }, 500);
+}
+
+
+
+
+
+function initializeAppControls(previewManager, saveManager) {
+    // Palette button handlers
+    const paletteButtons = document.querySelectorAll('[data-palette]');
+    paletteButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            const paletteId = e.target.getAttribute('data-palette');
             
-            // Your existing window.onload code goes here...
-        </script>
+            if (paletteId === 'photosPalette') {
+                // Toggle photo mode
+                if (AppState.currentMode === 'photos') {
+                    switchToPlacementMode();
+                } else {
+                    switchToPhotosMode();
+                }
+            } else {
+                // Any other palette button exits photo mode and goes to placement mode
+                switchToPlacementMode();
+            }
+
+            showpallets(paletteId);
+            paletteButtons.forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+        });
+    });
+
+    // Listen for custom app events
+    AppState.on('app:exitDrawingMode', switchToPlacementMode);
+    AppState.on('app:switchToDrawingMode', switchToDrawingMode);
+
+    // Edit button now cycles through three states and exits photo mode
+    document.getElementById('editBtn').addEventListener('click', () => {
+        // Exit photo mode first if we're in it
+        if (AppState.currentMode === 'photos') {
+            switchToPlacementMode();
+        }
+        cycleEditMode();
+    });
+    
+    document.getElementById('legendToggleBtn').addEventListener('click', toggleLegend);
+    const undoBtn = document.getElementById('undo');
+    const redoBtn = document.getElementById('redo');
+    if (undoBtn) undoBtn.addEventListener('click', (e) => { e.preventDefault(); CanvasManager.undo(); });
+    if (redoBtn) redoBtn.addEventListener('click', (e) => { e.preventDefault(); CanvasManager.redo(); });
+
+    // Drawing mode button handler - exits photo mode
+    const startBtn = document.getElementById('startBtn');
+    if (startBtn) {
+        startBtn.addEventListener('click', () => {
+            if (AppState.currentMode === 'drawing') {
+                switchToPlacementMode();
+            } else {
+                // Exit photo mode first if we're in it
+                if (AppState.currentMode === 'photos') {
+                    switchToPlacementMode();
+                }
+                switchToDrawingMode();
+            }
+        });
+    }
+
+
+function exportSketchToJSON() {
+    // Use the global SaveManager instance
+    globalSaveManager.exportSketchToJSON();
+}
+
+function importSketchFromJSON(file) {
+    // FIXED: Use the global SaveManager instance that handles photos
+    globalSaveManager.importSketchFromJSON(file);
+}
+
+    // --- Export and Import Handlers ---
+    const exportBtn = document.querySelector('.export-dropdown > button');
+    const exportMenu = document.getElementById('exportMenu');
+    const fileInput = document.getElementById('importFile');
+    const allFinishButtons = Array.from(document.querySelectorAll('.control-btn.finish-btn'));
+    const importBtn = allFinishButtons.find(btn => btn.textContent.trim() === 'Import');
+
+    if (exportBtn && exportMenu) {
+        exportBtn.addEventListener('click', () => exportMenu.classList.toggle('hidden'));
+        exportMenu.addEventListener('click', (e) => {
+            if (e.target.id === 'saveAsBtn') {
+                saveManager.promptForNewName();
+            } else if (e.target.textContent === 'JSON Data') {
+                exportSketchToJSON();
+            }
+            exportMenu.classList.add('hidden');
+        });
+    }
+
+    if (importBtn) {
+        importBtn.addEventListener('click', () => fileInput && fileInput.click());
+    }
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) importSketchFromJSON(file);
+            e.target.value = null;
+        });
+    }
+
+    // --- Preview Button Handler ---
+    const previewBtn = allFinishButtons.find(btn => btn.textContent.trim() === 'Preview');
+    if (previewBtn && previewManager) {
+        previewBtn.addEventListener('click', () => {
+            previewManager.showPreview();
+        });
+    }
+    
+    // --- Save Button Handler ---
+    const saveBtn = document.getElementById('saveBtn');
+    if (saveBtn && saveManager) {
+        saveBtn.addEventListener('click', () => {
+            saveManager.promptOrSave();
+        });
+    }
+}
+
+
+
+// --- NEW: Three-State Edit Mode Cycling Logic ---
+
+function cycleEditMode() {
+    // Sequence: READY -> EDIT LABELS -> EDIT LINES -> EDIT AREAS -> READY
+    if (AppState.currentMode !== 'edit') {
+        switchToEditLabelsMode();
+    } else {
+        if (AppState.editSubMode === 'labels') {
+            switchToEditLinesMode();  // NEW: Go to lines mode
+        } else if (AppState.editSubMode === 'lines') {  // NEW: From lines go to areas
+            switchToEditAreasMode();
+        } else { // From 'areas' or any other weird state, go back to ready.
+            switchToPlacementMode();
+        }
+    }
+}
+
+function switchToEditLabelsMode() {
+    // Clean up orphan vertices FIRST
+    cleanupOrphanVertices();
+    
+    console.log('Switching to Edit Labels mode');
+    activateSketchListeners(); 
+    AppState.currentMode = 'edit';
+    AppState.editSubMode = 'labels'; 
+
+    resetAllModeButtons();
+    const editBtn = document.getElementById('editBtn');
+    editBtn.classList.add('active');
+    editBtn.textContent = 'Edit Lines';  // UPDATED: Next mode is lines
+
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'EDIT LABELS';
+    modeIndicator.className = 'mode-indicator edit-mode';
+
+    AppState.emit('mode:changed', { mode: 'edit', subMode: 'labels' });
+    AppState.emit('mode:editToggled', { isEditMode: true, subMode: 'labels' });
+    CanvasManager.redraw();
+}
+
+function switchToEditLinesMode() {
+    // Clean up orphan vertices FIRST
+    cleanupOrphanVertices();
+    
+    console.log('Switching to Edit Lines mode');
+    activateSketchListeners();
+    AppState.currentMode = 'edit';
+    AppState.editSubMode = 'lines';
+
+    resetAllModeButtons();
+    const editBtn = document.getElementById('editBtn');
+    editBtn.classList.add('active');
+    editBtn.textContent = 'Edit Areas';  // Next mode is areas
+
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'EDIT LINES';
+    modeIndicator.className = 'mode-indicator edit-mode';
+
+    AppState.emit('mode:changed', { mode: 'edit', subMode: 'lines' });
+    AppState.emit('mode:editToggled', { isEditMode: true, subMode: 'lines' });
+    setTimeout(() => console.log('💡 EDIT LINES: Click on line icons to edit/delete edges. Use directional pad to move selected lines!'), 100);
+    CanvasManager.redraw();
+}
+
+function switchToEditAreasMode() {
+    // Clean up orphan vertices FIRST
+    cleanupOrphanVertices();
+    
+    console.log('Switching to Edit Areas mode');
+    activateSketchListeners();
+    AppState.currentMode = 'edit';
+    AppState.editSubMode = 'areas';
+
+    resetAllModeButtons();
+    const editBtn = document.getElementById('editBtn');
+    editBtn.classList.add('active');
+    editBtn.textContent = 'Done';
+
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'EDIT AREAS';
+    modeIndicator.className = 'mode-indicator edit-mode';
+
+    AppState.emit('mode:changed', { mode: 'edit', subMode: 'areas' });
+    AppState.emit('mode:editToggled', { isEditMode: true, subMode: 'areas' });  // UPDATED: Include subMode
+    setTimeout(() => console.log('💡 EDIT AREAS: Click and drag areas to move them, or click the pencil icon to edit properties!'), 100);
+    CanvasManager.redraw();
+}
+ 
+ 
+
+ 
+
+// --- Standard Mode Switching Functions (Modified) ---
+function switchToPhotosMode() {
+    // Clean up orphan vertices FIRST
+    cleanupOrphanVertices();
+    
+    // DEBUG: Log the start of the mode switch
+    console.log('DEBUG: Attempting to switch to Photos Mode. Current mode is:', AppState.currentMode);
+
+    // DEACTIVATING LISTENERS IS DISABLED TO ALLOW PANNING IN PHOTO MODE.
+    // deactivateSketchListeners(); // This line is commented out to allow panning.
+
+    AppState.currentMode = 'photos';
+    AppState.editSubMode = null;
+    resetAllModeButtons();
+
+    const photosBtn = document.getElementById('photosBtn');
+    if (photosBtn) {
+        photosBtn.classList.add('active');
+    }
+
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'PHOTOS';
+    modeIndicator.className = 'mode-indicator photos-mode';
+
+    AppState.emit('mode:changed', { mode: 'photos' });
+    AppState.emit('mode:editToggled', { isEditMode: false });
+    CanvasManager.redraw();
+
+    // DEBUG: Confirm the mode switch is complete
+    console.log('DEBUG: Mode switched. AppState.currentMode is now:', AppState.currentMode);
+}
+
+function switchToPlacementMode() {
+    // Clean up orphan vertices FIRST
+    cleanupOrphanVertices();
+    
+    console.log('Switching to placement mode (READY) from:', AppState.currentMode);
+    activateSketchListeners();
+    AppState.currentMode = 'placement';
+    AppState.editSubMode = null; // Reset sub-mode
+    resetAllModeButtons();
+    
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'READY';
+    modeIndicator.className = 'mode-indicator';
+    
+    AppState.emit('mode:changed', { mode: 'placement' });
+    AppState.emit('mode:editToggled', { isEditMode: false, subMode: null });  // UPDATED: Include subMode
+    CanvasManager.redraw();
+} 
+
+ function switchToDrawingMode() {
+    // Clean up orphan vertices FIRST
+    cleanupOrphanVertices();
+    
+    console.log('Switching to drawing mode from:', AppState.currentMode);
+    AppState.currentMode = 'drawing';
+    AppState.editSubMode = null;
+    
+    resetAllModeButtons();
+    const startBtn = document.getElementById('startBtn');
+    if (startBtn) {
+        startBtn.textContent = 'Stop';
+        startBtn.classList.add('active');
+    }
+    
+    const modeIndicator = document.getElementById('modeIndicator');
+    modeIndicator.textContent = 'DRAWING';
+    modeIndicator.className = 'mode-indicator drawing-mode';
+    
+    document.querySelectorAll('.one-of-bottom-pallets').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('[data-palette]').forEach(btn => btn.classList.remove('active'));
+    const numbersBtn = document.getElementById('numbersBtn');
+    const drawPalette = document.getElementById('drawPalette');
+    if (numbersBtn && drawPalette) {
+        numbersBtn.classList.add('active');
+        drawPalette.classList.remove('hidden');
+    }
+    
+    AppState.emit('mode:changed', { mode: 'drawing' });
+    AppState.emit('mode:editToggled', { isEditMode: false });
+    CanvasManager.redraw();
+}
+
+function resetAllModeButtons() {
+    const startBtn = document.getElementById('startBtn');
+    if (startBtn) {
+        startBtn.textContent = 'Start';
+        startBtn.classList.remove('active');
+    }
+    
+    const editBtn = document.getElementById('editBtn');
+    if (editBtn) {
+        editBtn.textContent = 'Edit'; // Reset text
+        editBtn.classList.remove('active');
+    }
+    
+    // Reset all palette buttons to inactive
+    const paletteButtons = document.querySelectorAll('[data-palette]');
+    paletteButtons.forEach(btn => btn.classList.remove('active'));
+}
+
+
+
+
+// --- Utility Functions ---
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', (event) => {
+        const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+        const targetTagName = event.target.tagName.toLowerCase();
+        if (targetTagName === 'input' || targetTagName === 'textarea') return;
+        if (isCtrlOrCmd && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+            event.preventDefault();
+            CanvasManager.undo();
+        }
+        if (isCtrlOrCmd && ((event.key.toLowerCase() === 'z' && event.shiftKey) || event.key.toLowerCase() === 'y')) {
+            event.preventDefault();
+            CanvasManager.redo();
+        }
+    });
+}
+
+
+window.addEventListener('DOMContentLoaded', () => {
+    // Clear any existing helper points
+    if (typeof AppState !== 'undefined') {
+        AppState.helperPoints = [];
+        AppState.permanentHelperPoints = [];
+        console.log('Cleared all helper points on startup');
+    }
+
+    window.AppState = AppState;
+    window.HelperPointManager = HelperPointManager;
+    
+    // Clear any existing helper points on startup
+    AppState.helperPoints = [];
+    AppState.permanentHelperPoints = [];
+    console.log('🧹 Cleared all helper points on startup');
+
+});
+ 
+ 
+// REMOVED: Old duplicate import function that didn't handle photos

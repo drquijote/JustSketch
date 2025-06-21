@@ -23,41 +23,50 @@ import {
  * Cleans up any orphan vertices left from incomplete drawing operations
  * This ensures no stray points remain on the canvas when switching modes
  */
+/**
+ * Cleans up any single, orphan vertices left from incomplete drawing operations.
+ * This function will leave multi-point paths intact when switching modes.
+ */
 function cleanupOrphanVertices() {
-    console.log('🧹 Cleaning up orphan vertices...');
-    
-    // Clear any current drawing path
-    if (AppState.currentPolygonPoints && AppState.currentPolygonPoints.length > 0) {
-        console.log(`🧹 Clearing ${AppState.currentPolygonPoints.length} orphan vertices from current drawing`);
+    console.log('🧹 Checking for orphan vertices...');
+
+    // Only perform cleanup if there is exactly one, unconnected "orphan" vertex.
+    // Paths with 2 or more vertices will be left alone.
+    if (AppState.currentPolygonPoints && AppState.currentPolygonPoints.length === 1) {
+        console.log(`🧹 Clearing 1 orphan vertex from current drawing`);
+
+        // --- Start of cleanup logic ---
         AppState.currentPolygonPoints = [];
         AppState.currentPolygonCounter = 0;
+
+        if (window.drawingManager) {
+            window.drawingManager.waitingForFirstVertex = true;
+            window.drawingManager.distanceInputSequence = [];
+            window.drawingManager.angleInputSequence = [];
+
+            const distanceInput = document.getElementById('distanceDisplay');
+            const angleInput = document.getElementById('angleDisplay');
+            if (distanceInput) distanceInput.value = '0';
+            if (angleInput) angleInput.value = '0';
+        }
+
+        if (AppState.helperPoints) {
+            AppState.helperPoints = [];
+        }
+
+        if (window.HelperPointManager && window.HelperPointManager.updateHelperPoints) {
+            window.HelperPointManager.updateHelperPoints();
+        }
+
+        console.log('✅ Orphan vertex cleanup complete');
+        // --- End of cleanup logic ---
+
+    } else if (AppState.currentPolygonPoints && AppState.currentPolygonPoints.length > 1) {
+        console.log('🧹 Path with multiple points found. Leaving it intact.');
     }
-    
-    // Reset drawing manager state if it exists
-    if (window.drawingManager) {
-        window.drawingManager.waitingForFirstVertex = true;
-        window.drawingManager.distanceInputSequence = [];
-        window.drawingManager.angleInputSequence = [];
-        
-        // Clear any active inputs
-        const distanceInput = document.getElementById('distanceDisplay');
-        const angleInput = document.getElementById('angleDisplay');
-        if (distanceInput) distanceInput.value = '0';
-        if (angleInput) angleInput.value = '0';
-    }
-    
-    // Clear helper points that depend on current drawing
-    if (AppState.helperPoints) {
-        AppState.helperPoints = [];
-    }
-    
-    // Update helper points to reflect the cleaned state
-    if (window.HelperPointManager && window.HelperPointManager.updateHelperPoints) {
-        window.HelperPointManager.updateHelperPoints();
-    }
-    
-    console.log('✅ Orphan vertices cleanup complete');
 }
+
+
 
 
 /**
@@ -277,10 +286,33 @@ function initializeAppControls(previewManager, saveManager) {
     const startBtn = document.getElementById('startBtn');
     if (startBtn) {
         startBtn.addEventListener('click', () => {
+            // If we are currently in drawing mode...
             if (AppState.currentMode === 'drawing') {
-                switchToPlacementMode();
+                // If there's an active path, commit it as a line and stay in drawing mode.
+                if (AppState.currentPolygonPoints && AppState.currentPolygonPoints.length > 0) {
+                    console.log('Committing current path as a line and preparing for a new one.');
+                    // Move the current path to the `drawnLines` array so it remains visible.
+                    AppState.drawnLines.push({
+                        id: Date.now(),
+                        path: [...AppState.currentPolygonPoints]
+                    });
+                    
+                    // Clear the current path to allow a new one to start.
+                    AppState.currentPolygonPoints = [];
+                    AppState.currentPolygonCounter = 0;
+                    window.drawingManager.waitingForFirstVertex = true;
+                    
+                    // Redraw to show the committed line.
+                    CanvasManager.redraw();
+                    CanvasManager.saveAction();
+
+                } else {
+                    // If there's no active path, exit to placement mode as before.
+                    switchToPlacementMode();
+                }
+
             } else {
-                // Exit photo mode first if we're in it
+                // If not in drawing mode, enter it.
                 if (AppState.currentMode === 'photos') {
                     switchToPlacementMode();
                 }

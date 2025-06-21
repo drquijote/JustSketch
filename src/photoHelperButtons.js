@@ -195,13 +195,20 @@ class PhotoHelperButtons {
         return [...polygons].sort((a, b) => extractNumber(a.label) - extractNumber(b.label))[0];
     }
     
-    // *** UPDATED: Enhanced formatButtonLabel with ABBREVIATED button text for Subject Floor areas ***
+    // *** UPDATED: Enhanced formatButtonLabel with ABBREVIATED button text for all area types ***
   formatButtonLabel(pictureType, polygon) {
         // Get the area name (polygon label)
         const areaName = polygon ? polygon.label : '';
         const isFloorArea = areaName && areaName.toLowerCase().includes('floor');
         const isADUArea = areaName && areaName.toLowerCase().includes('adu');
         const isUNITArea = areaName && areaName.toLowerCase().includes('unit');
+        const isPatioArea = areaName && areaName.toLowerCase().includes('patio');
+        const isPorchArea = areaName && areaName.toLowerCase().includes('porch');
+        const isDeckArea = areaName && areaName.toLowerCase().includes('deck');
+        const isGarageArea = areaName && areaName.toLowerCase().includes('garage');
+        const isCarportArea = areaName && areaName.toLowerCase().includes('carport');
+        const isStorageArea = areaName && areaName.toLowerCase().includes('storage');
+        const isUtilityArea = areaName && areaName.toLowerCase().includes('utility');
         
         // *** NEW: For Floor areas, use ABBREVIATED labels for buttons ***
         if (isFloorArea) {
@@ -320,16 +327,173 @@ class PhotoHelperButtons {
             }
         }
         
-        // For non-Floor, non-ADU, non-UNIT areas, use original formatting
+        // *** NEW: For PATIO areas (Covered Patio 1, Uncovered Patio 2, etc.) ***
+        if (isPatioArea) {
+            // Extract the area name and number: "Covered Patio 2" -> "Patio 2"
+            const patioMatch = areaName.match(/(covered|uncovered)?\s*patio\s*(\d+)?/i);
+            let patioPrefix = 'Patio';
+            if (patioMatch && patioMatch[2]) {
+                patioPrefix = `Patio ${patioMatch[2]}`;
+            } else if (patioMatch) {
+                patioPrefix = 'Patio 1'; // Default to 1 if no number found
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${patioPrefix} Front`;
+                case 'Interior':
+                    return `${patioPrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${patioPrefix} ${typeLabel}`;
+            }
+        }
+        
+        // *** NEW: For PORCH areas (Covered Porch 1, Uncovered Porch 2, etc.) ***
+        if (isPorchArea) {
+            // Extract the area name and number: "Covered Porch 2" -> "Porch 2"
+            const porchMatch = areaName.match(/(covered|uncovered)?\s*porch\s*(\d+)?/i);
+            let porchPrefix = 'Porch';
+            if (porchMatch && porchMatch[2]) {
+                porchPrefix = `Porch ${porchMatch[2]}`;
+            } else if (porchMatch) {
+                porchPrefix = 'Porch 1'; // Default to 1 if no number found
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${porchPrefix} Front`;
+                case 'Interior':
+                    return `${porchPrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${porchPrefix} ${typeLabel}`;
+            }
+        }
+        
+        // *** NEW: For DECK areas (Covered Deck 1, Uncovered Deck 2, etc.) ***
+        if (isDeckArea) {
+            // Extract the area name and number: "Covered Deck 2" -> "Deck 2"
+            const deckMatch = areaName.match(/(covered|uncovered)?\s*deck\s*(\d+)?/i);
+            let deckPrefix = 'Deck';
+            if (deckMatch && deckMatch[2]) {
+                deckPrefix = `Deck ${deckMatch[2]}`;
+            } else if (deckMatch) {
+                deckPrefix = 'Deck 1'; // Default to 1 if no number found
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${deckPrefix} Front`;
+                case 'Interior':
+                    return `${deckPrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${deckPrefix} ${typeLabel}`;
+            }
+        }
+        
+        // *** NEW: For GARAGE areas ***
+        if (isGarageArea) {
+            const garageMatch = areaName.match(/garage\s*(\d+)?/i);
+            let garagePrefix = 'Garage';
+            if (garageMatch && garageMatch[1]) {
+                garagePrefix = `Garage ${garageMatch[1]}`;
+            } else if (garageMatch) {
+                garagePrefix = 'Garage 1';
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${garagePrefix} Front`;
+                case 'Interior':
+                    return `${garagePrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${garagePrefix} ${typeLabel}`;
+            }
+        }
+        
+        // *** NEW: For CARPORT areas ***
+        if (isCarportArea) {
+            const carportMatch = areaName.match(/carport\s*(\d+)?/i);
+            let carportPrefix = 'Carport';
+            if (carportMatch && carportMatch[1]) {
+                carportPrefix = `Carport ${carportMatch[1]}`;
+            } else if (carportMatch) {
+                carportPrefix = 'Carport 1';
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${carportPrefix} Front`;
+                case 'Interior':
+                    return `${carportPrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${carportPrefix} ${typeLabel}`;
+            }
+        }
+        
+        // *** NEW: For STORAGE areas ***
+        if (isStorageArea) {
+            const storageMatch = areaName.match(/storage\s*(\d+)?/i);
+            let storagePrefix = 'Storage';
+            if (storageMatch && storageMatch[1]) {
+                storagePrefix = `Storage ${storageMatch[1]}`;
+            } else if (storageMatch) {
+                storagePrefix = 'Storage 1';
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${storagePrefix} Front`;
+                case 'Interior':
+                    return `${storagePrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${storagePrefix} ${typeLabel}`;
+            }
+        }
+        
+        // *** NEW: For UTILITY areas ***
+        if (isUtilityArea) {
+            const utilityMatch = areaName.match(/utility\s*(\d+)?/i);
+            let utilityPrefix = 'Utility';
+            if (utilityMatch && utilityMatch[1]) {
+                utilityPrefix = `Utility ${utilityMatch[1]}`;
+            } else if (utilityMatch) {
+                utilityPrefix = 'Utility 1';
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${utilityPrefix} Front`;
+                case 'Interior':
+                    return `${utilityPrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${utilityPrefix} ${typeLabel}`;
+            }
+        }
+        
+        // For all other areas, use original formatting
         return pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
     }
-    // *** NEW: Separate method for FULL photo labels (used when photos are taken) ***
+    // *** UPDATED: Separate method for FULL photo labels (used when photos are taken) ***
     getFullPhotoLabel(pictureType, polygon) {
         // Get the area name (polygon label)
         const areaName = polygon ? polygon.label : '';
         const isFloorArea = areaName && areaName.toLowerCase().includes('floor');
         const isADUArea = areaName && areaName.toLowerCase().includes('adu');
         const isUNITArea = areaName && areaName.toLowerCase().includes('unit');
+        const isPatioArea = areaName && areaName.toLowerCase().includes('patio');
+        const isPorchArea = areaName && areaName.toLowerCase().includes('porch');
+        const isDeckArea = areaName && areaName.toLowerCase().includes('deck');
+        const isGarageArea = areaName && areaName.toLowerCase().includes('garage');
+        const isCarportArea = areaName && areaName.toLowerCase().includes('carport');
+        const isStorageArea = areaName && areaName.toLowerCase().includes('storage');
+        const isUtilityArea = areaName && areaName.toLowerCase().includes('utility');
         
         // For Floor areas, return FULL labels for actual photos
         if (isFloorArea) {
@@ -448,7 +612,157 @@ class PhotoHelperButtons {
             }
         }
         
-        // For non-Floor, non-ADU, non-UNIT areas, use original formatting
+        // *** NEW: For PATIO areas - FULL labels for photos ***
+        if (isPatioArea) {
+            // Extract the area name and number: "Covered Patio 2" -> "Patio 2"
+            const patioMatch = areaName.match(/(covered|uncovered)?\s*patio\s*(\d+)?/i);
+            let patioPrefix = 'Patio';
+            if (patioMatch && patioMatch[2]) {
+                patioPrefix = `Patio ${patioMatch[2]}`;
+            } else if (patioMatch) {
+                patioPrefix = 'Patio 1'; // Default to 1 if no number found
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${patioPrefix} Exterior Front`;
+                case 'Interior':
+                    return `${patioPrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${patioPrefix} ${typeLabel}`;
+            }
+        }
+        
+        // *** NEW: For PORCH areas - FULL labels for photos ***
+        if (isPorchArea) {
+            // Extract the area name and number: "Covered Porch 2" -> "Porch 2"
+            const porchMatch = areaName.match(/(covered|uncovered)?\s*porch\s*(\d+)?/i);
+            let porchPrefix = 'Porch';
+            if (porchMatch && porchMatch[2]) {
+                porchPrefix = `Porch ${porchMatch[2]}`;
+            } else if (porchMatch) {
+                porchPrefix = 'Porch 1'; // Default to 1 if no number found
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${porchPrefix} Exterior Front`;
+                case 'Interior':
+                    return `${porchPrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${porchPrefix} ${typeLabel}`;
+            }
+        }
+        
+        // *** NEW: For DECK areas - FULL labels for photos ***
+        if (isDeckArea) {
+            // Extract the area name and number: "Covered Deck 2" -> "Deck 2"
+            const deckMatch = areaName.match(/(covered|uncovered)?\s*deck\s*(\d+)?/i);
+            let deckPrefix = 'Deck';
+            if (deckMatch && deckMatch[2]) {
+                deckPrefix = `Deck ${deckMatch[2]}`;
+            } else if (deckMatch) {
+                deckPrefix = 'Deck 1'; // Default to 1 if no number found
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${deckPrefix} Exterior Front`;
+                case 'Interior':
+                    return `${deckPrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${deckPrefix} ${typeLabel}`;
+            }
+        }
+        
+        // *** NEW: For GARAGE areas - FULL labels for photos ***
+        if (isGarageArea) {
+            const garageMatch = areaName.match(/garage\s*(\d+)?/i);
+            let garagePrefix = 'Garage';
+            if (garageMatch && garageMatch[1]) {
+                garagePrefix = `Garage ${garageMatch[1]}`;
+            } else if (garageMatch) {
+                garagePrefix = 'Garage 1';
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${garagePrefix} Exterior Front`;
+                case 'Interior':
+                    return `${garagePrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${garagePrefix} ${typeLabel}`;
+            }
+        }
+        
+        // *** NEW: For CARPORT areas - FULL labels for photos ***
+        if (isCarportArea) {
+            const carportMatch = areaName.match(/carport\s*(\d+)?/i);
+            let carportPrefix = 'Carport';
+            if (carportMatch && carportMatch[1]) {
+                carportPrefix = `Carport ${carportMatch[1]}`;
+            } else if (carportMatch) {
+                carportPrefix = 'Carport 1';
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${carportPrefix} Exterior Front`;
+                case 'Interior':
+                    return `${carportPrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${carportPrefix} ${typeLabel}`;
+            }
+        }
+        
+        // *** NEW: For STORAGE areas - FULL labels for photos ***
+        if (isStorageArea) {
+            const storageMatch = areaName.match(/storage\s*(\d+)?/i);
+            let storagePrefix = 'Storage';
+            if (storageMatch && storageMatch[1]) {
+                storagePrefix = `Storage ${storageMatch[1]}`;
+            } else if (storageMatch) {
+                storagePrefix = 'Storage 1';
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${storagePrefix} Exterior Front`;
+                case 'Interior':
+                    return `${storagePrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${storagePrefix} ${typeLabel}`;
+            }
+        }
+        
+        // *** NEW: For UTILITY areas - FULL labels for photos ***
+        if (isUtilityArea) {
+            const utilityMatch = areaName.match(/utility\s*(\d+)?/i);
+            let utilityPrefix = 'Utility';
+            if (utilityMatch && utilityMatch[1]) {
+                utilityPrefix = `Utility ${utilityMatch[1]}`;
+            } else if (utilityMatch) {
+                utilityPrefix = 'Utility 1';
+            }
+            
+            switch (pictureType) {
+                case 'Front':
+                    return `${utilityPrefix} Exterior Front`;
+                case 'Interior':
+                    return `${utilityPrefix} Interior`;
+                default:
+                    const typeLabel = pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+                    return `${utilityPrefix} ${typeLabel}`;
+            }
+        }
+        
+        // For all other areas, use original formatting
         return pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
     }
 
@@ -529,7 +843,7 @@ class PhotoHelperButtons {
             // Check if this polygon could be the source of this photo
             let couldMatch = false;
             
-            // For Floor areas
+            // For Floor areas - check for "subject" content
             if (polygonLabel.includes('floor') && contentLower.includes('subject')) {
                 couldMatch = true;
             }
@@ -541,18 +855,39 @@ class PhotoHelperButtons {
             else if (polygonLabel.includes('unit') && contentLower.includes('unit')) {
                 couldMatch = true;
             }
-            // For Covered Patio areas
-            else if (polygonLabel.includes('patio') && !contentLower.includes('subject') && !contentLower.includes('adu') && !contentLower.includes('unit')) {
+            // For Patio areas - check for patio content (not subject/adu/unit)
+            else if (polygonLabel.includes('patio') && contentLower.includes('patio') && 
+                     !contentLower.includes('subject') && !contentLower.includes('adu') && !contentLower.includes('unit')) {
                 couldMatch = true;
             }
-            // For other specific area types
-            else if (polygonLabel.includes('garage') && contentLower.includes('garage')) {
+            // For Porch areas - check for porch content (not subject/adu/unit)
+            else if (polygonLabel.includes('porch') && contentLower.includes('porch') && 
+                     !contentLower.includes('subject') && !contentLower.includes('adu') && !contentLower.includes('unit')) {
                 couldMatch = true;
             }
-            else if (polygonLabel.includes('deck') && contentLower.includes('deck')) {
+            // For Deck areas - check for deck content (not subject/adu/unit)
+            else if (polygonLabel.includes('deck') && contentLower.includes('deck') && 
+                     !contentLower.includes('subject') && !contentLower.includes('adu') && !contentLower.includes('unit')) {
                 couldMatch = true;
             }
-            else if (polygonLabel.includes('porch') && contentLower.includes('porch')) {
+            // For Garage areas
+            else if (polygonLabel.includes('garage') && contentLower.includes('garage') && 
+                     !contentLower.includes('subject') && !contentLower.includes('adu') && !contentLower.includes('unit')) {
+                couldMatch = true;
+            }
+            // For Carport areas
+            else if (polygonLabel.includes('carport') && contentLower.includes('carport') && 
+                     !contentLower.includes('subject') && !contentLower.includes('adu') && !contentLower.includes('unit')) {
+                couldMatch = true;
+            }
+            // For Storage areas
+            else if (polygonLabel.includes('storage') && contentLower.includes('storage') && 
+                     !contentLower.includes('subject') && !contentLower.includes('adu') && !contentLower.includes('unit')) {
+                couldMatch = true;
+            }
+            // For Utility areas
+            else if (polygonLabel.includes('utility') && contentLower.includes('utility') && 
+                     !contentLower.includes('subject') && !contentLower.includes('adu') && !contentLower.includes('unit')) {
                 couldMatch = true;
             }
             

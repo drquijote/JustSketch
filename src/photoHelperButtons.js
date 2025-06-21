@@ -452,34 +452,20 @@ class PhotoHelperButtons {
         return pictureType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
     }
 
-    // *** NEW: Robust Photo Tracking System ***
+    // *** FIXED: Robust Photo Tracking System ***
 
     /**
-     * Generate a stable signature for photo tracking that survives ID changes
-     * Uses area type + number + photo type instead of polygon ID
+     * FIXED: Generate a stable signature for photo tracking that survives ID changes
+     * Uses polygon ID + polygon label + photo type for unique identification
      */
     generatePhotoSignature(polygon, pictureType) {
         if (!polygon || !polygon.label) return null;
         
-        const label = polygon.label.toLowerCase();
-        let areaSignature = '';
+        // Use polygon ID + sanitized label + picture type for truly unique signatures
+        const sanitizedLabel = polygon.label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        const polygonId = polygon.id;
         
-        // Extract area type and number for consistent signatures
-        if (label.includes('floor')) {
-            const floorMatch = label.match(/floor\s*(\d+)/i);
-            areaSignature = floorMatch ? `floor_${floorMatch[1]}` : 'floor_1';
-        } else if (label.includes('adu')) {
-            const aduMatch = label.match(/adu\s*[-\s]*(\d+)/i);
-            areaSignature = aduMatch ? `adu_${aduMatch[1]}` : 'adu_1';
-        } else if (label.includes('unit')) {
-            const unitMatch = label.match(/unit\s*[-\s]*(\d+)/i);
-            areaSignature = unitMatch ? `unit_${unitMatch[1]}` : 'unit_1';
-        } else {
-            // For other area types, use the label directly (sanitized)
-            areaSignature = label.replace(/[^a-z0-9]/g, '_');
-        }
-        
-        return `${areaSignature}__${pictureType}`;
+        return `${polygonId}__${sanitizedLabel}__${pictureType}`;
     }
 
     /**
@@ -528,112 +514,101 @@ class PhotoHelperButtons {
     }
 
     /**
-     * Generate signature from photo content (reverse engineering)
+     * FIXED: Generate signature from photo content (reverse engineering)
+     * Uses more specific matching to avoid conflicts between similar areas
      */
     generateSignatureFromPhotoContent(content) {
         if (!content) return null;
         
         const contentLower = content.toLowerCase();
         
-        // Helper button photos (area-based) - UPDATED with more comprehensive matching
-        if (contentLower.includes('subject exterior front')) {
-            return 'floor_1__Front';
-        }
-        if (contentLower.includes('subject address verification')) {
-            return 'floor_1__AddressVerification';
-        }
-        if (contentLower.includes('subject exterior street')) {
-            return 'floor_1__StreetView';
-        }
-        if (contentLower.includes('subject exterior left')) {
-            return 'floor_1__ExteriorLeft';
-        }
-        if (contentLower.includes('subject exterior right')) {
-            return 'floor_1__ExteriorRight';
-        }
-        if (contentLower.includes('subject exterior rear')) {
-            return 'floor_1__RearView';
-        }
-        if (contentLower.includes('subject exterior back')) {
-            return 'floor_1__BackYard';
-        }
-        if (contentLower.includes('subject safety smoke')) {
-            return 'floor_1__SmokeAlarm';
-        }
-        if (contentLower.includes('subject safety c02')) {
-            return 'floor_1__C02Alarm';
-        }
-        if (contentLower.includes('subject safety water')) {
-            return 'floor_1__WaterHtr';
-        }
-        if (contentLower.includes('subject crawl space')) {
-            return 'floor_1__CrawlSpace';
-        }
-        if (contentLower.includes('subject attic space')) {
-            return 'floor_1__AtticSpace';
-        }
-        if (contentLower.includes('subject fire on')) {
-            return 'floor_1__FireOn';
-        }
-        if (contentLower.includes('subject water on')) {
-            return 'floor_1__WaterOn';
-        }
-        if (contentLower.includes('subject interior') && !contentLower.includes('adu') && !contentLower.includes('unit')) {
-            return 'floor_1__Interior';
-        }
-        
-        // ADU photos
-        if (contentLower.includes('adu') && contentLower.includes('exterior front')) {
-            const aduMatch = content.match(/adu[-\s]*(\d+)/i);
-            const aduNum = aduMatch ? aduMatch[1] : '1';
-            return `adu_${aduNum}__Front`;
-        }
-        if (contentLower.includes('adu') && contentLower.includes('safety smoke')) {
-            const aduMatch = content.match(/adu[-\s]*(\d+)/i);
-            const aduNum = aduMatch ? aduMatch[1] : '1';
-            return `adu_${aduNum}__SmokeAlarm`;
-        }
-        if (contentLower.includes('adu') && contentLower.includes('safety c02')) {
-            const aduMatch = content.match(/adu[-\s]*(\d+)/i);
-            const aduNum = aduMatch ? aduMatch[1] : '1';
-            return `adu_${aduNum}__C02Alarm`;
-        }
-        
-        // UNIT photos
-        if (contentLower.includes('unit') && contentLower.includes('exterior front')) {
-            const unitMatch = content.match(/unit[-\s]*(\d+)/i);
-            const unitNum = unitMatch ? unitMatch[1] : '1';
-            return `unit_${unitNum}__Front`;
-        }
-        if (contentLower.includes('unit') && contentLower.includes('safety smoke')) {
-            const unitMatch = content.match(/unit[-\s]*(\d+)/i);
-            const unitNum = unitMatch ? unitMatch[1] : '1';
-            return `unit_${unitNum}__SmokeAlarm`;
-        }
-        
-        // Room photos  
-        if (contentLower.includes('interior')) {
-            let areaSignature = '';
-            let roomType = '';
+        // Find the polygon that matches this photo content
+        for (const polygon of AppState.drawnPolygons) {
+            const polygonLabel = polygon.label ? polygon.label.toLowerCase() : '';
             
-            // Extract area info
-            if (contentLower.includes('subject interior')) {
-                areaSignature = 'floor_1'; // Default to floor 1 for subject
-                roomType = content.replace(/subject\s+interior\s+/i, '').replace(/[^a-zA-Z]/g, '').toLowerCase();
-            } else if (contentLower.includes('adu') && contentLower.includes('interior')) {
-                const aduMatch = content.match(/adu[-\s]*(\d+)\s+interior/i);
-                const aduNum = aduMatch ? aduMatch[1] : '1';
-                areaSignature = `adu_${aduNum}`;
-                roomType = content.replace(/adu[-\s]*\d+\s+interior\s+/i, '').replace(/[^a-zA-Z]/g, '').toLowerCase();
-            } else if (contentLower.includes('unit') && contentLower.includes('interior')) {
-                const unitMatch = content.match(/unit[-\s]*(\d+)\s+interior/i);
-                const unitNum = unitMatch ? unitMatch[1] : '1';
-                areaSignature = `unit_${unitNum}`;
-                roomType = content.replace(/unit[-\s]*\d+\s+interior\s+/i, '').replace(/[^a-zA-Z]/g, '').toLowerCase();
+            // Check if this polygon could be the source of this photo
+            let couldMatch = false;
+            
+            // For Floor areas
+            if (polygonLabel.includes('floor') && contentLower.includes('subject')) {
+                couldMatch = true;
+            }
+            // For ADU areas  
+            else if (polygonLabel.includes('adu') && contentLower.includes('adu')) {
+                couldMatch = true;
+            }
+            // For UNIT areas
+            else if (polygonLabel.includes('unit') && contentLower.includes('unit')) {
+                couldMatch = true;
+            }
+            // For Covered Patio areas
+            else if (polygonLabel.includes('patio') && !contentLower.includes('subject') && !contentLower.includes('adu') && !contentLower.includes('unit')) {
+                couldMatch = true;
+            }
+            // For other specific area types
+            else if (polygonLabel.includes('garage') && contentLower.includes('garage')) {
+                couldMatch = true;
+            }
+            else if (polygonLabel.includes('deck') && contentLower.includes('deck')) {
+                couldMatch = true;
+            }
+            else if (polygonLabel.includes('porch') && contentLower.includes('porch')) {
+                couldMatch = true;
             }
             
-            if (areaSignature && roomType) {
-                return `${areaSignature}__room_${roomType}`;
+            if (couldMatch) {
+                // Try to determine picture type from content
+                let pictureType = null;
+                
+                if (contentLower.includes('front') && !contentLower.includes('address') && !contentLower.includes('street')) {
+                    pictureType = 'Front';
+                }
+                else if (contentLower.includes('address verification')) {
+                    pictureType = 'AddressVerification';
+                }
+                else if (contentLower.includes('street')) {
+                    pictureType = 'StreetView';
+                }
+                else if (contentLower.includes('exterior left') || contentLower.includes('ext left')) {
+                    pictureType = 'ExteriorLeft';
+                }
+                else if (contentLower.includes('exterior right') || contentLower.includes('ext right')) {
+                    pictureType = 'ExteriorRight';
+                }
+                else if (contentLower.includes('rear')) {
+                    pictureType = 'RearView';
+                }
+                else if (contentLower.includes('back yard')) {
+                    pictureType = 'BackYard';
+                }
+                else if (contentLower.includes('smoke alarm')) {
+                    pictureType = 'SmokeAlarm';
+                }
+                else if (contentLower.includes('c02 alarm')) {
+                    pictureType = 'C02Alarm';
+                }
+                else if (contentLower.includes('water heater')) {
+                    pictureType = 'WaterHtr';
+                }
+                else if (contentLower.includes('crawl space')) {
+                    pictureType = 'CrawlSpace';
+                }
+                else if (contentLower.includes('attic space')) {
+                    pictureType = 'AtticSpace';
+                }
+                else if (contentLower.includes('fire on')) {
+                    pictureType = 'FireOn';
+                }
+                else if (contentLower.includes('water on')) {
+                    pictureType = 'WaterOn';
+                }
+                else if (contentLower.includes('interior')) {
+                    pictureType = 'Interior';
+                }
+                
+                if (pictureType) {
+                    return this.generatePhotoSignature(polygon, pictureType);
+                }
             }
         }
         

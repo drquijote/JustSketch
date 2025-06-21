@@ -291,6 +291,12 @@ function initializeAppControls(previewManager, saveManager) {
                 // If there's an active path, commit it as a line and stay in drawing mode.
                 if (AppState.currentPolygonPoints && AppState.currentPolygonPoints.length > 0) {
                     console.log('Committing current path as a line and preparing for a new one.');
+
+
+                    if (window.drawingManager) {
+                        window.drawingManager.addVerticesAsPermanentHelpers(AppState.currentPolygonPoints);
+                    }
+                    
                     // Move the current path to the `drawnLines` array so it remains visible.
                     AppState.drawnLines.push({
                         id: Date.now(),

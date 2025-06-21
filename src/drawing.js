@@ -468,13 +468,40 @@ constructor() {
     console.log('DrawingManager: Initialized');
   }
 
- drawDrawnLines() {
+ // Helper method to check if an edge already has a label drawn
+isEdgeAlreadyLabeled(p1, p2, labeledEdges) {
+    // Check both directions since edge p1->p2 is the same as p2->p1
+    return labeledEdges.some(edge => 
+        (Math.abs(edge.p1.x - p1.x) < 1 && Math.abs(edge.p1.y - p1.y) < 1 &&
+         Math.abs(edge.p2.x - p2.x) < 1 && Math.abs(edge.p2.y - p2.y) < 1) ||
+        (Math.abs(edge.p1.x - p2.x) < 1 && Math.abs(edge.p1.y - p2.y) < 1 &&
+         Math.abs(edge.p2.x - p1.x) < 1 && Math.abs(edge.p2.y - p1.y) < 1)
+    );
+}
+
+// Then modify the drawDrawnLines() method to track labeled edges:
+
+drawDrawnLines() {
     const { ctx } = AppState;
     if (!ctx || !AppState.drawnLines || AppState.drawnLines.length === 0) {
       return;
     }
 
     ctx.save();
+
+    // NEW: Track which edges have been labeled to avoid duplicates
+    const labeledEdges = [];
+
+    // First, collect all edges that are part of polygons
+    if (AppState.drawnPolygons) {
+        AppState.drawnPolygons.forEach(polygon => {
+            for (let i = 0; i < polygon.path.length; i++) {
+                const p1 = polygon.path[i];
+                const p2 = polygon.path[(i + 1) % polygon.path.length];
+                labeledEdges.push({ p1, p2 });
+            }
+        });
+    }
 
     // Loop through each "committed" line path
     AppState.drawnLines.forEach(line => {
@@ -484,8 +511,8 @@ constructor() {
 
       // --- 1. Draw the line segments (edges) ---
       if (path.length > 1) {
-        ctx.strokeStyle = '#3498db'; // Same blue color as the active path
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#555'; // Dark gray, same as polygon outlines
+        ctx.lineWidth = 1.5; // Same width as polygon outlines
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.beginPath();
@@ -497,10 +524,14 @@ constructor() {
       }
 
       // --- 2. Draw the distance labels on each edge ---
-      // This logic is copied directly from `drawPolygons`
       for (let i = 1; i < path.length; i++) {
         const prevPoint = path[i - 1];
         const currentPoint = path[i];
+        
+        // NEW: Skip this label if the edge is already labeled (part of a polygon)
+        if (this.isEdgeAlreadyLabeled(prevPoint, currentPoint, labeledEdges)) {
+            continue;
+        }
         
         const dx = currentPoint.x - prevPoint.x;
         const dy = currentPoint.y - prevPoint.y;
@@ -520,69 +551,65 @@ constructor() {
           const labelY = midY + perpY * offset;
           
           const text = `${distanceInFeet.toFixed(1)}'`;
-          ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+          
+          // Plain text styling to match polygons
+          ctx.font = '10px Arial';
+          ctx.fillStyle = '#555'; // Dark gray text
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          
-          const textMetrics = ctx.measureText(text);
-          const padding = 4;
-          
-          ctx.fillStyle = 'rgba(52, 152, 219, 0.9)';
-          const backgroundRect = {
-            x: labelX - textMetrics.width / 2 - padding,
-            y: labelY - 6 - padding,
-            width: textMetrics.width + padding * 2,
-            height: 12 + padding * 2
-          };
-          ctx.fillRect(backgroundRect.x, backgroundRect.y, backgroundRect.width, backgroundRect.height);
-          
-          ctx.fillStyle = 'white';
           ctx.fillText(text, labelX, labelY);
+          
+          // NEW: Track this edge as labeled
+          labeledEdges.push({ p1: prevPoint, p2: currentPoint });
         }
       }
 
       // --- 3. Draw the vertices and their labels ---
-      // This logic is also copied directly from `drawPolygons`
-      path.forEach((point) => {
-        ctx.save();
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-        ctx.shadowBlur = 4;
-        ctx.shadowOffsetX = 1;
-        ctx.shadowOffsetY = 1;
-        
-        // For inactive paths, all vertices are the same intermediate color.
-        ctx.fillStyle = '#3498db'; 
-        
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
-        ctx.fill();
-        
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
-        ctx.stroke();
-        
-        ctx.restore();
-        
-        ctx.save();
-        ctx.fillStyle = '#2c3e50';
-        ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        
-        ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
-        ctx.shadowBlur = 3;
-        ctx.shadowOffsetX = 1;
-        ctx.shadowOffsetY = 1;
-        
-        ctx.fillText(point.name, point.x, point.y - 20);
-        ctx.restore();
-      });
+      // Only show vertices AND labels when in drawing mode
+      if (AppState.currentMode === 'drawing') {
+        path.forEach((point) => {
+          ctx.save();
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+          ctx.shadowBlur = 4;
+          ctx.shadowOffsetX = 1;
+          ctx.shadowOffsetY = 1;
+          
+          // For inactive paths, all vertices are the same intermediate color.
+          ctx.fillStyle = '#3498db'; 
+          
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+          ctx.fill();
+          
+          ctx.strokeStyle = 'white';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+          ctx.stroke();
+          
+          ctx.restore();
+          
+          // VERTEX LABELS
+          ctx.save();
+          ctx.fillStyle = '#2c3e50';
+          ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          
+          ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+          ctx.shadowBlur = 3;
+          ctx.shadowOffsetX = 1;
+          ctx.shadowOffsetY = 1;
+          
+          ctx.fillText(point.name, point.x, point.y - 20);
+          ctx.restore();
+        });
+      }
     });
 
     ctx.restore();
   }
+
 
 
 
@@ -1006,6 +1033,38 @@ findValidPolygonOrder(vertices) {
 // Check if a polygon has self-intersections
 // Add these three new functions anywhere inside the DrawingManager class in drawing.js.
 
+
+
+
+
+// STEP 1: ADD THIS NEW HELPER FUNCTION INSIDE THE DrawingManager CLASS
+/**
+ * Finds if a point is on a vertex of any completed polygon.
+ * @param {object} point - The {x, y} coordinates to check.
+ * @returns {object|null} Info about the connection or null if none.
+ */
+findPolygonConnection(point) {
+    if (!AppState.drawnPolygons) return null;
+    const tolerance = this.isMobileDevice() ? 30 : 20;
+    for (const polygon of AppState.drawnPolygons) {
+        const vertexIndex = polygon.path.findIndex(vertex => {
+            const dx = point.x - vertex.x;
+            const dy = point.y - vertex.y;
+            return Math.sqrt(dx * dx + dy * dy) < tolerance;
+        });
+        if (vertexIndex !== -1) {
+            return {
+                polygon,
+                vertexIndex,
+                vertex: polygon.path[vertexIndex]
+            };
+        }
+    }
+    return null;
+}
+
+
+
 /**
  * Checks if a polygon has self-intersections by testing all non-adjacent edges.
  * @param {Array<Object>} path An array of points {x, y}.
@@ -1175,8 +1234,14 @@ drawPolygons() {
     if (AppState.currentPolygonPoints.length > 0) {
         // Draw the main path lines
         if (AppState.currentPolygonPoints.length > 1) {
-            ctx.strokeStyle = '#3498db';
-            ctx.lineWidth = 2;
+            // MODIFIED: Change line color based on drawing mode
+            if (AppState.currentMode === 'drawing') {
+                ctx.strokeStyle = '#3498db'; // Blue when actively drawing
+                ctx.lineWidth = 2;
+            } else {
+                ctx.strokeStyle = '#555'; // Dark gray when not in drawing mode
+                ctx.lineWidth = 1.5;
+            }
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.beginPath();
@@ -1211,42 +1276,45 @@ drawPolygons() {
                     const labelX = midX + perpX * offset;
                     const labelY = midY + perpY * offset;
                     
-                    // Enhanced label styling
                     const text = `${distanceInFeet.toFixed(1)}'`;
-                    ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
                     
-                    const textMetrics = ctx.measureText(text);
-                    const padding = 4;
-                    
-                    // Blue-tinted background - no border at all
-                    ctx.fillStyle = 'rgba(52, 152, 219, 0.9)';
-                    
-                    const backgroundRect = {
-                        x: labelX - textMetrics.width / 2 - padding,
-                        y: labelY - 6 - padding,
-                        width: textMetrics.width + padding * 2,
-                        height: 12 + padding * 2
-                    };
-                    
-                    // Simple filled rectangle - no stroke/border
-                    ctx.fillRect(backgroundRect.x, backgroundRect.y, backgroundRect.width, backgroundRect.height);
-                    
-                    // White text for contrast
-                    ctx.fillStyle = 'white';
-                    ctx.fillText(text, labelX, labelY);
+                    // MODIFIED: Use plain text style when not in drawing mode
+                    if (AppState.currentMode === 'drawing') {
+                        // Blue background style when actively drawing
+                        ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        
+                        const textMetrics = ctx.measureText(text);
+                        const padding = 4;
+                        
+                        ctx.fillStyle = 'rgba(52, 152, 219, 0.9)';
+                        
+                        const backgroundRect = {
+                            x: labelX - textMetrics.width / 2 - padding,
+                            y: labelY - 6 - padding,
+                            width: textMetrics.width + padding * 2,
+                            height: 12 + padding * 2
+                        };
+                        
+                        ctx.fillRect(backgroundRect.x, backgroundRect.y, backgroundRect.width, backgroundRect.height);
+                        
+                        ctx.fillStyle = 'white';
+                        ctx.fillText(text, labelX, labelY);
+                    } else {
+                        // Plain text style when not in drawing mode
+                        ctx.font = '10px Arial';
+                        ctx.fillStyle = '#555';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(text, labelX, labelY);
+                    }
                 }
             }
         }
 
-        // *** ENHANCED: Draw preview lines to potential cycle closing points ***
-        if (AppState.currentPolygonPoints.length >= 2) {
-            //this.drawCyclePreviewLines(ctx);
-        }
-
-        // *** NEW: Draw closing edge preview if we have 3+ points ***
-        if (AppState.currentPolygonPoints.length >= 3) {
+        // *** NEW: Draw closing edge preview only in drawing mode ***
+        if (AppState.currentMode === 'drawing' && AppState.currentPolygonPoints.length >= 3) {
             const firstPoint = AppState.currentPolygonPoints[0];
             const lastPoint = AppState.currentPolygonPoints[AppState.currentPolygonPoints.length - 1];
             
@@ -1299,62 +1367,69 @@ drawPolygons() {
         }
 
         // *** ENHANCED: Draw vertices with higher z-index and better visibility ***
-        AppState.currentPolygonPoints.forEach((point, index) => {
-            const isFirstVertex = (index === 0);
-            const isLastVertex = (index === AppState.currentPolygonPoints.length - 1);
-            
-            // Draw outer glow/shadow for better visibility
-            ctx.save();
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-            ctx.shadowBlur = 4;
-            ctx.shadowOffsetX = 1;
-            ctx.shadowOffsetY = 1;
-            
-            // Draw the main vertex circle with larger size for better visibility
-            if (isFirstVertex) {
-                ctx.fillStyle = '#e74c3c'; // Red for start
-            } else if (isLastVertex) {
-                ctx.fillStyle = '#27ae60'; // Green for end
-            } else {
-                ctx.fillStyle = '#3498db'; // Blue for intermediate
-            }
-            
-            // Larger radius for better visibility (8px instead of 5px)
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Thick white border for contrast
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
-            ctx.stroke();
-            
-            ctx.restore();
-            
-            // Draw point labels with better contrast and positioning
-            ctx.save();
-            ctx.fillStyle = '#2c3e50';
-            ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            
-            // White text shadow for better readability
-            ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
-            ctx.shadowBlur = 3;
-            ctx.shadowOffsetX = 1;
-            ctx.shadowOffsetY = 1;
-            
-            // Position label higher above the vertex
-            ctx.fillText(point.name, point.x, point.y - 20);
-            ctx.restore();
-        });
+        // MODIFIED: Only draw vertices when in drawing mode
+        if (AppState.currentMode === 'drawing') {
+            AppState.currentPolygonPoints.forEach((point, index) => {
+                const isFirstVertex = (index === 0);
+                const isLastVertex = (index === AppState.currentPolygonPoints.length - 1);
+                
+                // Draw outer glow/shadow for better visibility
+                ctx.save();
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+                ctx.shadowBlur = 4;
+                ctx.shadowOffsetX = 1;
+                ctx.shadowOffsetY = 1;
+                
+                // Draw the main vertex circle with larger size for better visibility
+                if (isFirstVertex) {
+                    ctx.fillStyle = '#e74c3c'; // Red for start
+                } else if (isLastVertex) {
+                    ctx.fillStyle = '#27ae60'; // Green for end
+                } else {
+                    ctx.fillStyle = '#3498db'; // Blue for intermediate
+                }
+                
+                // Larger radius for better visibility (8px instead of 5px)
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Thick white border for contrast
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                ctx.restore();
+                
+                // Draw point labels with better contrast and positioning
+                ctx.save();
+                ctx.fillStyle = '#2c3e50';
+                ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // White text shadow for better readability
+                ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+                ctx.shadowBlur = 3;
+                ctx.shadowOffsetX = 1;
+                ctx.shadowOffsetY = 1;
+                
+                // Position label higher above the vertex
+                ctx.fillText(point.name, point.x, point.y - 20);
+                ctx.restore();
+            });
+        }
     }
 
     // Restore the drawing state to what it was before this function ran
     ctx.restore();
 }
+
+
+
+
 
 // *** NEW METHOD: Draw preview lines showing potential cycle closures ***
 drawCyclePreviewLines(ctx) {
@@ -1640,57 +1715,160 @@ handleMouseMove(e) {
     }
 }
 
- handleCanvasInteraction(e) {
-    // *** REMOVED: The zombie click blocking that was interfering with touch events ***
-    // The AppState.clickHasBeenProcessed flag was blocking legitimate touch interactions
-    
+// STEP 2: REPLACE THE ENTIRE `handleCanvasInteraction` FUNCTION WITH THIS UPDATED VERSION
+handleCanvasInteraction(e) {
     if (!this.isActive) return;
 
-    // *** FIXED: Get the correct canvas coordinates consistently ***
     const viewport = document.getElementById('canvasViewport');
     const viewportRect = viewport.getBoundingClientRect();
     const canvasX = (e.clientX - viewportRect.left) - AppState.viewportTransform.x;
     const canvasY = (e.clientY - viewportRect.top) - AppState.viewportTransform.y;
-    this.lastMousePosition = { x: canvasX, y: canvasY };
+    this.lastMousePosition = {
+        x: canvasX,
+        y: canvasY
+    };
 
-    // --- Rule 1: Placing the first vertex of a new shape ---
+    // Rule 1: Placing the first vertex of a new shape
     if (this.waitingForFirstVertex) {
         this.placeFirstVertex(canvasX, canvasY);
         return true; // Action handled
     }
 
-    // --- Priority #1: Clicking a vertex on the CURRENT path (to close or backtrack) ---
+    const currentPath = AppState.currentPolygonPoints;
+
+    // Priority #1: Clicking a vertex on the CURRENT path (to close or backtrack)
     const clickedVertexIndex = this.findClickedVertex(canvasX, canvasY);
     if (clickedVertexIndex !== -1) {
-        if (clickedVertexIndex === 0 && AppState.currentPolygonPoints.length >= 3) {
+        if (clickedVertexIndex === 0 && currentPath.length >= 3) {
             console.log('✅ Cycle completion triggered by clicking the first vertex.');
-            this.completeCycle(AppState.currentPolygonPoints);
+            this.completeCycle(currentPath);
         } else {
             this.continueFromVertex(clickedVertexIndex);
         }
         return true; // Action handled
     }
 
-    // --- Priority #2: Clicking a helper point (for snapping) ---
+    // Priority #2: Clicking a permanent helper point (for snapping)
     const clickedHelper = this.findClickedHelperPoint(canvasX, canvasY);
     if (clickedHelper) {
-        console.log('🟣 Helper point clicked for snapping');
-        this.addHelperAsVertex(clickedHelper);
-        return true; // Action handled
-    }
-    
-    // --- Priority #3: Clicking on existing polygon vertices for splitting ---
-    const clickedPolygonVertex = this.findClickedPolygonVertex(canvasX, canvasY);
-    if (clickedPolygonVertex) {
-        console.log('🔪 SPLIT: Clicked on completed polygon vertex');
-        this.addPolygonVertexToPath(clickedPolygonVertex);
+        // --- NEW LOGIC FOR ADJACENT AREA CREATION VIA HELPER ---
+        const startPoint = currentPath[0];
+        const startConnectionInfo = this.findPolygonConnection(startPoint);
+        const endConnectionInfo = this.findPolygonConnection(clickedHelper);
+
+        if (startConnectionInfo && endConnectionInfo && startConnectionInfo.polygon.id === endConnectionInfo.polygon.id && startConnectionInfo.vertexIndex !== endConnectionInfo.vertexIndex) {
+            console.log('✅ Adjacent area creation triggered by clicking a permanent helper point.');
+            const polygon = startConnectionInfo.polygon;
+            const startIndex = startConnectionInfo.vertexIndex;
+            const endIndex = endConnectionInfo.vertexIndex;
+            const arcPath = this.getShorterArc(polygon.path, endIndex, startIndex);
+            
+            // Add the clicked helper point to the current path before completing
+            this.addHelperAsVertex(clickedHelper, true); // Add quietly
+            
+            const newCyclePath = [...AppState.currentPolygonPoints, ...arcPath];
+
+            if (newCyclePath.length > 1) {
+                const first = newCyclePath[0];
+                const last = newCyclePath[newCyclePath.length - 1];
+                if (Math.abs(first.x - last.x) < 1 && Math.abs(first.y - last.y) < 1) {
+                    newCyclePath.pop();
+                }
+            }
+            this.completeCycle(newCyclePath);
+
+        } else {
+            console.log('🟣 Helper point clicked for snapping (not closing adjacent area).');
+            this.addHelperAsVertex(clickedHelper);
+        }
         return true; // Action handled
     }
 
-    // If we reach here, the click was in empty space - allow it to bubble up for panning
+    // Priority #3: Clicking on an existing completed polygon vertex
+    const endConnectionInfo = this.findPolygonConnection({
+        x: canvasX,
+        y: canvasY
+    });
+    if (endConnectionInfo) {
+        const startPoint = currentPath[0];
+        const startConnectionInfo = this.findPolygonConnection(startPoint);
+
+        // ** THIS IS THE CORE OF THE FIX **
+        // Check if start and end points are on the SAME polygon but are DIFFERENT vertices
+        if (startConnectionInfo && endConnectionInfo.polygon.id === startConnectionInfo.polygon.id && endConnectionInfo.vertexIndex !== startConnectionInfo.vertexIndex) {
+            console.log('✅ Adjacent area creation triggered by clicking a polygon vertex.');
+            
+            const polygon = startConnectionInfo.polygon;
+            const startIndex = startConnectionInfo.vertexIndex;
+            const endIndex = endConnectionInfo.vertexIndex;
+
+            // Get the path along the perimeter to close the shape
+            const arcPath = this.getShorterArc(polygon.path, endIndex, startIndex);
+            
+            // Construct the final path for the new area
+            const newCyclePath = [...currentPath, endConnectionInfo.vertex, ...arcPath];
+            
+            // Clean up duplicate vertices at the start/end
+            if (newCyclePath.length > 1) {
+                const first = newCyclePath[0];
+                const last = newCyclePath[newCyclePath.length - 1];
+                if (Math.abs(first.x - last.x) < 1 && Math.abs(first.y - last.y) < 1) {
+                    newCyclePath.pop();
+                }
+            }
+            
+            this.completeCycle(newCyclePath);
+
+        } else {
+            // Fallback: The click is on a polygon vertex, but it's not forming an adjacent area.
+            // Just add it as a new point to the current line.
+            console.log('Clicked on a polygon vertex, but not forming an adjacent area. Adding as a point.');
+            this.addPolygonVertexToPath(endConnectionInfo.vertex);
+        }
+        return true; // Action handled
+    }
+
+    // If we reach here, the click was in empty space, allow it to be handled by other systems like panning
     console.log('🖱️ Click in empty space - allowing panning');
-    return false; // Let other systems handle this
+    return false;
 }
+
+
+// STEP 3: ADD a quiet flag to addHelperAsVertex to prevent double actions
+// Find the `addHelperAsVertex` function and replace it with this version.
+addHelperAsVertex(helperPoint, quiet = false) {
+    if (!quiet) console.log('🟣 HELPER DEBUG: Adding helper point as vertex with EXACT positioning');
+
+    const prefix = this.pathPrefixes[this.currentPrefixIndex];
+    const newPoint = {
+        x: helperPoint.x,
+        y: helperPoint.y,
+        name: `${prefix}${AppState.currentPolygonCounter}`,
+        snappedToHelper: true
+    };
+
+    AppState.currentPolygonPoints.push(newPoint);
+    AppState.currentPolygonCounter++;
+
+    if (!quiet) {
+       console.log(`🎯 SNAP: Added vertex ${newPoint.name} at EXACT position (${newPoint.x}, ${newPoint.y})`);
+        const distanceInput = document.getElementById('distanceDisplay');
+        const angleInput = document.getElementById('angleDisplay');
+        if (distanceInput) distanceInput.value = '0';
+        if (angleInput) angleInput.value = '0';
+        this.distanceInputSequence.length = 0;
+        this.angleInputSequence.length = 0;
+        this.activeInput = 'distance';
+        if (distanceInput) distanceInput.focus();
+
+        HelperPointManager.updateHelperPoints();
+        CanvasManager.saveAction();
+        CanvasManager.redraw();
+    }
+}
+
+
+
 
  handleCanvasClick(e) {
     if (!this.isActive) return;
@@ -2312,6 +2490,7 @@ findClickedVertex(x, y) {
       console.log(`Branching from intermediate vertex ${clickedPoint.name}.`);
       
       if (currentPath.length > 1) {
+        this.addVerticesAsPermanentHelpers(currentPath);
         AppState.drawnLines.push({
           id: Date.now(),
           path: [...currentPath]
@@ -2591,7 +2770,7 @@ drawPolygons() {
         }
 
         // *** ENHANCED: Draw vertices with higher z-index and better visibility ***
-        AppState.currentPolygonPoints.forEach((point, index) => {
+       AppState.currentPolygonPoints.forEach((point, index) => {
             const isFirstVertex = (index === 0);
             const isLastVertex = (index === AppState.currentPolygonPoints.length - 1);
             
@@ -2625,23 +2804,31 @@ drawPolygons() {
             
             ctx.restore();
             
-            // Draw point labels with better contrast and positioning
-            ctx.save();
-            ctx.fillStyle = '#2c3e50';
-            ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            
-            // White text shadow for better readability
-            ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
-            ctx.shadowBlur = 3;
-            ctx.shadowOffsetX = 1;
-            ctx.shadowOffsetY = 1;
-            
-            // Position label higher above the vertex
-            ctx.fillText(point.name, point.x, point.y - 20);
-            ctx.restore();
+            // MODIFIED: Only draw labels when in drawing mode
+            if (AppState.currentMode === 'drawing') {
+                // Draw point labels with better contrast and positioning
+                ctx.save();
+                ctx.fillStyle = '#2c3e50';
+                ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // White text shadow for better readability
+                ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+                ctx.shadowBlur = 3;
+                ctx.shadowOffsetX = 1;
+                ctx.shadowOffsetY = 1;
+                
+                // Position label higher above the vertex
+                ctx.fillText(point.name, point.x, point.y - 20);
+                ctx.restore();
+            }
         });
+
+
+
+
+
     }
 
     // Restore the drawing state to what it was before this function ran

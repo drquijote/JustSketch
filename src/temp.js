@@ -1,586 +1,97 @@
-import { AppState } from './state.js';
-import { CanvasManager } from './canvas.js';
-import { DrawingManager } from './drawing.js';
-import { HelperPointManager } from './helpers.js';
-import { AreaManager } from './areaManager.js';
-import { SplitterManager } from './splitter.js';
-import { PreviewManager } from './previewManager.js';
-import { SaveManager } from './saveManager.js';
-import { PhotoManager } from './photos.js'; 
-
-// Import existing sketch.js functions
-import { 
-  showpallets, 
-  initSketchModule,
-  toggleLegend, 
-  activateSketchListeners,
-  deactivateSketchListeners
-} from './sketch.js';
-
-
+// In areaManager.js, add these four new functions inside the AreaManager class.
 
 /**
- * Cleans up any orphan vertices left from incomplete drawing operations
- * This ensures no stray points remain on the canvas when switching modes
+ * Main overlap check. Iterates through all existing polygons and checks for intersection.
+ * @param {object} newPolygon - The newly created polygon to check.
  */
-function cleanupOrphanVertices() {
-    console.log('🧹 Cleaning up orphan vertices...');
-    
-    // Clear any current drawing path
-    if (AppState.currentPolygonPoints && AppState.currentPolygonPoints.length > 0) {
-        console.log(`🧹 Clearing ${AppState.currentPolygonPoints.length} orphan vertices from current drawing`);
-        AppState.currentPolygonPoints = [];
-        AppState.currentPolygonCounter = 0;
+checkForAreaOverlap(newPolygon) {
+    if (!AppState.drawnPolygons || AppState.drawnPolygons.length < 2) {
+        return; // No need to check if there's only one polygon
     }
-    
-    // Reset drawing manager state if it exists
-    if (window.drawingManager) {
-        window.drawingManager.waitingForFirstVertex = true;
-        window.drawingManager.distanceInputSequence = [];
-        window.drawingManager.angleInputSequence = [];
-        
-        // Clear any active inputs
-        const distanceInput = document.getElementById('distanceDisplay');
-        const angleInput = document.getElementById('angleDisplay');
-        if (distanceInput) distanceInput.value = '0';
-        if (angleInput) angleInput.value = '0';
-    }
-    
-    // Clear helper points that depend on current drawing
-    if (AppState.helperPoints) {
-        AppState.helperPoints = [];
-    }
-    
-    // Update helper points to reflect the cleaned state
-    if (window.HelperPointManager && window.HelperPointManager.updateHelperPoints) {
-        window.HelperPointManager.updateHelperPoints();
-    }
-    
-    console.log('✅ Orphan vertices cleanup complete');
-}
 
+    for (const existingPolygon of AppState.drawnPolygons) {
+        if (newPolygon.id === existingPolygon.id) {
+            continue; // Don't check a polygon against itself
+        }
+
+        // Check for intersection using the Separating Axis Theorem
+        if (this.doPolygonsIntersect(newPolygon, existingPolygon)) {
+            console.clear();
+            console.warn(`[OVERLAP DETECTED] Area "${newPolygon.label}" is geometrically overlapping with area "${existingPolygon.label}".`);
+            // Stop after finding the first overlap
+            return;
+        }
+    }
+}
 
 /**
- * Draws a grid pattern across the entire canvas.
- * This ensures the visual background matches the canvas's full dimensions.
+ * Implements the Separating Axis Theorem to check for intersection.
+ * @param {object} polyA - The first polygon.
+ * @param {object} polyB - The second polygon.
+ * @returns {boolean} - True if the polygons intersect, false otherwise.
  */
-function drawGrid() {
-    const { ctx, canvas } = AppState;
-    if (!ctx || !canvas) return;
+doPolygonsIntersect(polyA, polyB) {
+    const axesA = this.getAxes(polyA.path);
+    const axesB = this.getAxes(polyB.path);
 
-    const gridSize = 40; // The spacing of the grid lines in pixels
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.strokeStyle = '#dcdcdc'; // A light gray for the grid lines
-    ctx.lineWidth = 1;
-
-    // Draw vertical lines across the entire canvas width
-    for (let x = 0; x <= canvas.width; x += gridSize) {
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvas.height);
-    }
-
-    // Draw horizontal lines across the entire canvas height
-    for (let y = 0; y <= canvas.height; y += gridSize) {
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-    }
-
-    ctx.stroke();
-    ctx.restore();
-}
-
-// Global functions for HTML onclick handlers
-window.showpallets = showpallets;
-window.toggleLegend = toggleLegend;
-
-// Mode switching functions
-window.switchToPlacementMode = switchToPlacementMode;
-window.switchToDrawingMode = switchToDrawingMode;
-
-// Create global saveManager instance for import/export
-let globalSaveManager;
-
-// --- Main Application Setup ---
-// src/main.js
-
-// src/main.js
-
-document.addEventListener('DOMContentLoaded', () => {
-    // --- Standard Initialization (Unchanged) ---
-    const splitterManager = new SplitterManager();
-    splitterManager.init();
-
-    globalSaveManager = new SaveManager();
-    globalSaveManager.init();
-    const photoManager = new PhotoManager();
-    photoManager.init();  
-    window.photoManager = photoManager;
-
-
-window.updatePhotoCaption = (photoId, newCaption) => {
-        if (window.photoManager && typeof window.photoManager.updatePhotoCaption === 'function') {
-            return window.photoManager.updatePhotoCaption(photoId, newCaption);
-        } else {
-            console.error('PhotoManager not available');
+    // Check all axes from the first polygon
+    for (const axis of axesA) {
+        const p1 = this.projectPolygon(axis, polyA.path);
+        const p2 = this.projectPolygon(axis, polyB.path);
+        // If there is no overlap on this axis, they don't intersect
+        if (p1.max < p2.min || p2.max < p1.min) {
             return false;
         }
-    };
-
-
-    
-    
-    console.log("App loaded - initializing modular architecture");
-
-    const canvas = document.getElementById('drawingCanvas');
-    CanvasManager.init(canvas);
-    
-    AppState.on('canvas:redraw:background', drawGrid);
-
-    const drawingManager = new DrawingManager();
-    window.drawingManager = drawingManager;
-
-    HelperPointManager.updateHelperPoints();
-    console.log('🔄 Initial helper point update called');
-
-    const areaManager = new AreaManager();
-    areaManager.init();
-    
-    const previewManager = new PreviewManager();
-    
-    initSketchModule();
-
-    initializeAppControls(previewManager, globalSaveManager);
-    setupKeyboardShortcuts();
-
-    CanvasManager.redraw();
-    CanvasManager.saveAction();
-
-    console.log("App initialization complete.");
-
-    // --- NEW, ROBUST STARTUP LOGIC ---
-    // This block replaces the old calls to loadSketchFromURL and checkAndPromptNewSketch.
-    const urlParams = new URLSearchParams(window.location.search);
-    const isImporting = urlParams.get('import') === 'true';
-    const isLoadingSketch = urlParams.has('loadSketch');
-
-
-    if (isImporting) {
-        // SCENARIO 1: IMPORTING
-        // Don't show the "new sketch" modal, just open the file dialog.
-        console.log('Startup Mode: Importing Sketch');
-        const fileInput = document.getElementById('importFile');
-        if (fileInput) {
-            setTimeout(() => fileInput.click(), 100);
-        }
-
-    } else if (isLoadingSketch) {
-        // SCENARIO 2: LOADING SAVED SKETCH
-        // Don't show the "new sketch" modal, just load the data.
-        console.log('Startup Mode: Loading Sketch from DB');
-        globalSaveManager.loadSketchFromURL();
-
-    } else {
-        // SCENARIO 3: NEW SKETCH
-        // If not importing and not loading, it's a new sketch. Show the modal.
-        console.log('Startup Mode: New Sketch');
-        checkAndPromptNewSketch();
-    }
-    // --- END NEW LOGIC ---
-});
-
-
-// src/main.js
-
-// src/main.js
-
-function checkAndPromptNewSketch() {
-    // This function is now only called when we are certain it's a new sketch.
-    // The logic to decide WHEN to call it has been moved.
-    setTimeout(() => {
-        console.log('New sketch detected - showing save modal');
-        
-        const nameInput = document.getElementById('sketchNameInput');
-        if (nameInput) {
-            nameInput.value = '';
-            nameInput.placeholder = 'e.g., 123 Main Street';
-        }
-        
-        const exteriorCheckbox = document.getElementById('exteriorOnlyCheckbox');
-        const fullInspectionCheckbox = document.getElementById('fullInspectionCheckbox');
-        const fhaCheckbox = document.getElementById('fhaCheckbox');
-        
-        if (exteriorCheckbox) exteriorCheckbox.checked = false;
-        if (fullInspectionCheckbox) fullInspectionCheckbox.checked = false;
-        if (fhaCheckbox) fhaCheckbox.checked = false;
-        
-        const saveModal = document.getElementById('saveModal');
-        if (saveModal) {
-            saveModal.classList.remove('hidden');
-            setTimeout(() => {
-                if (nameInput) nameInput.focus();
-            }, 100);
-        }
-    }, 500);
-}
-
-
-
-
-
-function initializeAppControls(previewManager, saveManager) {
-    // Palette button handlers
-    const paletteButtons = document.querySelectorAll('[data-palette]');
-    paletteButtons.forEach(button => {
-        button.addEventListener('click', (e) => {
-            const paletteId = e.target.getAttribute('data-palette');
-            
-            if (paletteId === 'photosPalette') {
-                // Toggle photo mode
-                if (AppState.currentMode === 'photos') {
-                    switchToPlacementMode();
-                } else {
-                    switchToPhotosMode();
-                }
-            } else {
-                // Any other palette button exits photo mode and goes to placement mode
-                switchToPlacementMode();
-            }
-
-            showpallets(paletteId);
-            paletteButtons.forEach(btn => btn.classList.remove('active'));
-            e.target.classList.add('active');
-        });
-    });
-
-    // Listen for custom app events
-    AppState.on('app:exitDrawingMode', switchToPlacementMode);
-    AppState.on('app:switchToDrawingMode', switchToDrawingMode);
-
-    // Edit button now cycles through three states and exits photo mode
-    document.getElementById('editBtn').addEventListener('click', () => {
-        // Exit photo mode first if we're in it
-        if (AppState.currentMode === 'photos') {
-            switchToPlacementMode();
-        }
-        cycleEditMode();
-    });
-    
-    document.getElementById('legendToggleBtn').addEventListener('click', toggleLegend);
-    const undoBtn = document.getElementById('undo');
-    const redoBtn = document.getElementById('redo');
-    if (undoBtn) undoBtn.addEventListener('click', (e) => { e.preventDefault(); CanvasManager.undo(); });
-    if (redoBtn) redoBtn.addEventListener('click', (e) => { e.preventDefault(); CanvasManager.redo(); });
-
-    // Drawing mode button handler - exits photo mode
-    const startBtn = document.getElementById('startBtn');
-    if (startBtn) {
-        startBtn.addEventListener('click', () => {
-            if (AppState.currentMode === 'drawing') {
-                switchToPlacementMode();
-            } else {
-                // Exit photo mode first if we're in it
-                if (AppState.currentMode === 'photos') {
-                    switchToPlacementMode();
-                }
-                switchToDrawingMode();
-            }
-        });
     }
 
-
-function exportSketchToJSON() {
-    // Use the global SaveManager instance
-    globalSaveManager.exportSketchToJSON();
-}
-
-function importSketchFromJSON(file) {
-    // FIXED: Use the global SaveManager instance that handles photos
-    globalSaveManager.importSketchFromJSON(file);
-}
-
-    // --- Export and Import Handlers ---
-    const exportBtn = document.querySelector('.export-dropdown > button');
-    const exportMenu = document.getElementById('exportMenu');
-    const fileInput = document.getElementById('importFile');
-    const allFinishButtons = Array.from(document.querySelectorAll('.control-btn.finish-btn'));
-    const importBtn = allFinishButtons.find(btn => btn.textContent.trim() === 'Import');
-
-    if (exportBtn && exportMenu) {
-        exportBtn.addEventListener('click', () => exportMenu.classList.toggle('hidden'));
-        exportMenu.addEventListener('click', (e) => {
-            if (e.target.id === 'saveAsBtn') {
-                saveManager.promptForNewName();
-            } else if (e.target.textContent === 'JSON Data') {
-                exportSketchToJSON();
-            }
-            exportMenu.classList.add('hidden');
-        });
-    }
-
-    if (importBtn) {
-        importBtn.addEventListener('click', () => fileInput && fileInput.click());
-    }
-    if (fileInput) {
-        fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) importSketchFromJSON(file);
-            e.target.value = null;
-        });
-    }
-
-    // --- Preview Button Handler ---
-    const previewBtn = allFinishButtons.find(btn => btn.textContent.trim() === 'Preview');
-    if (previewBtn && previewManager) {
-        previewBtn.addEventListener('click', () => {
-            previewManager.showPreview();
-        });
-    }
-    
-    // --- Save Button Handler ---
-    const saveBtn = document.getElementById('saveBtn');
-    if (saveBtn && saveManager) {
-        saveBtn.addEventListener('click', () => {
-            saveManager.promptOrSave();
-        });
-    }
-}
-
-
-
-// --- NEW: Three-State Edit Mode Cycling Logic ---
-
-function cycleEditMode() {
-    // Sequence: READY -> EDIT LABELS -> EDIT LINES -> EDIT AREAS -> READY
-    if (AppState.currentMode !== 'edit') {
-        switchToEditLabelsMode();
-    } else {
-        if (AppState.editSubMode === 'labels') {
-            switchToEditLinesMode();  // NEW: Go to lines mode
-        } else if (AppState.editSubMode === 'lines') {  // NEW: From lines go to areas
-            switchToEditAreasMode();
-        } else { // From 'areas' or any other weird state, go back to ready.
-            switchToPlacementMode();
+    // Check all axes from the second polygon
+    for (const axis of axesB) {
+        const p1 = this.projectPolygon(axis, polyA.path);
+        const p2 = this.projectPolygon(axis, polyB.path);
+        // If there is no overlap on this axis, they don't intersect
+        if (p1.max < p2.min || p2.max < p1.min) {
+            return false;
         }
     }
+
+    // If no separating axis was found, the polygons are intersecting
+    return true;
 }
 
-function switchToEditLabelsMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
-    console.log('Switching to Edit Labels mode');
-    activateSketchListeners(); 
-    AppState.currentMode = 'edit';
-    AppState.editSubMode = 'labels'; 
-
-    resetAllModeButtons();
-    const editBtn = document.getElementById('editBtn');
-    editBtn.classList.add('active');
-    editBtn.textContent = 'Edit Lines';  // UPDATED: Next mode is lines
-
-    const modeIndicator = document.getElementById('modeIndicator');
-    modeIndicator.textContent = 'EDIT LABELS';
-    modeIndicator.className = 'mode-indicator edit-mode';
-
-    AppState.emit('mode:changed', { mode: 'edit', subMode: 'labels' });
-    AppState.emit('mode:editToggled', { isEditMode: true, subMode: 'labels' });
-    CanvasManager.redraw();
-}
-
-function switchToEditLinesMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
-    console.log('Switching to Edit Lines mode');
-    activateSketchListeners();
-    AppState.currentMode = 'edit';
-    AppState.editSubMode = 'lines';
-
-    resetAllModeButtons();
-    const editBtn = document.getElementById('editBtn');
-    editBtn.classList.add('active');
-    editBtn.textContent = 'Edit Areas';  // Next mode is areas
-
-    const modeIndicator = document.getElementById('modeIndicator');
-    modeIndicator.textContent = 'EDIT LINES';
-    modeIndicator.className = 'mode-indicator edit-mode';
-
-    AppState.emit('mode:changed', { mode: 'edit', subMode: 'lines' });
-    AppState.emit('mode:editToggled', { isEditMode: true, subMode: 'lines' });
-    setTimeout(() => console.log('💡 EDIT LINES: Click on line icons to edit/delete edges. Use directional pad to move selected lines!'), 100);
-    CanvasManager.redraw();
-}
-
-function switchToEditAreasMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
-    console.log('Switching to Edit Areas mode');
-    activateSketchListeners();
-    AppState.currentMode = 'edit';
-    AppState.editSubMode = 'areas';
-
-    resetAllModeButtons();
-    const editBtn = document.getElementById('editBtn');
-    editBtn.classList.add('active');
-    editBtn.textContent = 'Done';
-
-    const modeIndicator = document.getElementById('modeIndicator');
-    modeIndicator.textContent = 'EDIT AREAS';
-    modeIndicator.className = 'mode-indicator edit-mode';
-
-    AppState.emit('mode:changed', { mode: 'edit', subMode: 'areas' });
-    AppState.emit('mode:editToggled', { isEditMode: true, subMode: 'areas' });  // UPDATED: Include subMode
-    setTimeout(() => console.log('💡 EDIT AREAS: Click and drag areas to move them, or click the pencil icon to edit properties!'), 100);
-    CanvasManager.redraw();
-}
- 
- 
-
- 
-
-// --- Standard Mode Switching Functions (Modified) ---
-function switchToPhotosMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
-    // DEBUG: Log the start of the mode switch
-    console.log('DEBUG: Attempting to switch to Photos Mode. Current mode is:', AppState.currentMode);
-
-    // DEACTIVATING LISTENERS IS DISABLED TO ALLOW PANNING IN PHOTO MODE.
-    // deactivateSketchListeners(); // This line is commented out to allow panning.
-
-    AppState.currentMode = 'photos';
-    AppState.editSubMode = null;
-    resetAllModeButtons();
-
-    const photosBtn = document.getElementById('photosBtn');
-    if (photosBtn) {
-        photosBtn.classList.add('active');
+/**
+ * Gets the perpendicular axes for each edge of a polygon.
+ * @param {Array<object>} path - The vertices of the polygon.
+ * @returns {Array<object>} - A list of normalized axis vectors.
+ */
+getAxes(path) {
+    const axes = [];
+    for (let i = 0; i < path.length; i++) {
+        const p1 = path[i];
+        const p2 = path[(i + 1) % path.length];
+        const edge = { x: p2.x - p1.x, y: p2.y - p1.y };
+        // Get the perpendicular vector (the normal)
+        const normal = { x: -edge.y, y: edge.x };
+        // Normalize the vector (convert to a unit vector)
+        const length = Math.sqrt(normal.x * normal.x + normal.y * normal.y);
+        axes.push({ x: normal.x / length, y: normal.y / length });
     }
-
-    const modeIndicator = document.getElementById('modeIndicator');
-    modeIndicator.textContent = 'PHOTOS';
-    modeIndicator.className = 'mode-indicator photos-mode';
-
-    AppState.emit('mode:changed', { mode: 'photos' });
-    AppState.emit('mode:editToggled', { isEditMode: false });
-    CanvasManager.redraw();
-
-    // DEBUG: Confirm the mode switch is complete
-    console.log('DEBUG: Mode switched. AppState.currentMode is now:', AppState.currentMode);
+    return axes;
 }
 
-function switchToPlacementMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
-    console.log('Switching to placement mode (READY) from:', AppState.currentMode);
-    activateSketchListeners();
-    AppState.currentMode = 'placement';
-    AppState.editSubMode = null; // Reset sub-mode
-    resetAllModeButtons();
-    
-    const modeIndicator = document.getElementById('modeIndicator');
-    modeIndicator.textContent = 'READY';
-    modeIndicator.className = 'mode-indicator';
-    
-    AppState.emit('mode:changed', { mode: 'placement' });
-    AppState.emit('mode:editToggled', { isEditMode: false, subMode: null });  // UPDATED: Include subMode
-    CanvasManager.redraw();
-} 
-
- function switchToDrawingMode() {
-    // Clean up orphan vertices FIRST
-    cleanupOrphanVertices();
-    
-    console.log('Switching to drawing mode from:', AppState.currentMode);
-    AppState.currentMode = 'drawing';
-    AppState.editSubMode = null;
-    
-    resetAllModeButtons();
-    const startBtn = document.getElementById('startBtn');
-    if (startBtn) {
-        startBtn.textContent = 'Stop';
-        startBtn.classList.add('active');
+/**
+ * Projects a polygon's vertices onto a given axis.
+ * @param {object} axis - The normalized axis to project onto.
+ * @param {Array<object>} path - The vertices of the polygon.
+ * @returns {object} - An object with the min and max projection values.
+ */
+projectPolygon(axis, path) {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const vertex of path) {
+        // Project the vertex onto the axis using the dot product
+        const dotProduct = (vertex.x * axis.x) + (vertex.y * axis.y);
+        min = Math.min(min, dotProduct);
+        max = Math.max(max, dotProduct);
     }
-    
-    const modeIndicator = document.getElementById('modeIndicator');
-    modeIndicator.textContent = 'DRAWING';
-    modeIndicator.className = 'mode-indicator drawing-mode';
-    
-    document.querySelectorAll('.one-of-bottom-pallets').forEach(p => p.classList.add('hidden'));
-    document.querySelectorAll('[data-palette]').forEach(btn => btn.classList.remove('active'));
-    const numbersBtn = document.getElementById('numbersBtn');
-    const drawPalette = document.getElementById('drawPalette');
-    if (numbersBtn && drawPalette) {
-        numbersBtn.classList.add('active');
-        drawPalette.classList.remove('hidden');
-    }
-    
-    AppState.emit('mode:changed', { mode: 'drawing' });
-    AppState.emit('mode:editToggled', { isEditMode: false });
-    CanvasManager.redraw();
+    return { min, max };
 }
-
-function resetAllModeButtons() {
-    const startBtn = document.getElementById('startBtn');
-    if (startBtn) {
-        startBtn.textContent = 'Start';
-        startBtn.classList.remove('active');
-    }
-    
-    const editBtn = document.getElementById('editBtn');
-    if (editBtn) {
-        editBtn.textContent = 'Edit'; // Reset text
-        editBtn.classList.remove('active');
-    }
-    
-    // Reset all palette buttons to inactive
-    const paletteButtons = document.querySelectorAll('[data-palette]');
-    paletteButtons.forEach(btn => btn.classList.remove('active'));
-}
-
-
-
-
-// --- Utility Functions ---
-function setupKeyboardShortcuts() {
-    document.addEventListener('keydown', (event) => {
-        const isCtrlOrCmd = event.ctrlKey || event.metaKey;
-        const targetTagName = event.target.tagName.toLowerCase();
-        if (targetTagName === 'input' || targetTagName === 'textarea') return;
-        if (isCtrlOrCmd && event.key.toLowerCase() === 'z' && !event.shiftKey) {
-            event.preventDefault();
-            CanvasManager.undo();
-        }
-        if (isCtrlOrCmd && ((event.key.toLowerCase() === 'z' && event.shiftKey) || event.key.toLowerCase() === 'y')) {
-            event.preventDefault();
-            CanvasManager.redo();
-        }
-    });
-}
-
-
-window.addEventListener('DOMContentLoaded', () => {
-    // Clear any existing helper points
-    if (typeof AppState !== 'undefined') {
-        AppState.helperPoints = [];
-        AppState.permanentHelperPoints = [];
-        console.log('Cleared all helper points on startup');
-    }
-
-    window.AppState = AppState;
-    window.HelperPointManager = HelperPointManager;
-    
-    // Clear any existing helper points on startup
-    AppState.helperPoints = [];
-    AppState.permanentHelperPoints = [];
-    console.log('🧹 Cleared all helper points on startup');
-
-});
- 
- 
-// REMOVED: Old duplicate import function that didn't handle photos

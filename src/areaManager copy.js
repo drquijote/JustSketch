@@ -922,8 +922,13 @@ export class AreaManager {
 
     // --- Standard Area Logic ---
 
- 
-handleCycleClosed(event) {
+ handleCycleClosed(event) {
+    // CRITICAL: Check if this event was already handled by the splitter
+   // if (event.splitHandled) {
+   //     console.log('🔍 AREA: Event already handled by splitter, skipping AreaManager processing');
+   //     return;
+   // }
+    
     const path = event.detail.path;
     if (!path || path.length < 3) {
         console.log('🔍 AREA: Invalid path, skipping');
@@ -932,64 +937,10 @@ handleCycleClosed(event) {
     
     console.log('🔍 AREA: Processing cycle closure for new area creation');
     this.activePathForModal = path;
-    
-    // *** NEW: Check for shared edges with existing areas ***
-    this.checkForSharedEdges(path);
-    
     this.showAreaModal();
 }
 
-// *** NEW: Add this new method to the AreaManager class ***
-checkForSharedEdges(newPath) {
-    if (!AppState.drawnPolygons || AppState.drawnPolygons.length === 0) {
-        return; // No existing areas to check against
-    }
-    
-    const tolerance = 5; // pixels - how close points need to be to be considered the same
-    
-    // Get the type and generate the name for the new area (same logic as showAreaModal)
-    const typeSelect = document.getElementById('polygonType');
-    const defaultType = typeSelect?.options[0]?.value || 'living';
-    const newAreaName = AreaManager.generateAreaLabel(defaultType);
-    
-    // Check each edge of the new path against each edge of existing polygons
-    for (let i = 0; i < newPath.length; i++) {
-        const newEdgeStart = newPath[i];
-        const newEdgeEnd = newPath[(i + 1) % newPath.length];
-        
-        // Check against all existing polygons
-        for (const existingPolygon of AppState.drawnPolygons) {
-            for (let j = 0; j < existingPolygon.path.length; j++) {
-                const existingEdgeStart = existingPolygon.path[j];
-                const existingEdgeEnd = existingPolygon.path[(j + 1) % existingPolygon.path.length];
-                
-                // Check if edges are the same (in either direction)
-                const isSharedEdge = (
-                    (this.pointsNearby(newEdgeStart, existingEdgeStart, tolerance) && 
-                     this.pointsNearby(newEdgeEnd, existingEdgeEnd, tolerance)) ||
-                    (this.pointsNearby(newEdgeStart, existingEdgeEnd, tolerance) && 
-                     this.pointsNearby(newEdgeEnd, existingEdgeStart, tolerance))
-                );
-                
-                if (isSharedEdge) {
-                    // Found a shared edge! Show the alert and return
-                    const message = `You have created ${newAreaName}, this shares a path with ${existingPolygon.label}`;
-                    alert(message);
-                    console.log('🔗 SHARED EDGE:', message);
-                    return; // Only show one alert even if multiple shared edges exist
-                }
-            }
-        }
-    }
-}
 
-// *** NEW: Add this helper method to check if two points are nearby ***
-pointsNearby(point1, point2, tolerance) {
-    const dx = point1.x - point2.x;
-    const dy = point1.y - point2.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    return distance <= tolerance;
-}
 
 
     static generateAreaLabel(areaType) {

@@ -3,7 +3,7 @@ import { CanvasManager } from './canvas.js';
 import { DrawingManager } from './drawing.js';
 import { HelperPointManager } from './helpers.js';
 import { AreaManager } from './areaManager.js';
-import { SplitterManager } from './splitter.js';
+import { PolygonSplitter } from './new-splitter.js';
 import { PreviewManager } from './previewManager.js';
 import { SaveManager } from './saveManager.js';
 import { PhotoManager } from './photos.js'; 
@@ -118,9 +118,9 @@ let globalSaveManager;
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- Standard Initialization (Unchanged) ---
-    const splitterManager = new SplitterManager();
-    splitterManager.init();
-
+    //const splitterManager = new SplitterManager();
+    //splitterManager.init();
+    PolygonSplitter.init();
     globalSaveManager = new SaveManager();
     globalSaveManager.init();
     const photoManager = new PhotoManager();
@@ -296,7 +296,7 @@ function initializeAppControls(previewManager, saveManager) {
                     if (window.drawingManager) {
                         window.drawingManager.addVerticesAsPermanentHelpers(AppState.currentPolygonPoints);
                     }
-                    
+
                     // Move the current path to the `drawnLines` array so it remains visible.
                     AppState.drawnLines.push({
                         id: Date.now(),

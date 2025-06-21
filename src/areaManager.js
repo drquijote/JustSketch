@@ -924,10 +924,10 @@ export class AreaManager {
 
  handleCycleClosed(event) {
     // CRITICAL: Check if this event was already handled by the splitter
-    if (event.splitHandled) {
-        console.log('🔍 AREA: Event already handled by splitter, skipping AreaManager processing');
-        return;
-    }
+   // if (event.splitHandled) {
+   //     console.log('🔍 AREA: Event already handled by splitter, skipping AreaManager processing');
+   //     return;
+   // }
     
     const path = event.detail.path;
     if (!path || path.length < 3) {

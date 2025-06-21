@@ -934,75 +934,7 @@ getShorterArc(cyclePath, startIndex, endIndex) {
     return forwardDistance <= backwardDistance ? forwardPath : backwardPath;
 }
 
-// Check if two line segments intersect
-// Replace the entire drawCompletedAreas function in areaManager.js with this one.
-drawCompletedAreas() {
-    const { ctx } = AppState;
-    if (!ctx || AppState.drawnPolygons.length === 0) return;
-
-    // First, identify all shared edges so we don't draw labels on them
-    const sharedEdges = this.findAllSharedEdges();
-
-    AppState.drawnPolygons.forEach((poly) => {
-        ctx.save();
-
-        // Set fill color based on area type
-        if (poly.glaType === 1) {
-            ctx.fillStyle = 'rgba(144, 238, 144, 0.4)'; // Light Green for GLA
-        } else if (poly.glaType === 0) {
-            ctx.fillStyle = 'rgba(180, 180, 180, 0.6)'; // Darker Gray for non-GLA
-        } else if (poly.glaType === 2) {
-            ctx.fillStyle = 'rgba(220, 220, 220, 0.3)'; // Very Light Gray for excluded areas
-        }
-
-        // Draw the filled polygon shape
-        ctx.beginPath();
-        ctx.moveTo(poly.path[0].x, poly.path[0].y);
-        for (let i = 1; i < poly.path.length; i++) {
-            ctx.lineTo(poly.path[i].x, poly.path[i].y);
-        }
-        ctx.closePath();
-        ctx.fill();
-
-        // Draw the polygon outline
-        ctx.strokeStyle = '#555';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-
-        // --- The block for drawing red vertex labels has been removed from here ---
-
-        // Draw edge length labels, but skip shared edges
-        for (let i = 0; i < poly.path.length; i++) {
-            const p1 = poly.path[i];
-            const p2 = poly.path[(i + 1) % poly.path.length];
-            
-            const edgeKey = this.getEdgeKey(poly.id, i, (i + 1) % poly.path.length);
-            if (!sharedEdges.has(edgeKey)) {
-                this.drawExternalLabel(ctx, p1, p2, poly.centroid);
-            }
-        }
-
-        // Draw the main area label (e.g., "Garage") and its square footage
-        ctx.fillStyle = '#000';
-        ctx.font = 'bold 12px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(poly.label, poly.centroid.x, poly.centroid.y - 8);
-        ctx.font = '10px Arial';
-        ctx.fillText(`${poly.area.toFixed(1)} sq ft`, poly.centroid.x, poly.centroid.y + 8);
-
-        if (poly.glaType === 2) {
-            ctx.font = '8px Arial';
-            ctx.fillStyle = '#666';
-            ctx.fillText('(excluded)', poly.centroid.x, poly.centroid.y + 20);
-        }
-
-        ctx.restore();
-    });
-
-    this.updateLegendCalculations();
-}
-
+ 
  
 
 // Find a valid ordering of vertices that creates a simple polygon
@@ -1849,6 +1781,7 @@ addHelperAsVertex(helperPoint, quiet = false) {
 
     AppState.currentPolygonPoints.push(newPoint);
     AppState.currentPolygonCounter++;
+    AppState.emit('app:drawingPointAdded', { point: newPoint });
 
     if (!quiet) {
        console.log(`🎯 SNAP: Added vertex ${newPoint.name} at EXACT position (${newPoint.x}, ${newPoint.y})`);
@@ -1935,6 +1868,9 @@ handleCanvasTouch(e) {
 
 // *** FIXED: Activate function - don't interfere with viewport touch events ***
 activate() {
+
+    this.createHelperPointsFromPolygonVertices();
+
     if (this.isActive) return;
     console.log('DrawingManager: Activating drawing mode');
     this.isActive = true;
@@ -2291,6 +2227,7 @@ addPolygonVertexToPath(vertex) {
 
     AppState.currentPolygonPoints.push(newPoint);
     AppState.currentPolygonCounter++;
+    AppState.emit('app:drawingPointAdded', { point: newPoint });
     
     // Update helper points and redraw
     HelperPointManager.updateHelperPoints();
@@ -2540,62 +2477,7 @@ findClickedVertex(x, y) {
   }
 
 
-// Replace the placeFirstVertex function in drawing.js with this fixed version:
- placeFirstVertex(x, y) {
-    // When placing a brand new vertex, always reset to the primary prefix 'p'.
-    this.currentPrefixIndex = 0;
-    const prefix = this.pathPrefixes[this.currentPrefixIndex];
-
-    // ... (snapping logic is unchanged) ...
-    let finalX = x;
-    let finalY = y;
-    let snapInfo = null;
-    let nearbyEdge = null;
-    const nearbyHelper = this.findClickedHelperPoint(x, y);
-    if (nearbyHelper) {
-        finalX = nearbyHelper.x;
-        finalY = nearbyHelper.y;
-        snapInfo = { type: 'vertex', point: nearbyHelper };
-    } else {
-        nearbyEdge = this.findNearbyEdgeForSnapping(x, y);
-        if (nearbyEdge) {
-            const snapPoint = this.getSnapPointOnEdge(nearbyEdge, { x, y });
-            finalX = snapPoint.x;
-            finalY = snapPoint.y;
-            snapInfo = { type: 'edge', edge: nearbyEdge, point: snapPoint };
-        }
-    }
-
-    // --- START MODIFICATION: Use the current prefix for the vertex name ---
-    const firstPoint = {
-        x: finalX,
-        y: finalY,
-        name: `${prefix}0`, // Will be "p0"
-        snappedToHelper: !!nearbyHelper,
-        snappedToEdge: !!nearbyEdge,
-        snapInfo: snapInfo
-    };
-    // --- END MODIFICATION ---
-
-    // ... (rest of the function is unchanged) ...
-    AppState.currentPolygonPoints = [firstPoint];
-    AppState.currentPolygonCounter = 1;
-    this.waitingForFirstVertex = false;
-    if (snapInfo && snapInfo.type === 'edge') {
-        this.addSnapPointAsPermanentHelper(snapInfo.point);
-    }
-    HelperPointManager.updateHelperPoints();
-    CanvasManager.saveAction();
-    CanvasManager.redraw();
-    const distanceInput = document.getElementById('distanceDisplay');
-    if (distanceInput) {
-        this.activeInput = 'distance';
-        setTimeout(() => {
-            distanceInput.focus();
-            distanceInput.select();
-        }, 100);
-    }
-  }
+ 
 
   showDrawingUI() {
     console.log('DrawingManager: Showing drawing UI elements');
@@ -3387,6 +3269,7 @@ placeFirstVertex(x, y) {
     AppState.currentPolygonPoints = [firstPoint];
     AppState.currentPolygonCounter = 1;
     this.waitingForFirstVertex = false;
+    AppState.emit('app:drawingPointAdded', { point: firstPoint });
 
     // *** NEW: Add snapped-to point as a permanent helper for future reference ***
     if (snapInfo && snapInfo.type === 'edge') {
@@ -3412,7 +3295,65 @@ placeFirstVertex(x, y) {
 }
 
 // Add these new functions to the DrawingManager class in drawing.js:
+// Add this new method to the DrawingManager class:
+createHelperPointsFromPolygonVertices() {
+    if (!AppState.permanentHelperPoints) {
+        AppState.permanentHelperPoints = [];
+    }
+    
+    // Add all polygon vertices as permanent helper points
+    AppState.drawnPolygons.forEach((polygon, polyIndex) => {
+        polygon.path.forEach((vertex, vertexIndex) => {
+            // Check if this helper point already exists
+            const exists = AppState.permanentHelperPoints.some(hp => 
+                Math.abs(hp.x - vertex.x) < 2 && Math.abs(hp.y - vertex.y) < 2
+            );
+            
+            if (!exists) {
+                AppState.permanentHelperPoints.push({
+                    x: vertex.x,
+                    y: vertex.y,
+                    source: 'polygon_vertex',
+                    polygonId: polygon.id,
+                    vertexIndex: vertexIndex,
+                    originalName: vertex.name || `p${vertexIndex}`
+                });
+            }
+        });
+    });
+}
 
+ 
+
+// In the drawCompletedAreas() function, add vertex label drawing:
+drawCompletedAreas() {
+    // ... existing code for drawing polygons ...
+    
+    // ADD THIS SECTION: Draw vertex labels when in drawing mode
+    if (AppState.currentMode === 'drawing') {
+        AppState.drawnPolygons.forEach((poly) => {
+            poly.path.forEach((vertex, index) => {
+                ctx.save();
+                ctx.fillStyle = '#e74c3c'; // Red color for existing vertices
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // White text shadow for readability
+                ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+                ctx.shadowBlur = 3;
+                ctx.shadowOffsetX = 1;
+                ctx.shadowOffsetY = 1;
+                
+                const label = vertex.name || `p${index}`;
+                ctx.fillText(label, vertex.x, vertex.y - 15);
+                ctx.restore();
+            });
+        });
+    }
+    
+    // ... rest of existing code ...
+}
 
 // Add this new method to DrawingManager class in drawing.js
 checkForPolygonSplitting() {
@@ -3810,6 +3751,7 @@ addSnapPointAsPermanentHelper(snapPoint) {
     AppState.currentPolygonPoints.push(newPoint);
     AppState.currentPolygonCounter++;
     this.branchFromIndex = null;
+    AppState.emit('app:drawingPointAdded', { point: newPoint });
     this.autoPanToPoint(finalX, finalY);
     const distanceInput = document.getElementById('distanceDisplay');
     const angleInput = document.getElementById('angleDisplay');

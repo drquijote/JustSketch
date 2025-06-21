@@ -42,12 +42,14 @@ export class PhotoManager {
         console.log('PhotoManager initialized.');
     }
  
+    // UPDATED: Use robust sync method
     activate() {
         console.log('Activating Photos Mode.');
         if(photoHelperButtons && typeof photoHelperButtons.initializePhotoHelpers === 'function') {
             photoHelperButtons.initializePhotoHelpers();
         }
-        this._syncHelperButtonStates();
+        // UPDATED: Use robust sync method
+        this.syncHelperButtonStatesRobust();
         this.boundHandleCanvasClick = (e) => this.handleCanvasClick(e);
         AppState.canvas.addEventListener('click', this.boundHandleCanvasClick);
         CanvasManager.redraw();
@@ -64,56 +66,80 @@ export class PhotoManager {
         console.log('Deactivating Photos Mode.');
     }
 
-updatePhotoCaption(photoId, newCaption) {
-    try {
-        console.log('Updating photo caption:', { photoId, newCaption });
+    // UPDATED: Robust helper button state synchronization
+    syncHelperButtonStatesRobust() {
+        console.log('🔄 Starting robust helper button state synchronization...');
         
-        let photo = null;
-        let photoIndex = -1;
-        
-        // First try to find by direct ID
-        photoIndex = AppState.photos.findIndex(p => p.id && p.id.toString() === photoId);
-        
-        // If not found, try elementId + index combination
-        if (photoIndex === -1) {
-            const parts = photoId.split('_');
-            if (parts.length >= 2) {
-                const elementId = parts[0];
-                const index = parseInt(parts[1]);
-                const photosForElement = AppState.photos.filter(p => p.elementId === elementId);
-                if (photosForElement[index]) {
-                    photo = photosForElement[index];
-                    photoIndex = AppState.photos.indexOf(photo);
-                }
-            }
+        // Delegate to photoHelperButtons for the actual sync logic
+        if (photoHelperButtons && typeof photoHelperButtons.syncHelperButtonStatesRobust === 'function') {
+            photoHelperButtons.syncHelperButtonStatesRobust();
         } else {
-            photo = AppState.photos[photoIndex];
+            console.warn('⚠️ photoHelperButtons.syncHelperButtonStatesRobust not available, falling back to legacy sync');
+            this._syncHelperButtonStates();
         }
-        
-        if (!photo || photoIndex === -1) {
-            console.error('Photo not found:', photoId);
+    }
+
+    // LEGACY: Keep the old method for backward compatibility
+    _syncHelperButtonStates() {
+        console.log('⚠️ Using legacy sync method, consider upgrading to syncHelperButtonStatesRobust()');
+        if (!AppState.photos || AppState.photos.length === 0) return;
+        AppState.photos.forEach(photo => {
+            if (photo.elementId && photo.pictureType) {
+                photoHelperButtons.markPhotoTaken(photo.elementId, photo.pictureType);
+            }
+        });
+    }
+
+    updatePhotoCaption(photoId, newCaption) {
+        try {
+            console.log('Updating photo caption:', { photoId, newCaption });
+            
+            let photo = null;
+            let photoIndex = -1;
+            
+            // First try to find by direct ID
+            photoIndex = AppState.photos.findIndex(p => p.id && p.id.toString() === photoId);
+            
+            // If not found, try elementId + index combination
+            if (photoIndex === -1) {
+                const parts = photoId.split('_');
+                if (parts.length >= 2) {
+                    const elementId = parts[0];
+                    const index = parseInt(parts[1]);
+                    const photosForElement = AppState.photos.filter(p => p.elementId === elementId);
+                    if (photosForElement[index]) {
+                        photo = photosForElement[index];
+                        photoIndex = AppState.photos.indexOf(photo);
+                    }
+                }
+            } else {
+                photo = AppState.photos[photoIndex];
+            }
+            
+            if (!photo || photoIndex === -1) {
+                console.error('Photo not found:', photoId);
+                return false;
+            }
+            
+            // Update the photo's caption
+            photo.elementContent = newCaption;
+            
+            // Save the changes
+            CanvasManager.saveAction();
+            
+            // Refresh thumbnails if needed
+            if (this.activeElement && this.activeElement.id === photo.elementId) {
+                this.loadAndDisplayThumbnails();
+            }
+            
+            console.log('Photo caption updated successfully');
+            return true;
+            
+        } catch (error) {
+            console.error('Error updating photo caption:', error);
             return false;
         }
-        
-        // Update the photo's caption
-        photo.elementContent = newCaption;
-        
-        // Save the changes
-        CanvasManager.saveAction();
-        
-        // Refresh thumbnails if needed
-        if (this.activeElement && this.activeElement.id === photo.elementId) {
-            this.loadAndDisplayThumbnails();
-        }
-        
-        console.log('Photo caption updated successfully');
-        return true;
-        
-    } catch (error) {
-        console.error('Error updating photo caption:', error);
-        return false;
     }
-}
 
     handleCanvasClick(event) {
         const viewport = document.getElementById('canvasViewport');
@@ -125,19 +151,29 @@ updatePhotoCaption(photoId, newCaption) {
         if (buttonClick) {
             let tempElement;
             if (buttonClick.polygonId === 'EXTERIOR_ONLY_PHOTOS') {
+                // *** UPDATED: Use full photo label for photo content ***
+                const polygon = { label: 'Exterior Only' }; // Mock polygon for getFullPhotoLabel
+                const fullLabel = photoHelperButtons.getFullPhotoLabel(buttonClick.pictureType, polygon);
+                
                 tempElement = {
                     id: buttonClick.polygonId,
                     type: 'exterior-only',
-                    content: buttonClick.button.label,
+                    content: fullLabel, // Use full label
                     pictureType: buttonClick.pictureType,
                 };
             } else {
                 const polygon = AppState.drawnPolygons.find(p => p.id === buttonClick.polygonId);
                 if (polygon) {
+                    // *** UPDATED: Use full photo label for photo content ***
+                    const fullLabel = photoHelperButtons.getFullPhotoLabel(buttonClick.pictureType, polygon);
+                    
+                    console.log(`🔍 Button clicked: ${buttonClick.pictureType} on ${polygon.label}`);
+                    console.log(`📸 Full photo label: ${fullLabel}`);
+                    
                     tempElement = {
                         id: buttonClick.polygonId,
                         type: 'area',
-                        content: polygon.label + ' - ' + buttonClick.button.label,
+                        content: fullLabel, // Use full label instead of abbreviated
                         pictureType: buttonClick.pictureType,
                     };
                 }
@@ -173,9 +209,89 @@ updatePhotoCaption(photoId, newCaption) {
     selectElement(element) {
         this.activeElement = element;
         AppState.activePhotoElement = element;
+        
+        // *** NEW: Modify content for room elements inside Floor, ADU, or UNIT areas ***
+        if (element.type === 'room') {
+            // Check if this room element is inside a Floor, ADU, or UNIT area
+            const parentArea = AppState.drawnPolygons.find(polygon => {
+                // Check if the polygon label contains "floor", "adu", or "unit" (case insensitive)
+                const label = polygon.label ? polygon.label.toLowerCase() : '';
+                const isFloorArea = label.includes('floor');
+                const isADUArea = label.includes('adu');
+                const isUNITArea = label.includes('unit');
+                
+                if (!isFloorArea && !isADUArea && !isUNITArea) return false;
+                
+                // Check if the room element center point is inside this polygon
+                const roomCenterX = element.x + element.width / 2;
+                const roomCenterY = element.y + element.height / 2;
+                const point = { x: roomCenterX, y: roomCenterY };
+                return this.isPointInsidePolygon(point, polygon.path);
+            });
+            
+            // If we found a parent area, modify the content to include the appropriate prefix
+            if (parentArea) {
+                // Define interior room types that should get the prefix
+                const interiorRoomTypes = [
+                    'Kitchen', 'Kitchennette', 'Living', 'Dining', 'Family', 'Den', 
+                    'Bedroom', 'Bedroom.M', 'Bath', 'Bath.M', '1/2 Bath', 
+                    'Laundry', 'Entry', 'Closet', 'Office', 'Pantry', 'Hallway', 'Bar'
+                ];
+                
+                // Check if this room type should get the prefix
+                if (interiorRoomTypes.includes(element.content)) {
+                    const label = parentArea.label.toLowerCase();
+                    let prefix = '';
+                    
+                    if (label.includes('floor')) {
+                        prefix = 'Subject Interior';
+                    } else if (label.includes('adu')) {
+                        // Extract ADU number if present (e.g., "ADU 1", "ADU-1")
+                        const aduMatch = parentArea.label.match(/adu\s*[-\s]*(\d+)/i);
+                        if (aduMatch) {
+                            prefix = `ADU-${aduMatch[1]} Interior`;
+                        } else {
+                            prefix = 'ADU Interior';
+                        }
+                    } else if (label.includes('unit')) {
+                        // Extract UNIT number if present (e.g., "UNIT 1", "UNIT-1")
+                        const unitMatch = parentArea.label.match(/unit\s*[-\s]*(\d+)/i);
+                        if (unitMatch) {
+                            prefix = `UNIT-${unitMatch[1]} Interior`;
+                        } else {
+                            prefix = 'UNIT Interior';
+                        }
+                    }
+                    
+                    // Create a modified element with the appropriate prefix for photos
+                    this.activeElement = {
+                        ...element,
+                        content: `${prefix} ${element.content}`
+                    };
+                }
+            }
+        }
+        
         this.buildPaletteUI();
         this.loadAndDisplayThumbnails();
         CanvasManager.redraw();
+    }
+
+    // *** NEW: Point-in-polygon helper function ***
+    isPointInsidePolygon(point, polygonPath) {
+        let inside = false;
+        const n = polygonPath.length;
+        
+        for (let i = 0, j = n - 1; i < n; j = i++) {
+            const xi = polygonPath[i].x, yi = polygonPath[i].y;
+            const xj = polygonPath[j].x, yj = polygonPath[j].y;
+            
+            const intersect = ((yi > point.y) !== (yj > point.y))
+                && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        
+        return inside;
     }
 
     buildPaletteUI() {
@@ -198,9 +314,25 @@ updatePhotoCaption(photoId, newCaption) {
                 </div>
             </div>
         `;
+        
+        const libraryBtn = document.getElementById('libraryBtn');
+        const cameraBtn = document.getElementById('cameraBtn');
+        
+        if (libraryBtn) {
+            libraryBtn.addEventListener('click', () => this.openLibrary());
+        }
+        
+        if (cameraBtn) {
+            cameraBtn.addEventListener('click', () => this.openCamera());
+        }
+    }
 
-        document.getElementById('libraryBtn').addEventListener('click', () => this.libraryInput.click());
-        document.getElementById('cameraBtn').addEventListener('click', () => this.cameraInput.click());
+    openLibrary() {
+        this.libraryInput.click();
+    }
+
+    openCamera() {
+        this.cameraInput.click();
     }
 
     async handleFileSelected(event) {
@@ -249,7 +381,7 @@ updatePhotoCaption(photoId, newCaption) {
                 id: Date.now(),
                 elementId: this.activeElement.id,
                 elementType: this.activeElement.type,
-                elementContent: this.activeElement.content,
+                elementContent: this.activeElement.content, // This now contains the FULL label
                 pictureType: this.activeElement.pictureType || null,
                 imageData: fullSizeData,
                 thumbnailData: thumbnailData,
@@ -259,8 +391,19 @@ updatePhotoCaption(photoId, newCaption) {
             
             AppState.photos.push(photo);
             
+            // *** UPDATED: Use robust photo marking ***
             if (this.activeElement && this.activeElement.pictureType) {
-                photoHelperButtons.markPhotoTaken(this.activeElement.id, this.activeElement.pictureType);
+                // Find the polygon for robust marking
+                const polygon = AppState.drawnPolygons.find(p => p.id === this.activeElement.id);
+                if (polygon && photoHelperButtons.generatePhotoSignature) {
+                    const signature = photoHelperButtons.generatePhotoSignature(polygon, this.activeElement.pictureType);
+                    if (signature) {
+                        photoHelperButtons.markPhotoTakenBySignature(signature);
+                    }
+                } else {
+                    // Fallback to legacy method
+                    photoHelperButtons.markPhotoTaken(this.activeElement.id, this.activeElement.pictureType);
+                }
             }
             
             this.loadAndDisplayThumbnails();
@@ -270,15 +413,6 @@ updatePhotoCaption(photoId, newCaption) {
             alert('Failed to process the photo. Please try again.');
         }
         event.target.value = '';
-    }
-
-    _syncHelperButtonStates() {
-        if (!AppState.photos || AppState.photos.length === 0) return;
-        AppState.photos.forEach(photo => {
-            if (photo.elementId && photo.pictureType) {
-                photoHelperButtons.markPhotoTaken(photo.elementId, photo.pictureType);
-            }
-        });
     }
 
     loadAndDisplayThumbnails() {
@@ -361,9 +495,92 @@ updatePhotoCaption(photoId, newCaption) {
         const photoIndex = AppState.photos.findIndex(p => p.id === photoId);
         if (photoIndex > -1) {
             const deletedPhoto = AppState.photos.splice(photoIndex, 1)[0];
-            photoHelperButtons.unmarkPhotoTaken(deletedPhoto.elementId, deletedPhoto.pictureType);
+            
+            // *** UPDATED: Use robust unmarking ***
+            if (deletedPhoto.pictureType) {
+                const polygon = AppState.drawnPolygons.find(p => p.id === deletedPhoto.elementId);
+                if (polygon && photoHelperButtons.generatePhotoSignature) {
+                    const signature = photoHelperButtons.generatePhotoSignature(polygon, deletedPhoto.pictureType);
+                    if (signature) {
+                        photoHelperButtons.photoButtonStates.set(signature, false);
+                        // Update button visual state
+                        for (const buttons of photoHelperButtons.helperButtons.values()) {
+                            for (const button of buttons) {
+                                if (button.polygonId === deletedPhoto.elementId && button.pictureType === deletedPhoto.pictureType) {
+                                    button.taken = false;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Fallback to legacy method
+                    photoHelperButtons.unmarkPhotoTaken(deletedPhoto.elementId, deletedPhoto.pictureType);
+                }
+            }
+            
             CanvasManager.saveAction();
             this.loadAndDisplayThumbnails();
+            CanvasManager.redraw();
+        }
+    }
+
+    // Utility method for debugging
+    debugPhotoStatus() {
+        console.log('=== PHOTO DEBUG STATUS ===');
+        console.log(`Total photos in AppState: ${AppState.photos ? AppState.photos.length : 0}`);
+        
+        if (AppState.photos && AppState.photos.length > 0) {
+            const photosByElement = {};
+            AppState.photos.forEach(photo => {
+                if (!photosByElement[photo.elementId]) {
+                    photosByElement[photo.elementId] = [];
+                }
+                photosByElement[photo.elementId].push(photo);
+            });
+            
+            Object.entries(photosByElement).forEach(([elementId, photos]) => {
+                console.log(`Element ${elementId}: ${photos.length} photos`);
+                photos.forEach((photo, index) => {
+                    console.log(`  Photo ${index}: ${photo.imageData ? 'Image data OK' : 'Missing image data'}, ${photo.thumbnailData ? 'Thumbnail OK' : 'Missing thumbnail'}`);
+                });
+            });
+        }
+        
+        console.log(`Current mode: ${AppState.currentMode}`);
+        console.log(`Active element: ${this.activeElement ? this.activeElement.id : 'None'}`);
+        
+        if (AppState.currentMode === 'photos' && this.activeElement) {
+            const elementPhotos = AppState.photos.filter(p => p.elementId === this.activeElement.id);
+            console.log(`Photos for current active element: ${elementPhotos.length}`);
+        }
+        
+        console.log('=== END PHOTO DEBUG ===');
+        
+        return {
+            totalPhotos: AppState.photos.length,
+            photosByElement: this._groupPhotosByElement(AppState.photos),
+            currentMode: AppState.currentMode,
+            activeElement: this.activeElement?.id || null
+        };
+    }
+
+    _groupPhotosByElement(photos) {
+        const grouped = {};
+        photos.forEach(photo => {
+            if (!grouped[photo.elementId]) {
+                grouped[photo.elementId] = [];
+            }
+            grouped[photo.elementId].push(photo);
+        });
+        return grouped;
+    }
+
+    refreshPhotoDisplay() {
+        if (AppState.currentMode === 'photos' && this.activeElement) {
+            console.log('🔄 Manually refreshing photo display...');
+            this.loadAndDisplayThumbnails();
+        } else {
+            console.log('ℹ️ Not in photos mode or no active element selected');
         }
     }
 }

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0, user-scalable=no" name="viewport"/>
+    <title>Sketch</title>
+    <link rel="stylesheet" href="src/style.css">
+    <style>
+        /* Prevent native zoom and scrolling on the body */
+        html, body {
+            overflow: hidden !important;
+            touch-action: pan-x pan-y;
+            -webkit-overflow-scrolling: touch;
+            margin: 0;
+            padding: 0;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+        }
+
+        .app-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden !important;
+        }
+
+        /* Canvas viewport for pan and zoom */
+        .canvas-viewport {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            background: #e0e0e0; 
+        }
+
+        .canvas-container {
+            position: absolute;
+            transform-origin: 0 0;
+            will-change: transform;
+        }
+
+        #drawingCanvas {
+            touch-action: none;
+            cursor: move;
+        }
+
+        /* Ensure UI elements stay fixed during zoom */
+        .top-controls {
+            position: fixed !important;
+            z-index: 1000;
+        }
+
+        .bottom-panel {
+            position: fixed !important;
+            z-index: 1000;
+            bottom: 0;
+            left: 0;
+            right: 0;
+        }
+
+        .mode-indicator {
+            position: fixed !important;
+            z-index: 500;
+            top: 10px !important;
+            left: 55px !important;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-size: 8px;
+            font-weight: 400;
+            pointer-events: none;
+            opacity: 0.7;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            min-width: auto;
+            white-space: nowrap;
+            text-align: center;
+        }
+
+        /* Router back button styling - REMOVED */
+
+        #summaryLegend {
+            position: fixed !important;
+            z-index: 1000;
+        }
+
+        /* Import the main CSS */
+        @import url('./src/style.css');
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div id="sketchTitleDisplay" class="sketch-title-display">Untitled Sketch</div>
+
+        <!-- Mode indicator (moved to top left below back button) -->
+        <div class="mode-indicator" id="modeIndicator">READY</div>
+
+        <div class="canvas-viewport" id="canvasViewport">
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="drawingCanvas" width="500" height="500"></canvas>
+            </div>
+        </div>
+        
+        <div id="summaryLegend" class="hidden">
+            <div><strong>Summary</strong></div>
+            <div>Total GLA: <span id="legendGLA">0.0</span> sq ft</div>
+            <div>Bedrooms: <span id="legendBedrooms">0</span></div>
+            <div>Bathrooms: <span id="legendBathrooms">0</span></div>
+            <div class="legend-list" id="legendGLABreakdown"></div>
+            <div class="legend-section">Non-GLA Area: <span id="legendNonLiving">0.0</span> sq ft</div>
+            <div class="legend-list" id="legendNonGLABreakdown"></div>
+        </div>
+
+        <!-- Icon Edit Controls - Compact bottom version -->
+<div class="icon-edit-controls hidden" id="iconEditControls">
+    <div class="icon-edit-header">Edit Icon</div>
+    
+    <div class="edit-control-row">
+        <div class="edit-control-label">Scale</div>
+        <input type="range" class="edit-slider" id="scaleSlider" min="0.5" max="3" step="0.1" value="1">
+        <div class="edit-value-display" id="scaleDisplay">1.0</div>
+    </div>
+    
+    <div class="edit-control-row">
+        <div class="edit-control-label">Width</div>
+        <input type="range" class="edit-slider" id="widthSlider" min="0.5" max="3" step="0.1" value="1">
+        <div class="edit-value-display" id="widthDisplay">1.0</div>
+    </div>
+    
+    <div class="edit-control-row">
+        <div class="edit-control-label">Height</div>
+        <input type="range" class="edit-slider" id="heightSlider" min="0.5" max="3" step="0.1" value="1">
+        <div class="edit-value-display" id="heightDisplay">1.0</div>
+    </div>
+    
+    <div class="edit-control-row rotation-row">
+        <div class="edit-control-label">Rotate</div>
+        <input type="range" class="edit-slider" id="rotationSlider" min="0" max="7" step="1" value="0">
+        <div class="edit-value-display" id="rotationDisplay">0°</div>
+    </div>
+    
+    <div class="edit-control-buttons">
+        <button class="edit-btn reset" id="resetIconBtn">Reset</button>
+        <button class="edit-btn delete" id="deleteIconBtn">Delete</button>
+        <button class="edit-btn done" id="doneEditingBtn">Done</button>
+    </div>
+</div>
+
+        <div class="top-controls">
+            <button class="control-btn active" id="numbersBtn" data-palette="drawPalette">Numbers</button>
+            <button class="control-btn" id="roomsBtn" data-palette="roomsPalette">Rooms</button>
+            <button class="control-btn" id="iconsBtn" data-palette="iconsPalette">Icons</button>
+            <button class="control-btn action-btn" id="photosBtn" data-palette="photosPalette">Photos</button>
+            <button class="control-btn action-btn" id="startBtn">Start</button>
+            <button class="control-btn action-btn" id="editBtn">Edit</button>
+            <button class="control-btn hidden action-btn" id="relabelBtn">Relabel Area</button>
+            <button class="control-btn hidden action-btn" id="labelEditBtn">Edit Label</button>
+            <button class="control-btn hidden action-btn" id="labelDeleteBtn">Del Label</button>
+            <button class="control-btn finish-btn" id='undo'>Undo</button>
+            <button class="control-btn finish-btn" id="redo">Redo</button>
+            <button class="control-btn finish-btn" id="legendToggleBtn">Legend</button>
+            <button class="control-btn finish-btn">Preview</button>
+            <button class="control-btn finish-btn">Import</button>
+            <div class="export-dropdown">
+                <button class="control-btn finish-btn">Save As</button>
+                <div class="export-menu hidden" id="exportMenu">
+                    <div class="export-option" id="saveAsBtn">New File</div>
+                    <div class="export-option">JSON Data</div>
+                    <div class="export-option">SVG Vector</div>
+                    <div class="export-option">LaTeX/TikZ</div>
+                    <div class="export-option">PNG</div>
+                    <div class="export-option">PDF</div>
+                </div>
+            </div>
+            <button class="control-btn save-btn" id="saveBtn">Save</button>
+            <div class="file-input-wrapper hidden">
+                <input accept=".json" id="importFile" type="file"/>
+            </div>
+        </div>
+
+        <div class="bottom-panel">
+            <!-- Numbers Palette (visible by default) -->
+            <div class="bottom-palette one-of-bottom-pallets" id="drawPalette">
+                <div class="mobile-controls">
+                  <!-- Direction pad - shows when numbers palette is visible -->
+                  <div class="directional-pad" id="directionalPad">
+                    <button class="dir-btn up">↑</button>
+                    <button class="dir-btn down">↓</button>
+                    <button class="dir-btn left">←</button>
+                    <button class="dir-btn right">→</button>
+                    <button class="dir-btn center">⬤</button>
+                    <button class="dir-btn up-left">↖</button>
+                    <button class="dir-btn up-right">↗</button>
+                    <button class="dir-btn down-left">↙</button>
+                    <button class="dir-btn down-right">↘</button>
+                  </div>
+                  
+         
+    <input class="angle-display draw-inputs hidden" id="angleDisplay" type="text" value="0"/>
+     <input class="distance-display draw-inputs" id="distanceDisplay" type="text" value="0"/>
+
+ 
+                  <div class="numeric-keypad">
+                    <button class="key-btn">1</button>
+                    <button class="key-btn">2</button>
+                    <button class="key-btn">3</button>
+                    <button class="key-btn">4</button>
+                    <button class="key-btn">5</button>
+                    <button class="key-btn">6</button>
+                    <button class="key-btn">7</button>
+                    <button class="key-btn">8</button>
+                    <button class="key-btn">9</button>
+                    <button class="key-btn">0</button>
+                    <button class="key-btn secondary">del</button>
+                    <button class="key-btn secondary" id='angle-btn'>angle</button>
+                    <button class="key-btn secondary">clear</button>
+                    <button class="key-btn close-btn">cls</button>
+                  </div>
+                </div>
+            </div>
+            
+            <!-- Rooms Palette (hidden by default) -->
+            <div class="bottom-palette room-palette hidden one-of-bottom-pallets" id="roomsPalette">
+                <div class="room-palette-label bedroom-palette">Bedroom</div>
+                <div class="room-palette-label bedroom-palette">Bedroom.M</div>
+                <div class="room-palette-label bath-palette">Bath</div>
+                <div class="room-palette-label bath-palette">Bath.M</div>
+                <div class="room-palette-label halfbath-palette">1/2 Bath</div>
+                <div class="room-palette-label green-palette">Kitchen</div>
+                <div class="room-palette-label green-palette">Kitchennette</div>
+                <div class="room-palette-label green-palette">Living</div>
+                <div class="room-palette-label green-palette">Dining</div>
+                <div class="room-palette-label green-palette">Family</div>
+                <div class="room-palette-label green-palette">Den</div>
+                <div class="room-palette-label">Laundry</div>
+                <div class="room-palette-label entry-palette">Entry</div>
+                <div class="room-palette-label">Closet</div>
+                <div class="room-palette-label">Office</div>
+                <div class="room-palette-label">Garage</div>
+                <div class="room-palette-label">Pantry</div>
+                <div class="room-palette-label">Hallway</div>
+                <div class="room-palette-label">Bar</div>
+                <div class="room-palette-label">Addition</div>
+                <div class="room-palette-label">SunRoom</div>
+                <div class="room-palette-label">Covered Patio</div>
+                <div class="room-palette-label">Covered Porch</div>
+                <div class="room-palette-label">Uncovered Patio</div>
+                <div class="room-palette-label">Uncovered Porch</div>
+                <div class="room-palette-label perm-palette">Other</div>
+                <div class="room-palette-label perm-palette">BR (permits unkwn)</div>
+                <div class="room-palette-label perm-palette">BA (permits unkwn)</div>
+                <div class="room-palette-label perm-palette">Kitchen (permits unkwn)</div>
+                <div class="room-palette-label perm-palette">Living (permits unkwn)</div>
+                <div class="room-palette-label perm-palette">Well</div>
+                <div class="room-palette-label perm-palette">Septic</div>
+                <div class="room-palette-label perm-palette">Custom</div>
+            </div>
+            
+            <!-- Icons Palette (hidden by default) -->
+            <div class="bottom-palette icon-palette hidden one-of-bottom-pallets" id="iconsPalette">
+                <div class="icon-palette-item transparent-bg">
+                    <img
+                        id="paletteIconDoor"
+                        alt="Door"
+                        width="45"
+                        height="45"
+                        src="public/door.svg" 
+                    />
+                </div>
+                <div class="icon-palette-item transparent-bg">
+                    <img
+                        id="paletteIconDoorr"
+                        alt="Door"
+                        width="45"
+                        height="45"
+                        src="public/doorr.svg" 
+                    />
+                </div>
+                <div class="icon-palette-item transparent-bg">
+                    <img
+                        id="paletteIconSDoor"
+                        alt="Sliding Door"
+                        width="45"
+                        height="45"
+                        src="public/sdoor.svg" 
+                    />
+                </div>
+                <div class="icon-palette-item transparent-bg">
+                    <img
+                        id="paletteIconFireplace"
+                        alt="Fireplace"
+                        width="45"
+                        height="45"
+                        src="public/fireplace.svg"
+                    />
+                </div>
+                <div class="icon-palette-item transparent-bg">
+                    <img
+                        id="paletteIconStare"
+                        alt="Stairs"
+                        width="45"
+                        height="45"
+                        src="public/Stare.svg"
+                    />
+                </div>
+                <div class="icon-palette-item transparent-bg">
+                    <img
+                        id="paletteIconPool"
+                        alt="Pool"
+                        width="45"
+                        height="45"
+                        src="public/pool.svg"
+                    />
+                </div>
+            </div>
+
+            <!-- Icons Palette (hidden by default) -->
+            <div class="bottom-palette photos-palette hidden one-of-bottom-pallets" id="photosPalette">           
+            </div>
+
+
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal hidden" id="labelEditModal">
+        <div class="modal-content">
+            <h3>Edit Label</h3>
+            <input id="labelEditTextInput" placeholder="Enter new label text" type="text" style="width: 90%; margin-top: 10px;"/>
+            <div class="modal-buttons">
+                <button id="cancelLabelEditBtn" class="modal-btn btn-secondary">Cancel</button>
+                <button id="saveLabelEditBtn" class="modal-btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+    <div class="modal hidden" id="polygonModal">
+        <div class="modal-content">
+            <h3>Label Polygon</h3>
+            <input id="polygonName" placeholder="e.g., Floor 1, Garage" type="text"/>
+              <select id="polygonType">
+<option value="living" data-gla="1" data-pic-SubjectFront="1" data-pic-SubjectAddressVerification="1" data-pic-SubjectStreetView="1" data-pic-SubjectExteriorLeft="1" data-pic-SubjectExteriorRight="1" data-pic-SubjectRearView="1" data-pic-SubjectBackYard="1" data-pic-SubjectSafetySmokeAlarm="1" data-pic-SubjectSafetyC02Alarm="1" data-pic-SafetyWaterHtr="1"  data-pic-SubjectAmenities="1" data-pic-SubjectConcerns="1" data-pic-SubjectCrawlSpace="1" data-pic-SubjectAtticSpace="1"  data-pic-SubjectFireOn="1" data-pic-SubjectWaterOn="1"  data-pics-SubjectEachArea="0">Floor</option>
+<option value="garage" data-gla="0" data-pic-Front="1" data-pics-EachArea="1" data-pic-Interior="1">Garage </option>
+                <option value="covered_patio" data-gla="2" data-pic-Front="1" data-pics-EachArea="1">Covered Patio</option>
+                <option value="uncovered_patio" data-gla="2" data-pic-Front="1" data-pics-EachArea="1">Uncovered Patio</option>
+                <option value="covered_porch" data-gla="2" data-pic-Front="1" data-pics-EachArea="1">Covered Porch</option>
+                <option value="uncovered_porch" data-gla="2" data-pic-Front="1" data-pics-EachArea="1">Unovered Porch</option>
+                <option value="covered_deck" data-gla="2" data-pic-Front="1" data-pics-EachArea="1">Covered Deck</option>
+                <option value="uncovered_deck" data-gla="2" data-pic-Front="1" data-pics-EachArea="1">Unovered Deck</option>
+                <option value="garage" data-gla="2" data-pic-Front="0">OpenBelow </option>
+                <option value="carport" data-gla="0" data-pic-Front="1">Carport </option>
+                <option value="driveway" data-gla="2">Driveway </option>
+                <option value="utility" data-gla="0" data-pic-Interior="1" data-pic-Front="1">Utility Room</option>
+                <option value="storage" data-gla="0" data-pic-Interior="1" data-pic-Front="1">Storage </option>
+                <option value="basement" data-gla="0" data-pic-Interior="1">Basement</option>
+                <option value="attic" data-gla="0" data-pic-Interior="1">Attic</option>
+<option value="ADU" data-gla="0" data-pic-Front="1" data-pic-SmokeAlarm="1" data-pic-C02Alarm="1" >ADU </option> 
+<option value="UNIT-1" data-gla="1" data-pic-Front="1" data-pic-SmokeAlarm="1" data-pic-C02Alarm="1" >UNIT</option> 
+<option value="other" data-gla="2">Other</option>
+<option value="storage_shed" data-gla="2" data-pic-Front="1" data-pic-Interior="1">Storage Shed</option>
+<option value="car_port_1" data-gla="0">1 Car Port</option>
+<option value="car_port_2" data-gla="0">2 Car Port</option>
+            </select>
+
+
+            <label>
+                <input id="includeInGLA" type="checkbox"/> Include in Gross Living Area
+            </label>
+                    <div class="modal-buttons">
+                        <!-- Delete button will be dynamically inserted here by JavaScript -->
+                        <button class="modal-btn btn-secondary">Cancel</button>
+                        <button class="modal-btn btn-primary">Save</button>
+                        <button class="modal-btn btn-delete" id="deleteCycle">Delete</button>
+                    </div>
+        </div>
+    </div>
+
+    <div class="modal hidden" id="lineEditModal">
+        <div class="modal-content">
+            <h3>Edit Line</h3>
+            <p>Current length: <span id="currentLength"></span> feet</p>
+            <input id="newLength" min="0.1" placeholder="New length" step="0.1" type="number"/>
+            <label>
+                <input id="makeCurved" type="checkbox"/> Make curved wall
+            </label>
+            <div class="modal-buttons">
+                <button class="modal-btn btn-secondary">Delete Line</button>
+                <button class="modal-btn btn-secondary">Cancel</button>
+                <button class="modal-btn btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="type-context-menu hidden" id="typeContextMenu">
+        <div class="context-menu-header">Change Polygon Type:</div>
+        <div id="contextMenuOptions"></div>
+        <div class="context-menu-cancel">Cancel</div>
+    </div>
+
+    <div id="customCursor" class="hidden"></div>
+
+ <div class="modal hidden" id="saveModal">
+    <div class="modal-content modal-content-mobile">
+        <h3>Save Sketch</h3>
+        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+            Enter a name for this sketch. It will be saved to your browser's local storage.
+        </p>
+        <input id="sketchNameInput" placeholder="e.g., Main Floor Plan" type="text"/>
+        
+        <!-- New report type options -->
+        <div class="report-type-section">
+            <p style="font-size: 12px; color: #666; margin: 12px 0 8px 0;">
+                Select report type(s):
+            </p>
+            <div class="report-type-options">
+                <label class="report-type-label">
+                    <input type="checkbox" id="exteriorOnlyCheckbox" class="report-type-checkbox">
+                    <span class="report-type-text">Exterior-Only</span>
+                </label>
+                <label class="report-type-label">
+                    <input type="checkbox" id="fullInspectionCheckbox" class="report-type-checkbox">
+                    <span class="report-type-text">Full-Inspection</span>
+                </label>
+                <label class="report-type-label">
+                    <input type="checkbox" id="fhaCheckbox" class="report-type-checkbox">
+                    <span class="report-type-text">FHA</span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="modal-buttons">
+            <button id="cancelSaveBtn" class="modal-btn btn-secondary">Cancel</button>
+            <button id="confirmSaveBtn" class="modal-btn btn-primary">Save</button>
+        </div>
+    </div>
+</div>
+
+     <script type="module" src="src/main.js"></script>
+<script src="https://unpkg.com/martinez-polygon-clipping@0.7.1/dist/martinez.min.js"></script>
+
+</body>
+</html>

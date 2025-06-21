@@ -78,7 +78,7 @@ export class AreaManager {
 
 
     // *** NEW: Check if new area is contained within existing areas ***
-checkForSharedEdges(newPath) {
+checkForSharedEdgesOLD(newPath) {
     if (!AppState.drawnPolygons || AppState.drawnPolygons.length === 0) {
         return; // No existing areas to check against
     }
@@ -127,7 +127,7 @@ checkForSharedEdges(newPath) {
             });
             
             const message = `You have created ${newAreaName}, this path is contained within ${existingPolygon.label}, the contained path is ${containedVertices.join(',')}`;
-            alert(message);
+            //alert(message);
             console.log('🔍 CONTAINED PATH:', message);
             console.log('🔍 Path details:', {
                 newAreaName,
@@ -1467,7 +1467,7 @@ checkForSharedEdges(newPath) {
         const sharedLabels = sharedVertices.map(v => v.label).join(',');
         
         const message = `You have created ${newAreaName}, this shares a path with ${sharedPolygonName}, the shared path is ${sharedLabels}`;
-        alert(message);
+        //alert(message);
         console.log('🔗 SHARED EDGE:', message);
         console.log('🔗 Shared vertices details:', sharedVertices);
         

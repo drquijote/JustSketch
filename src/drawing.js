@@ -3768,6 +3768,21 @@ addSnapPointAsPermanentHelper(snapPoint) {
 
 // *** NEW: Helper function to find nearby helpers for auto-snapping ***
 findNearbyHelper(x, y, radius = 15) {
+    // Check if this is being called from a directional button click
+    // by checking if the angle matches a preset direction (0, 45, 90, 135, 180, 225, 270, 315)
+    const angleInput = document.getElementById('angleDisplay');
+    if (angleInput) {
+        const currentAngle = parseFloat(angleInput.value);
+        const presetAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+        
+        // If this is a preset directional angle, disable snapping to preserve exact direction
+        if (presetAngles.includes(currentAngle)) {
+            console.log('🎯 SNAP: Skipping snap for preset directional angle:', currentAngle);
+            return null;
+        }
+    }
+    
+    // Original snapping logic for custom angles only
     let closestHelper = null;
     let closestDistance = Infinity;
     
@@ -3799,8 +3814,16 @@ findNearbyHelper(x, y, radius = 15) {
         }
     }
     
-    return closestHelper;
+    if (closestHelper) {
+        console.log('🎯 SNAP: Found helper point at distance:', closestDistance.toFixed(1));
+        return closestHelper;
+    }
+    
+    return null;
 }
+
+
+
 
   autoPanToPoint(x, y) {
     const viewport = document.getElementById('canvasViewport');
